@@ -804,8 +804,6 @@ import os
 import sys
 
 
-
-
 # Set PROJ_LIB and GDAL_DATA to conda environment paths
 _cprefix = sys.prefix
 _proj_path = os.path.join(_cprefix, 'Library', 'share', 'proj')
