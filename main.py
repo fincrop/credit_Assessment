@@ -803,6 +803,9 @@ from __future__ import annotations
 import os
 import sys
 
+
+
+
 # Set PROJ_LIB and GDAL_DATA to conda environment paths
 _cprefix = sys.prefix
 _proj_path = os.path.join(_cprefix, 'Library', 'share', 'proj')
@@ -819,6 +822,10 @@ warnings.filterwarnings('ignore', category=RuntimeWarning, module='rasterio')
 warnings.filterwarnings('ignore', message='.*PROJ.*')
 warnings.filterwarnings('ignore', message='.*EPSG.*')
 
+# KMeans + MKL on Windows: avoids sklearn memory-leak warning when chunks < threads
+if sys.platform == 'win32':
+    os.environ.setdefault('OMP_NUM_THREADS', '1')
+
 # ============================================================================
 # Continue with normal imports
 # ============================================================================
@@ -832,6 +839,12 @@ import traceback
 from datetime import datetime, timedelta, date
 from pathlib import Path
 from typing import Dict, List, Optional
+
+try:
+    from sklearn.exceptions import InconsistentVersionWarning
+    warnings.filterwarnings('ignore', category=InconsistentVersionWarning)
+except ImportError:
+    pass
  
 # PROJ fix for Windows conda
 _cprefix = sys.prefix
@@ -862,12 +875,6 @@ try:
 except ImportError:
     MONGODB_AVAILABLE = False
     print("WARNING: mongodb_helper not found -- database features disabled")
- 
-try:
-    from config.regional_config import RegionalConfig
-    REGIONAL_CONFIG_AVAILABLE = True
-except ImportError:
-    REGIONAL_CONFIG_AVAILABLE = False
  
 logging.basicConfig(
     level=logging.INFO,
@@ -1057,275 +1064,189 @@ class SatelliteBasedCreditPipeline:
         }
  
         try:
+            if not self.enable_continuous_data:
+                raise NotImplementedError(
+                    "BASIC/legacy mode is not wired with the current SatelliteDataCollector. "
+                    "Run with mode='ENHANCED'."
+                )
+
             # ============================================================
-            # STEP 1: SATELLITE DATA COLLECTION
+            # STEP 1: SATELLITE DATA COLLECTION (Continuous, season-aligned)
             # ============================================================
-            logger.info("STEP 1: Collecting satellite data...")
-            
-            # 1A: Collect satellite data (v4.0 uses continuous by default)
-            logger.info("  1A: Collecting satellite data...")
+            logger.info("STEP 1: Collecting continuous satellite data...")
             satellite_data = self.satellite_collector.collect_historical_data(
-                latitude=latitude, longitude=longitude,
-                field_area_ha=field_area_ha, geometry=geometry,
+                latitude=latitude,
+                longitude=longitude,
+                field_area_ha=field_area_ha,
+                geometry=geometry,
+                use_continuous=True,
             )
             assessment['satellite_data'] = satellite_data
             assessment['location'] = satellite_data['location']
             assessment['field_area_ha'] = satellite_data['field_area_ha']
- 
+
             clat = satellite_data['location']['latitude']
             clon = satellite_data['location']['longitude']
- 
-            if REGIONAL_CONFIG_AVAILABLE:
-                RegionalConfig.print_region_info(clat, clon)
- 
-            # ── Handle v4.0 continuous format → synthesize seasonal_data ──
-            # The v4.0 SatelliteDataCollector returns continuous_data instead
-            # of seasonal_data. Segment continuous scenes into Kharif/Rabi
-            # seasons for backward compatibility with downstream analyzers.
-            continuous_data = None
-            if 'seasonal_data' not in satellite_data and 'continuous_data' in satellite_data:
-                logger.info("  1B: Segmenting continuous data into seasonal windows...")
-                cont = satellite_data['continuous_data']
-                continuous_data = cont  # Save for crop cycle detection (Step 2B)
-                
-                # Segment continuous scenes into Kharif/Rabi seasons
-                seasonal_data = self._segment_continuous_to_seasons(
-                    cont.get('scenes', [])
-                )
-                satellite_data['seasonal_data'] = seasonal_data
-                
-                season_summary = {}
-                for s in seasonal_data:
-                    key = f"{s['season']} {s['year']}"
-                    season_summary[key] = len(s.get('scenes', []))
-                logger.info(f"     ✓ Created {len(seasonal_data)} seasonal windows from continuous data")
-                for k, v in season_summary.items():
-                    logger.info(f"       {k}: {v} scenes")
-            
-            elif self.enable_continuous_data:
-                # Fallback: If seasonal approach was used, try separate continuous collection
-                logger.info("  1B: Collecting continuous data (3 years)...")
-                try:
-                    today = date.today()
-                    three_years_ago = today - timedelta(days=3 * 365)
-                    
-                    continuous_data = self.satellite_collector.collect_satellite_data(
-                        latitude=clat,
-                        longitude=clon,
-                        start_date=three_years_ago.isoformat(),
-                        end_date=today.isoformat(),
-                        geometry=geometry,
-                        interval_days=7
-                    )
-                    
-                    if continuous_data and 'scenes' in continuous_data:
-                        scene_count = len(continuous_data['scenes'])
-                        total_days = continuous_data.get('total_days', 0)
-                        logger.info(f"     ✓ Collected {scene_count} scenes over {total_days} days")
-                        
-                        if scene_count == 0:
-                            logger.warning("     ⚠ No continuous scenes collected")
-                            continuous_data = None
-                    else:
-                        logger.warning("     ⚠ No continuous data collected")
-                        continuous_data = None
-                        
-                except Exception as e:
-                    logger.error(f"     ✗ Continuous data collection failed: {e}")
-                    logger.debug(traceback.format_exc())
-                    continuous_data = None
-                    assessment['warnings'].append(f"Continuous data collection failed: {e}")
- 
+
+            continuous_data = satellite_data.get('continuous_data') or {}
+            if not continuous_data or not continuous_data.get('scenes'):
+                raise ValueError("No continuous satellite scenes available for crop cycles.")
+
             # Initialize analyzers with location
             self.weather_analyzer = WeatherAnalyzer(
-                latitude=clat, longitude=clon, verbose=False)
+                latitude=clat, longitude=clon, verbose=False
+            )
             self.crop_detector = CropDetector(
                 crop_model_path=self.crop_model_path,
-                latitude=clat, longitude=clon, verbose=False)
- 
+                latitude=clat, longitude=clon, verbose=False
+            )
+
+            # Add continuous data stats
+            assessment['continuous_data_stats'] = {
+                'enabled': True,
+                'scenes_collected': len(continuous_data.get('scenes', [])),
+                'date_range': {
+                    'start': continuous_data.get('start_date'),
+                    'end': continuous_data.get('end_date'),
+                },
+                'total_days': continuous_data.get('total_days', 0),
+            }
+
             # ============================================================
-            # STEP 2: CROP DETECTION (Traditional Seasonal)
+            # STEP 2: Dynamic Crop Cycle Detection
             # ============================================================
-            logger.info("\nSTEP 2: Detecting crops and cropping patterns...")
-            cropping_analysis = self.crop_detector.analyze_cropping_pattern(
-                satellite_data['seasonal_data']
+            logger.info("\nSTEP 2: Detecting crop cycles from continuous data...")
+            crop_cycles = []
+            utilization_metrics = None
+
+            if self.enable_crop_cycles and self.crop_cycle_detector and self.land_utilization_analyzer:
+                if len(continuous_data.get('dates', [])) < 20:
+                    logger.warning(
+                        f"Insufficient continuous data: {len(continuous_data.get('dates', []))} scenes (need 20+)"
+                    )
+                else:
+                    crop_cycles = self.crop_cycle_detector.detect_cycles(
+                        dates=continuous_data['dates'],
+                        ndvi_values=continuous_data['ndvi_values'],
+                        evi_values=continuous_data.get('evi_values'),
+                        ndmi_values=continuous_data.get('ndmi_values'),
+                        scenes=continuous_data.get('scenes'),
+                        sowing_date_hint=sowing_date,
+                        crop_hint=crop_hint,
+                    )
+
+                    if crop_cycles:
+                        logger.info(f"  ✓ Detected {len(crop_cycles)} crop cycles")
+
+                        # LandUtilizationAnalyzer expects datetime objects
+                        start_dt = datetime.strptime(
+                            continuous_data['start_date'], '%Y-%m-%d'
+                        )
+                        end_dt = datetime.strptime(
+                            continuous_data['end_date'], '%Y-%m-%d'
+                        )
+                        utilization_metrics = self.land_utilization_analyzer.analyze(
+                            cycles=crop_cycles,
+                            start_date=start_dt,
+                            end_date=end_dt,
+                        )
+                        if utilization_metrics:
+                            logger.info(
+                                f"  ✓ Land utilization: {utilization_metrics.get('land_utilization_index', 0):.1%}"
+                            )
+
+            # ============================================================
+            # STEP 3: Dynamic Crop Classification (cycle-based)
+            # ============================================================
+            logger.info("\nSTEP 3: Classifying cycles...")
+            cropping_analysis = self.crop_detector.analyze_cycles(
+                crop_cycles=crop_cycles,
+                all_continuous_scenes=continuous_data.get('scenes', []),
             )
             assessment['cropping_analysis'] = cropping_analysis
- 
-            # Get merged seasons for cross-season crops
-            merged_seasons = cropping_analysis.get(
-                'merged_seasons', satellite_data['seasonal_data']
-            )
- 
+
             # ============================================================
-            # STEP 2B: CROP CYCLE DETECTION (Continuous Data) - FIXED
+            # STEP 4: Context-Aware Weather Analysis (cycle-aligned)
             # ============================================================
-            crop_cycles = None
-            utilization_metrics = None
-            
-            if self.enable_crop_cycles and continuous_data is not None:
-                logger.info("\nSTEP 2B: Detecting crop cycles from continuous data...")
-                
-                try:
-                    # Check if we have enough data
-                    if continuous_data and len(continuous_data.get('dates', [])) >= 20:
-                        
-                        # Detect cycles
-                        crop_cycles = self.crop_cycle_detector.detect_cycles(
-                            dates=continuous_data['dates'],
-                            ndvi_values=continuous_data['ndvi_values']
-                        )
-                        
-                        if crop_cycles and len(crop_cycles) > 0:
-                            # Analyze land utilization
-                            utilization_metrics = self.land_utilization_analyzer.analyze(
-                                cycles=crop_cycles,
-                                start_date=continuous_data['start_date'],
-                                end_date=continuous_data['end_date']
-                            )
-                            
-                            logger.info(f"     ✓ Detected {len(crop_cycles)} crop cycles")
-                            logger.info(f"     ✓ Crop intensity: {utilization_metrics.get('crops_per_year', 0):.2f} crops/year")
-                            logger.info(f"     ✓ Land utilization: {utilization_metrics.get('land_utilization_index', 0):.1%}")
-                        else:
-                            logger.warning("     ⚠ No cycles detected from continuous data")
-                            crop_cycles = None
-                            utilization_metrics = None
-                    else:
-                        scene_count = len(continuous_data.get('dates', [])) if continuous_data else 0
-                        logger.warning(f"     ⚠ Insufficient continuous data: {scene_count} scenes (need 20+)")
-                        crop_cycles = None
-                        utilization_metrics = None
-                        
-                except Exception as e:
-                    logger.error(f"     ✗ Cycle detection failed: {e}")
-                    logger.debug(traceback.format_exc())
-                    crop_cycles = None
-                    utilization_metrics = None
-                    assessment['warnings'].append(f"Crop cycle detection failed: {e}")
-            else:
-                logger.debug("Crop cycle detection disabled or no continuous data")
- 
-            # ============================================================
-            # STEP 3: WEATHER ANALYSIS
-            # ============================================================
-            logger.info("\nSTEP 3: Analyzing weather patterns...")
-            weather_analysis = self.weather_analyzer.analyze_seasonal_weather(
-                latitude=clat, longitude=clon,
-                seasonal_data=satellite_data['seasonal_data'],
-                merged_seasons=merged_seasons,
+            logger.info("\nSTEP 4: Analyzing cycle-aligned weather...")
+            weather_analysis = self.weather_analyzer.analyze_cycle_weather(
+                latitude=clat,
+                longitude=clon,
+                crop_cycles_analysis=cropping_analysis,
             )
             assessment['weather_analysis'] = weather_analysis
- 
+
             # ============================================================
-            # STEP 4: PERFORMANCE ANALYSIS
+            # STEP 5: Dynamic Crop Performance Evaluation (cycle-based)
             # ============================================================
-            logger.info("\nSTEP 4: Analyzing crop performance...")
+            logger.info("\nSTEP 5: Evaluating crop performance...")
             performance_analysis = self.performance_analyzer.analyze_performance(
-                season_results=cropping_analysis['season_results'],
-                seasonal_data=satellite_data['seasonal_data'],
+                season_results=cropping_analysis.get('season_results', []),
+                seasonal_data=[],
             )
             assessment['performance_analysis'] = performance_analysis
- 
+
             # ============================================================
-            # STEP 5: CREDIT SCORE
+            # STEP 6: Credit Scoring
             # ============================================================
-            logger.info("\nSTEP 5: Calculating credit score...")
-            
-            # Prepare crop cycles data for scorer
-            crop_cycles_data = None
-            if crop_cycles and utilization_metrics:
-                crop_cycles_data = {
-                    'cycles_count': len(crop_cycles),
-                    'utilization_metrics': utilization_metrics,
-                    'cycles': crop_cycles
-                }
-            
-            if self.enable_advanced_ml:
-                # Advanced ML scorer
-                credit_assessment = self.credit_scorer.calculate_credit_score(
-                    cropping_analysis=cropping_analysis,
-                    performance_analysis=performance_analysis,
-                    weather_analysis=weather_analysis,
-                    farmer_benefits=farmer_benefits,
-                    crop_cycles=crop_cycles_data,
-                )
-            else:
-                # Traditional rule-based scorer
-                credit_assessment = self.credit_scorer.calculate_credit_score(
-                    cropping_analysis=cropping_analysis,
-                    performance_analysis=performance_analysis,
-                    weather_analysis=weather_analysis,
-                    farmer_benefits=farmer_benefits,
-                )
-            
-            assessment['credit_assessment'] = credit_assessment
- 
-            # ============================================================
-            # STEP 6: CREDIT LIMIT + RECOMMENDATIONS - FIXED
-            # ============================================================
-            logger.info("\nSTEP 6: Generating credit recommendations...")
-            
-            # Prepare crop detected info
-            crop_detected = {
-                'dominant_crop': cropping_analysis.get('dominant_crop', 'Unknown'),
-                'crops_detected': cropping_analysis.get('crops_detected', {}),
-                'season_results': cropping_analysis.get('season_results', [])
-            }
-            
-            # Call with correct parameters - FIXED
-            credit_recommendations = self.credit_scorer.calculate_credit_limit(
-                credit_score=credit_assessment['credit_score'],
-                field_area_ha=satellite_data['field_area_ha'],
-                cropping_analysis=cropping_analysis,
-                crop_detected=crop_detected,
-                farmer_benefits=farmer_benefits
+            logger.info("\nSTEP 6: Calculating credit score...")
+
+            avg_cycle_duration_days = (
+                sum(getattr(c, 'duration_days', 0) for c in crop_cycles) / len(crop_cycles)
+                if crop_cycles else 0.0
             )
+
+            crop_cycles_data = {
+                'cycles_count': len(crop_cycles),
+                'n_complete_cycles': performance_analysis.get('n_complete_cycles', 0),
+                'n_active_cycles': performance_analysis.get('n_active_cycles', 0),
+                'avg_cycle_duration_days': avg_cycle_duration_days,
+                'utilization_metrics': utilization_metrics or {},
+            }
+
+            credit_assessment = self.credit_scorer.calculate_credit_score(
+                cropping_analysis=cropping_analysis,
+                performance_analysis=performance_analysis,
+                weather_analysis=weather_analysis,
+                farmer_benefits=farmer_benefits,
+                crop_cycles=crop_cycles_data,
+            )
+            assessment['credit_assessment'] = credit_assessment
+
+            # ============================================================
+            # STEP 7: Credit Limit + Recommendations
+            # ============================================================
+            logger.info("\nSTEP 7: Generating credit recommendations...")
+
+            try:
+                credit_recommendations = self.credit_scorer.calculate_credit_limit(
+                    credit_score=credit_assessment['credit_score'],
+                    field_area_ha=satellite_data['field_area_ha'],
+                    cropping_analysis=cropping_analysis,
+                    performance_analysis=performance_analysis,
+                    farmer_benefits=farmer_benefits,
+                )
+            except TypeError:
+                # Basic scorer fallback (doesn't accept performance_analysis)
+                credit_recommendations = self.credit_scorer.calculate_credit_limit(
+                    credit_score=credit_assessment['credit_score'],
+                    field_area_ha=satellite_data['field_area_ha'],
+                    cropping_analysis=cropping_analysis,
+                    farmer_benefits=farmer_benefits,
+                )
+
             assessment['credit_recommendations'] = credit_recommendations
- 
+
             # ============================================================
-            # ADD CROP CYCLES TO RESULT - FIXED
+            # STEP 8: Add crop cycles to output
             # ============================================================
-            if crop_cycles is not None and utilization_metrics is not None:
-                assessment['crop_cycles'] = {
-                    'detected': True,
-                    'cycles_count': len(crop_cycles),
-                    'utilization_metrics': utilization_metrics,
-                    'method': 'continuous_detection',
-                    'cycles': [
-                        {
-                            'start_date': cycle.start_date,
-                            'end_date': cycle.end_date,
-                            'duration_days': cycle.duration_days,
-                            'peak_ndvi': cycle.peak_ndvi,
-                            'confidence': cycle.confidence
-                        } for cycle in crop_cycles
-                    ] if hasattr(crop_cycles[0], 'start_date') else []
-                }
-            else:
-                assessment['crop_cycles'] = {
-                    'detected': False,
-                    'cycles_count': 0,
-                    'utilization_metrics': {},
-                    'method': 'seasonal_only'
-                }
- 
-            # Add continuous data stats
-            if continuous_data:
-                assessment['continuous_data_stats'] = {
-                    'enabled': True,
-                    'scenes_collected': len(continuous_data.get('scenes', [])),
-                    'date_range': {
-                        'start': continuous_data.get('start_date'),
-                        'end': continuous_data.get('end_date')
-                    },
-                    'total_days': continuous_data.get('total_days', 0)
-                }
-            else:
-                assessment['continuous_data_stats'] = {
-                    'enabled': self.enable_continuous_data,
-                    'scenes_collected': 0
-                }
+            assessment['crop_cycles'] = {
+                'detected': bool(crop_cycles),
+                'cycles_count': len(crop_cycles),
+                'utilization_metrics': utilization_metrics or {},
+                'method': 'continuous_detection',
+                'cycles': [c.to_dict() for c in crop_cycles] if crop_cycles else [],
+            }
  
             # ============================================================
             # FINALIZE
@@ -1406,72 +1327,6 @@ class SatelliteBasedCreditPipeline:
         
         return results
  
-    # ------------------------------------------------------------------
-    # Helper: Convert continuous data → seasonal windows
-    # ------------------------------------------------------------------
-
-    def _segment_continuous_to_seasons(self, scenes: List[Dict]) -> List[Dict]:
-        """
-        Segment a flat list of continuous scenes into Kharif/Rabi season dicts.
-
-        Each scene dict must have a 'date' key (YYYY-MM-DD string).
-        Kharif: Jun 1 – Nov 30
-        Rabi:   Dec 1 – May 31 (Dec dates belong to the NEXT year's Rabi)
-
-        Returns:
-            List of season dicts with keys:
-                season, year, start_date, end_date, scenes
-        """
-        from collections import defaultdict
-        from datetime import datetime as dt
-
-        buckets: Dict[tuple, List[Dict]] = defaultdict(list)
-
-        for scene in scenes:
-            date_str = scene.get('date', '')
-            if not date_str:
-                continue
-            try:
-                d = dt.strptime(date_str, '%Y-%m-%d') if isinstance(date_str, str) else date_str
-            except (ValueError, TypeError):
-                continue
-
-            month = d.month
-            year = d.year
-
-            if 6 <= month <= 11:
-                # Kharif: Jun–Nov of the same year
-                buckets[('kharif', year)].append(scene)
-            elif month == 12:
-                # Dec belongs to the Rabi of the NEXT calendar year
-                buckets[('rabi', year + 1)].append(scene)
-            else:
-                # Jan–May: Rabi of the same year
-                buckets[('rabi', year)].append(scene)
-
-        # Build season dicts sorted chronologically
-        seasonal_data = []
-        for (season, year), season_scenes in sorted(buckets.items(), key=lambda x: (x[0][1], 0 if x[0][0] == 'kharif' else 1)):
-            # Sort scenes within each season by date
-            season_scenes.sort(key=lambda s: s.get('date', ''))
-
-            if season == 'kharif':
-                start_date = f"{year}-06-01"
-                end_date = f"{year}-11-30"
-            else:  # rabi
-                start_date = f"{year - 1}-12-01"
-                end_date = f"{year}-05-31"
-
-            seasonal_data.append({
-                'season': season,
-                'year': year,
-                'start_date': start_date,
-                'end_date': end_date,
-                'scenes': season_scenes,
-            })
-
-        return seasonal_data
-
     # ------------------------------------------------------------------
     # Helper methods
     # ------------------------------------------------------------------

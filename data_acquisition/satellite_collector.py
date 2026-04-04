@@ -44,12 +44,11 @@
 #     print("⚠ Satellite libraries not available")
 
 # try:
-#     from config.regional_config import RegionalConfig
-#     REGIONAL_CONFIG_AVAILABLE = True
+#     #     REGIONAL_CONFIG_AVAILABLE = True
 # except ImportError:
 #     REGIONAL_CONFIG_AVAILABLE = False
 
-# from config.pipeline_config import PipelineConfig
+# from config import PipelineConfig
 # from utils.geometry_utils import GeometryUtils
 # from utils.data_processing import DataProcessor
 
@@ -1229,11 +1228,13 @@ WORKFLOW:
 
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Any, Dict, List, Tuple, Optional, Union
 import logging
 import gc
+import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
@@ -1246,15 +1247,14 @@ try:
     SATELLITE_AVAILABLE = True
 except ImportError:
     SATELLITE_AVAILABLE = False
-    print("⚠ Satellite libraries not available")
+    print("WARNING: Satellite libraries not available")
 
 try:
-    from config.regional_config import RegionalConfig
-    REGIONAL_CONFIG_AVAILABLE = True
+        REGIONAL_CONFIG_AVAILABLE = True
 except ImportError:
     REGIONAL_CONFIG_AVAILABLE = False
 
-from config.pipeline_config import PipelineConfig
+from config import PipelineConfig
 from utils.geometry_utils import GeometryUtils
 from utils.data_processing import DataProcessor
 
@@ -1281,11 +1281,14 @@ class SatelliteDataCollector:
             band: info['resolution']
             for band, info in PipelineConfig.SENTINEL2_BANDS.items()
         }
-
         # Cloud thresholds - season-adaptive
         self.max_cloud_kharif = 80  # Monsoon - more lenient
         self.max_cloud_rabi = 60    # Dry season - stricter
         self.max_cloud_continuous = 70  # Continuous mode - balanced
+
+        # GDAL emits TIFF tile noise at INFO during remote COG partial reads; keep our logs readable.
+        logging.getLogger("rasterio._env").setLevel(logging.WARNING)
+        logging.getLogger("rasterio").setLevel(logging.WARNING)
 
         logger.info("✔ SatelliteDataCollector v4.0 UPGRADED initialized")
         logger.info(f"  DEFAULT MODE: Continuous 3-year time-series")
@@ -1361,32 +1364,82 @@ class SatelliteDataCollector:
         if not GeometryUtils.validate_bbox(bbox):
             raise ValueError(f"Invalid bounding box: {bbox}")
 
-        # ── Calculate date range ───────────────────────────────────────────
+        # ── Calculate date range (season-aligned start) ───────────────────
         today = date.today()
-        three_years_ago = today - timedelta(days=3 * 365)
-        start_date = three_years_ago.strftime('%Y-%m-%d')
+        # Snap back to the start of the nearest past agricultural season.
+        # This guarantees we always start at a clean season boundary rather
+        # than mid-cycle, which would give us a truncated/misleading NDVI curve.
+        snapped_start = self._snap_to_season_start(today, lookback_years=3)
+        start_date = snapped_start.strftime('%Y-%m-%d')
         end_date = today.strftime('%Y-%m-%d')
-        
-        logger.info(f"Date range: {start_date} → {end_date}")
+
+        total_days_approx = (today - snapped_start).days
+        logger.info(f"Date range: {start_date} → {end_date}  (~{total_days_approx} days)")
+        logger.info(f"  (Season-aligned: snapped to nearest season start for complete cycles)")
         logger.info(f"BBox: {[round(v, 5) for v in bbox]}")
 
         # ── Search for all scenes in 3-year period ─────────────────────────
-        logger.info("\nSearching for satellite scenes...")
-        candidates = self._search_scenes_continuous(bbox, start_date, end_date)
-        logger.info(f"Found {len(candidates)} candidate scenes")
+        split_years = bool(getattr(PipelineConfig, "SATELLITE_STAC_SPLIT_BY_YEAR", True))
+        logger.info(
+            "\nSearching for satellite scenes..."
+            + (" (parallel by calendar year)" if split_years else "")
+        )
+        if split_years:
+            candidates = self._search_scenes_multi_year_parallel(bbox, start_date, end_date)
+        else:
+            candidates = self._search_scenes_continuous(bbox, start_date, end_date)
+        logger.info(f"Found {len(candidates)} candidate scenes (before same-day dedupe)")
+        candidates = self._deduplicate_scenes_by_day(candidates)
 
         if not candidates:
             logger.warning("No satellite data available for the period")
             return self._empty_continuous_result(centroid_lat, centroid_lon, field_area)
 
-        # ── Select scenes with temporal distribution ───────────────────────
-        target_scenes = min(150, max(30, len(candidates) // 10))
-        selected = self._select_scenes_temporal_distribution(candidates, target_scenes)
-        logger.info(f"Selected {len(selected)} scenes (target: {target_scenes})")
+        # ── Select scenes: one best (lowest cloud) per N-day interval ───────
+        n_cand = len(candidates)
+        interval = max(1, int(getattr(PipelineConfig, "CONTINUOUS_SCENE_INTERVAL_DAYS", 10)))
+        legacy = bool(getattr(PipelineConfig, "CONTINUOUS_LEGACY_SCENE_SUBSAMPLE", False))
+        if legacy:
+            tmin = int(getattr(PipelineConfig, "CONTINUOUS_SCENE_TARGET_MIN", 30))
+            tmax = int(getattr(PipelineConfig, "CONTINUOUS_SCENE_TARGET_MAX", 500))
+            target_scenes = min(tmax, max(tmin, n_cand))
+            selected = self._select_scenes_temporal_distribution(candidates, target_scenes)
+            logger.info(
+                f"Selected {len(selected)} scenes (legacy temporal subsample, "
+                f"target={target_scenes}, unique_dates={n_cand})"
+            )
+        else:
+            selected = self._select_best_scene_per_interval(
+                candidates, snapped_start, today, interval_days=interval
+            )
+            est_bins = self._estimate_interval_bin_count(snapped_start, today, interval)
+            logger.info(
+                f"Selected {len(selected)} scenes (best cloud per {interval}d bin; "
+                f"~{est_bins} bins over range, {n_cand} unique-day candidates)"
+            )
 
-        # ── Download and process scenes in PARALLEL ────────────────────────
-        logger.info(f"\nDownloading and processing {len(selected)} scenes in parallel...")
-        processed_scenes = self._download_scenes_parallel(selected, bbox)
+        if not selected:
+            logger.warning("No scenes selected for download after binning; check interval and STAC coverage.")
+            return self._empty_continuous_result(centroid_lat, centroid_lon, field_area)
+
+        # ── Download / extract indices (default: by calendar year, one scene at a time) ──
+        batched = bool(getattr(PipelineConfig, "CONTINUOUS_DOWNLOAD_BATCH_BY_YEAR", True))
+        scene_parallel = bool(getattr(PipelineConfig, "SATELLITE_DOWNLOAD_SCENE_PARALLEL", False))
+        if batched:
+            band_par = bool(getattr(PipelineConfig, "SATELLITE_BAND_DOWNLOAD_PARALLEL", False))
+            logger.info(
+                f"\nDownloading / processing {len(selected)} scenes: "
+                f"by calendar year, "
+                f"{'parallel per scene (not recommended)' if scene_parallel else 'one scene at a time'}, "
+                f"{'parallel band reads per scene' if band_par else 'sequential band reads per scene'}..."
+            )
+            processed_scenes = self._download_scenes_parallel_batched_by_year(selected, bbox)
+        elif scene_parallel:
+            logger.info(f"\nDownloading / processing {len(selected)} scenes (single parallel pool)...")
+            processed_scenes = self._download_scenes_parallel(selected, bbox)
+        else:
+            logger.info(f"\nDownloading / processing {len(selected)} scenes (fully sequential)...")
+            processed_scenes = self._download_scenes_sequential(selected, bbox, label="")
         
         if not processed_scenes:
             logger.error("No scenes could be processed successfully")
@@ -1399,6 +1452,9 @@ class SatelliteDataCollector:
         ndvi_values = [s['indices'].get('NDVI_mean', np.nan) for s in processed_scenes]
         evi_values = [s['indices'].get('EVI_mean', np.nan) for s in processed_scenes]
         ndmi_values = [s['indices'].get('NDMI_mean', np.nan) for s in processed_scenes]
+        psri_values = [s['indices'].get('PSRI_mean', np.nan) for s in processed_scenes]
+        ndre_values = [s['indices'].get('NDRE_mean', np.nan) for s in processed_scenes]
+        ndwi_values = [s['indices'].get('NDWI_mean', np.nan) for s in processed_scenes]
 
         # ── Summary stats ──────────────────────────────────────────────────
         valid_ndvi = [v for v in ndvi_values if not np.isnan(v)]
@@ -1408,7 +1464,7 @@ class SatelliteDataCollector:
             logger.info(f"  Mean: {np.mean(valid_ndvi):.3f}")
             logger.info(f"  Scenes with valid NDVI: {len(valid_ndvi)}/{len(ndvi_values)}")
 
-        total_days = (today - three_years_ago).days
+        total_days = (today - snapped_start).days
         
         logger.info(f"\n{'='*70}")
         logger.info(f"CONTINUOUS COLLECTION COMPLETE")
@@ -1429,6 +1485,9 @@ class SatelliteDataCollector:
                 'ndvi_values': ndvi_values,
                 'evi_values': evi_values,
                 'ndmi_values': ndmi_values,
+                'psri_values': psri_values,
+                'ndre_values': ndre_values,
+                'ndwi_values': ndwi_values,
                 'start_date': start_date,
                 'end_date': end_date,
                 'total_days': total_days,
@@ -1444,22 +1503,113 @@ class SatelliteDataCollector:
         }
 
     # =========================================================================
-    # PARALLEL DOWNLOADING (10x Speed Improvement)
+    # SEASON-ALIGNED DATE SNAPPING
     # =========================================================================
+
+    @staticmethod
+    def _snap_to_season_start(reference_date: date, lookback_years: int = 3) -> date:
+        """
+        Snap a reference date (today) back to the start of the nearest
+        complete agricultural season that lies at least `lookback_years` ago.
+
+        Indian crop calendar season starts:
+          Kharif : June  1  (Jun 1 – Oct 15)
+          Rabi   : Nov  15  (Nov 15 – May 15)
+
+        Why this matters:
+          A plain "today - 3 years" calculation may fall mid-season (e.g. Feb).
+          Starting mid-Rabi means we miss the first half of that cycle, causing
+          the NDVI curve to look like a truncated/anomalous event. By snapping
+          to the nearest past season start we get complete, interpretable cycles.
+
+        Returns:
+            date: Season-aligned start date (≥ lookback_years back).
+        """
+        # Season starts in (month, day) format
+        SEASON_STARTS = [
+            (6, 1),   # Kharif start
+            (11, 15), # Rabi start
+        ]
+
+        # Build a list of all season-start dates from (lookback_years+1) years
+        # back to today, then find the one that is at least lookback_years back
+        # and most recent.
+        cutoff = reference_date - timedelta(days=lookback_years * 365)
+
+        candidates = []
+        for year_offset in range(lookback_years + 2):
+            yr = reference_date.year - year_offset
+            for month, day in SEASON_STARTS:
+                try:
+                    candidate = date(yr, month, day)
+                    if candidate <= cutoff:
+                        candidates.append(candidate)
+                except ValueError:
+                    pass  # shouldn't happen with fixed month/day
+
+        # Return the most recent candidate that is still at/before the cutoff
+        # (to guarantee at least lookback_years of data)
+        if candidates:
+            return max(candidates)
+
+        # Ultimate fallback: plain arithmetic
+        return cutoff
+
+    # =========================================================================
+    # DOWNLOAD: optional parallel across years; scenes sequential by default
+    # =========================================================================
+
+    def _download_scenes_sequential(
+        self,
+        items: List[Any],
+        bbox: List[float],
+        label: str = "",
+    ) -> List[Dict]:
+        """
+        Process scenes one after another (one COG window read chain at a time).
+        """
+        out: List[Dict] = []
+        n = len(items)
+        if n == 0:
+            return out
+        started = time.time()
+        tag = f"year {label}" if label else "batch"
+        for i, item in enumerate(items):
+            r = self._download_and_process_single_scene(item, bbox, i, n)
+            if r is not None:
+                out.append(r)
+            if (i + 1) % 10 == 0 or (i + 1) == n:
+                elapsed = time.time() - started
+                logger.info(
+                    f"  [{tag}] scene {i + 1}/{n} (ok={len(out)}, {elapsed:.1f}s elapsed)"
+                )
+        return out
 
     def _download_scenes_parallel(
         self,
         items: List,
         bbox: List[float],
-        max_workers: int = 8
+        max_workers: Optional[int] = None
     ) -> List[Dict]:
         """
         Download and process scenes in parallel using ThreadPoolExecutor.
-        This provides ~10x speed improvement over sequential downloading.
+        Worker count is capped to reduce GDAL/Azure flake rate; override via
+        PipelineConfig.SATELLITE_DOWNLOAD_MAX_WORKERS (0 = auto).
         """
         processed_scenes = []
-        
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        cfg_workers = PipelineConfig.SATELLITE_DOWNLOAD_MAX_WORKERS
+        if max_workers is not None:
+            mw = max_workers
+        elif cfg_workers and cfg_workers > 0:
+            mw = cfg_workers
+        else:
+            cpu = os.cpu_count() or 4
+            mw = min(24, max(4, cpu * 3))
+
+        logger.info(f"Parallel scene download: max_workers={mw}")
+
+        started_at = time.time()
+        with ThreadPoolExecutor(max_workers=mw) as executor:
             # Submit all download tasks
             future_to_item = {
                 executor.submit(self._download_and_process_single_scene, item, bbox, i, len(items)): item
@@ -1467,19 +1617,153 @@ class SatelliteDataCollector:
             }
             
             # Collect results as they complete
+            completed = 0
+            success = 0
             for future in as_completed(future_to_item):
+                completed += 1
                 try:
                     result = future.result()
                     if result is not None:
                         processed_scenes.append(result)
+                        success += 1
                 except Exception as e:
                     logger.warning(f"Scene processing failed: {str(e)[:60]}")
                     continue
+                if completed % 10 == 0 or completed == len(items):
+                    elapsed = max(1e-6, time.time() - started_at)
+                    rate = completed / elapsed
+                    logger.info(
+                        f"  progress {completed}/{len(items)} complete "
+                        f"(valid={success}, rate={rate:.2f} scenes/s)"
+                    )
         
         # Sort by date
         processed_scenes.sort(key=lambda s: s['date'])
         
         return processed_scenes
+
+    def _download_scenes_parallel_batched_by_year(
+        self,
+        items: List[Any],
+        bbox: List[float],
+    ) -> List[Dict]:
+        """
+        Group STAC items by calendar year for logging, then process **strictly
+        sequentially**: one year after another, one scene at a time within each
+        year. Parallel year workers were removed — concurrent COG reads routinely
+        caused slow runs and GDAL ``TIFFReadEncodedTile`` / partial-byte errors.
+
+        Set ``SATELLITE_DOWNLOAD_SCENE_PARALLEL=True`` for an experimental within-year
+        thread pool only (still one year at a time).
+        """
+        if not items:
+            return []
+
+        by_year: Dict[int, List[Any]] = {}
+        for it in items:
+            dt = getattr(it, "datetime", None)
+            if not dt:
+                continue
+            by_year.setdefault(dt.year, []).append(it)
+
+        years = sorted(by_year.keys())
+        if not years:
+            return []
+
+        scene_parallel = bool(getattr(PipelineConfig, "SATELLITE_DOWNLOAD_SCENE_PARALLEL", False))
+
+        if len(years) == 1:
+            yr = years[0]
+            batch = by_year[yr]
+            if scene_parallel:
+                return self._download_scenes_parallel(batch, bbox)
+            return self._download_scenes_sequential(batch, bbox, label=str(yr))
+
+        merged: List[Dict] = []
+        pause = float(getattr(PipelineConfig, "SATELLITE_INTER_YEAR_PAUSE_SEC", 0) or 0)
+
+        for yi, yr in enumerate(years):
+            batch = by_year[yr]
+            if scene_parallel:
+                logger.info(f"  Year {yr}: {len(batch)} scene(s), parallel per-scene pool...")
+                merged.extend(self._download_scenes_parallel(batch, bbox))
+            else:
+                logger.info(f"  Year {yr}: {len(batch)} scene(s), one-by-one...")
+                merged.extend(self._download_scenes_sequential(batch, bbox, label=str(yr)))
+            if pause > 0 and yi < len(years) - 1:
+                time.sleep(pause)
+
+        merged.sort(key=lambda s: s["date"])
+        return merged
+
+    @staticmethod
+    def _yearly_date_segments(d0: date, d1: date) -> List[Tuple[date, date]]:
+        """Split [d0, d1] into contiguous calendar-year segments."""
+        if d0 > d1:
+            return []
+        out: List[Tuple[date, date]] = []
+        cur = d0
+        while cur <= d1:
+            y = cur.year
+            end_of_year = date(y, 12, 31)
+            seg_end = min(end_of_year, d1)
+            out.append((cur, seg_end))
+            if seg_end >= d1:
+                break
+            cur = date(y + 1, 1, 1)
+        return out
+
+    def _search_scenes_multi_year_parallel(
+        self,
+        bbox: List[float],
+        start_date: str,
+        end_date: str,
+    ) -> List:
+        """
+        Run one STAC query per calendar-year segment. Queries run in parallel
+        (bounded by SATELLITE_STAC_YEAR_SEARCH_WORKERS) so long lookbacks do not
+        rely on a single huge search response.
+        """
+        d0 = datetime.strptime(start_date, "%Y-%m-%d").date()
+        d1 = datetime.strptime(end_date, "%Y-%m-%d").date()
+        windows = self._yearly_date_segments(d0, d1)
+        if not windows:
+            return []
+
+        logger.info(
+            "STAC year segments: "
+            + ", ".join(f"{a.isoformat()}→{b.isoformat()}" for a, b in windows)
+        )
+
+        def fetch_segment(seg: Tuple[date, date]) -> List:
+            a, b = seg
+            return self._search_scenes_continuous(
+                bbox,
+                a.strftime("%Y-%m-%d"),
+                b.strftime("%Y-%m-%d"),
+            )
+
+        if len(windows) == 1:
+            return fetch_segment(windows[0])
+
+        nw = int(getattr(PipelineConfig, "SATELLITE_STAC_YEAR_SEARCH_WORKERS", 4))
+        nw = max(1, min(nw, len(windows)))
+
+        merged: List = []
+        if nw == 1:
+            for w in windows:
+                merged.extend(fetch_segment(w))
+        else:
+            with ThreadPoolExecutor(max_workers=nw) as ex:
+                futures = [ex.submit(fetch_segment, w) for w in windows]
+                for fut in as_completed(futures):
+                    try:
+                        merged.extend(fut.result())
+                    except Exception as e:
+                        logger.warning(f"Parallel STAC segment failed: {e}")
+
+        merged.sort(key=lambda i: i.datetime if i.datetime else datetime.min)
+        return merged
 
     def _download_and_process_single_scene(
         self,
@@ -1489,7 +1773,8 @@ class SatelliteDataCollector:
         total_scenes: int
     ) -> Optional[Dict]:
         """
-        Download and process a single scene (called in parallel).
+        Download band windows for one STAC item and compute index statistics.
+        Used from sequential loops and optionally from a per-scene thread pool.
         """
         try:
             scene_date = item.datetime.strftime('%Y-%m-%d') if item.datetime else None
@@ -1497,10 +1782,6 @@ class SatelliteDataCollector:
                 return None
             
             cloud_pct = float(item.properties.get('eo:cloud_cover', 0))
-            
-            # Log progress every 10 scenes
-            if scene_num % 10 == 0:
-                logger.info(f"  [{scene_num+1:03d}/{total_scenes}] {scene_date} | cloud={cloud_pct:.1f}%")
             
             # Download bands
             band_data = self._download_bands(item, bbox)
@@ -1538,22 +1819,126 @@ class SatelliteDataCollector:
     ) -> List:
         """
         Search for scenes in continuous mode with appropriate cloud threshold.
-        FIXED: Now properly applies cloud limit.
+        Retries transient STAC/API failures (see SATELLITE_STAC_SEARCH_RETRIES).
         """
-        try:
-            search = self.catalog.search(
-                collections=[PipelineConfig.SENTINEL2_COLLECTION],
-                bbox=bbox,
-                datetime=f"{start_date}/{end_date}",
-                query={"eo:cloud_cover": {"lt": self.max_cloud_continuous}},
-                limit=500,  # Increased for 3-year span
-            )
-            items = list(search.get_items())
-            items.sort(key=lambda i: i.datetime if i.datetime else datetime.min)
-            return items
-        except Exception as e:
-            logger.error(f"Scene search failed: {str(e)}")
+        retries = max(0, int(getattr(PipelineConfig, "SATELLITE_STAC_SEARCH_RETRIES", 0)))
+        delay = float(getattr(PipelineConfig, "SATELLITE_STAC_SEARCH_RETRY_DELAY_SEC", 2.0))
+
+        for attempt in range(retries + 1):
+            try:
+                search = self.catalog.search(
+                    collections=[PipelineConfig.SENTINEL2_COLLECTION],
+                    bbox=bbox,
+                    datetime=f"{start_date}/{end_date}",
+                    query={"eo:cloud_cover": {"lt": self.max_cloud_continuous}},
+                    limit=500,  # page size; items() paginates across all matches
+                )
+                items = list(search.items())
+                items.sort(key=lambda i: i.datetime if i.datetime else datetime.min)
+                return items
+            except Exception as e:
+                if attempt < retries:
+                    logger.warning(
+                        f"STAC search retry {attempt + 1}/{retries} "
+                        f"({start_date}..{end_date}): {e}"
+                    )
+                    time.sleep(delay * (attempt + 1))
+                    continue
+                logger.error(f"Scene search failed ({start_date}..{end_date}): {e}")
+                return []
+        return []
+
+    def _deduplicate_scenes_by_day(self, items: List) -> List:
+        """
+        Keep only one best scene per calendar day (lowest cloud cover).
+        STAC often returns overlapping tiles for the same date/field; de-duplicating
+        by day preserves temporal continuity while avoiding redundant downloads.
+        """
+        if not items:
             return []
+
+        best_by_day: Dict[str, object] = {}
+        for it in items:
+            dt = getattr(it, "datetime", None)
+            if not dt:
+                continue
+            day = dt.strftime("%Y-%m-%d")
+            cloud = float(it.properties.get("eo:cloud_cover", 100))
+            prev = best_by_day.get(day)
+            if prev is None:
+                best_by_day[day] = it
+            else:
+                prev_cloud = float(prev.properties.get("eo:cloud_cover", 100))
+                if cloud < prev_cloud:
+                    best_by_day[day] = it
+
+        deduped = list(best_by_day.values())
+        deduped.sort(key=lambda i: i.datetime if i.datetime else datetime.min)
+        dropped = max(0, len(items) - len(deduped))
+        if dropped > 0:
+            logger.info(
+                f"Deduplicated same-day scenes: {len(items)} -> {len(deduped)} "
+                f"(dropped {dropped})"
+            )
+        return deduped
+
+    @staticmethod
+    def _observation_date(item) -> Optional[date]:
+        """Calendar date (UTC) of the STAC item observation."""
+        dt = getattr(item, "datetime", None)
+        if not dt:
+            return None
+        if getattr(dt, "tzinfo", None) is not None:
+            dt = dt.astimezone(timezone.utc)
+        return dt.date()
+
+    @staticmethod
+    def _estimate_interval_bin_count(range_start: date, range_end: date, interval_days: int) -> int:
+        """Approximate number of fixed-width bins from range_start through range_end (inclusive)."""
+        if interval_days < 1 or range_start > range_end:
+            return 0
+        n = 0
+        cur = range_start
+        while cur <= range_end:
+            n += 1
+            cur += timedelta(days=interval_days)
+        return n
+
+    def _select_best_scene_per_interval(
+        self,
+        candidates: List,
+        range_start: date,
+        range_end: date,
+        interval_days: int = 10,
+    ) -> List:
+        """
+        Partition [range_start, range_end] into consecutive ``interval_days`` windows.
+        In each window, keep at most one scene: the candidate with lowest eo:cloud_cover.
+        Expect ~36–37 points/year for a 10-day step (~110 over 3 years if every bin has data).
+        """
+        if not candidates or interval_days < 1 or range_start > range_end:
+            return []
+
+        selected: List = []
+        cur = range_start
+        while cur <= range_end:
+            bin_end = cur + timedelta(days=interval_days)
+            pool = [
+                c for c in candidates
+                if (d := self._observation_date(c)) is not None
+                and cur <= d <= range_end
+                and d < bin_end
+            ]
+            if pool:
+                best = min(
+                    pool,
+                    key=lambda c: float(c.properties.get("eo:cloud_cover", 100)),
+                )
+                selected.append(best)
+            cur = bin_end
+
+        selected.sort(key=lambda c: c.datetime if c.datetime else datetime.min)
+        return selected
 
     def _select_scenes_temporal_distribution(
         self,
@@ -1618,17 +2003,23 @@ class SatelliteDataCollector:
     # BAND DOWNLOAD & INDEX CALCULATION (FIXED)
     # =========================================================================
 
-    def _download_bands(self, item, bbox_wgs84, target_resolution=10) -> Dict:
+    def _fetch_one_band_array(
+        self,
+        item,
+        bbox_wgs84: List[float],
+        band: str,
+        target_resolution: int = 10,
+    ) -> Optional[np.ndarray]:
         """
-        Download and validate satellite bands.
-        FIXED: Better validation for small fields and 20m bands.
+        Read and validate a single band COG window. Returns None if missing or invalid.
+        Each band is a separate HTTPS COG — reads can run in parallel (see _download_bands).
         """
-        band_data = {}
-        
-        for band in self.band_info:
-            if band not in item.assets:
-                continue
-                
+        if band not in item.assets:
+            return None
+        retries = max(0, int(getattr(PipelineConfig, "SATELLITE_BAND_READ_RETRIES", 0)))
+        delay = float(getattr(PipelineConfig, "SATELLITE_BAND_RETRY_DELAY_SEC", 0.5))
+
+        for attempt in range(retries + 1):
             try:
                 asset = planetary_computer.sign(item.assets[band])
                 with rasterio.open(asset.href) as src:
@@ -1638,7 +2029,7 @@ class SatelliteDataCollector:
                     window = window.intersection(src_win)
 
                     if window.width <= 0 or window.height <= 0:
-                        continue
+                        return None
 
                     window = Window(
                         int(np.floor(window.col_off)),
@@ -1646,39 +2037,86 @@ class SatelliteDataCollector:
                         int(np.ceil(window.width)),
                         int(np.ceil(window.height)),
                     )
-                    
-                    # Relax size requirements for 20m bands on small fields
+
                     native_res = self.band_info.get(band, 20)
                     min_window_size = 2 if native_res == 20 else 5
-                    
                     if window.width < min_window_size or window.height < min_window_size:
-                        continue
-                        
+                        return None
+
                     out_h, out_w = DataProcessor.resample_to_resolution(
                         np.zeros((int(window.height), int(window.width))),
                         native_res, target_resolution,
                     )
-                    
                     data = src.read(
-                        1, window=window,
+                        1,
+                        window=window,
                         out_shape=(out_h, out_w),
                         resampling=Resampling.bilinear,
                     ).astype(np.float32)
-
                     data = DataProcessor.clean_satellite_data(data, nodata_value=src.nodata)
-                    
-                    # Adaptive validation for small fields with 20m bands
+
                     if native_res == 20 and (out_h * out_w) < 10:
-                        min_ratio = 0.05  # 5% valid pixels OK for small fields
+                        min_ratio = 0.05
                     else:
                         min_ratio = PipelineConfig.MIN_VALID_PIXEL_RATIO
-                    
                     if DataProcessor.validate_band_data(data, min_valid_ratio=min_ratio):
-                        band_data[band] = data
-                        
+                        return data
+                    return None
             except Exception as e:
-                continue
-        
+                if attempt < retries:
+                    time.sleep(delay * (attempt + 1))
+                    continue
+                logger.warning(
+                    f"Band read failed after {attempt + 1} attempt(s); "
+                    f"skipping band={band} item={getattr(item, 'id', 'unknown')}: {e}"
+                )
+                return None
+        return None
+
+    def _download_bands(self, item, bbox_wgs84, target_resolution=10) -> Dict:
+        """
+        Load all bands needed for vegetation indices.
+
+        Sentinel-2 STAC items expose one COG URL per band; there is no single combined asset.
+        Indices are computed once per scene after all bands are in memory — not one download
+        pass per index.
+        """
+        band_data: Dict[str, np.ndarray] = {}
+        # All bands needed for indices: fetch B11 in parallel with reflectance (separate COG).
+        parallel_bands = ("B02", "B03", "B04", "B05", "B06", "B08", "B11")
+        use_parallel = bool(getattr(PipelineConfig, "SATELLITE_BAND_DOWNLOAD_PARALLEL", False))
+        nw = int(getattr(PipelineConfig, "SATELLITE_BAND_DOWNLOAD_MAX_WORKERS", 6))
+        nw = max(1, nw)
+
+        if use_parallel and nw > 1:
+            workers = min(nw, len(parallel_bands))
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                futures = {
+                    ex.submit(
+                        self._fetch_one_band_array, item, bbox_wgs84, b, target_resolution
+                    ): b
+                    for b in parallel_bands
+                }
+                for fut in as_completed(futures):
+                    b = futures[fut]
+                    try:
+                        arr = fut.result()
+                        if arr is not None:
+                            band_data[b] = arr
+                    except Exception as e:
+                        logger.debug(f"Band {b} parallel fetch failed: {e}")
+        else:
+            for b in parallel_bands:
+                arr = self._fetch_one_band_array(item, bbox_wgs84, b, target_resolution)
+                if arr is not None:
+                    band_data[b] = arr
+
+        # NDMI fallback when B11 missing or invalid for this window.
+        if "B11" not in band_data:
+            swir12 = self._fetch_one_band_array(item, bbox_wgs84, "B12", target_resolution)
+            if swir12 is not None:
+                band_data["B12"] = swir12
+
         return band_data
 
     def _calculate_indices(self, bands: Dict) -> Dict:
@@ -1814,6 +2252,9 @@ class SatelliteDataCollector:
                 'ndvi_values': [],
                 'evi_values': [],
                 'ndmi_values': [],
+                'psri_values': [],
+                'ndre_values': [],
+                'ndwi_values': [],
                 'scene_count': 0,
             },
             'collection_date': datetime.now().isoformat(),

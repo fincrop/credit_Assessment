@@ -82,7 +82,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from pymongo import ASCENDING, DESCENDING, MongoClient
-from pymongo.errors import ConnectionFailure, DuplicateKeyError
+from pymongo.errors import ConnectionFailure, DuplicateKeyError, OperationFailure
 
 logger = logging.getLogger(__name__)
 
@@ -367,35 +367,66 @@ class MongoDBHelper:
             logger.error(f"❌ MongoDB error: {e}")
             raise
 
+    @staticmethod
+    def _create_index_safe(collection, keys, **kwargs) -> None:
+        """
+        Create index; ignore MongoDB code 85 (IndexOptionsConflict) when the same
+        key pattern already exists under another name (e.g. legacy status_index).
+        """
+        try:
+            collection.create_index(keys, **kwargs)
+        except OperationFailure as e:
+            if getattr(e, "code", None) == 85:
+                logger.debug(
+                    "Skipping index %s: same keys already indexed (%s)",
+                    kwargs.get("name", keys),
+                    getattr(e, "details", {}).get("errmsg", str(e))[:120],
+                )
+            else:
+                raise
+
     def _ensure_indexes(self):
         try:
             # farm_info
-            self.farms.create_index(
-                [('farmer_id', ASCENDING)], unique=True, name='farmer_id_unique'
+            self._create_index_safe(
+                self.farms,
+                [('farmer_id', ASCENDING)],
+                unique=True,
+                name='farmer_id_unique',
             )
-            self.farms.create_index([('status', ASCENDING)], name='status_idx')
+            self._create_index_safe(
+                self.farms, [('status', ASCENDING)], name='status_idx'
+            )
 
             # credit_assessments
-            self.assessments.create_index(
+            self._create_index_safe(
+                self.assessments,
                 [('farmer_id', ASCENDING), ('assessment_date', DESCENDING)],
                 name='farmer_history',
             )
-            self.assessments.create_index(
-                [('risk_category', ASCENDING)], name='risk_category_idx'
+            self._create_index_safe(
+                self.assessments,
+                [('risk_category', ASCENDING)],
+                name='risk_category_idx',
             )
-            self.assessments.create_index(
-                [('credit_score', ASCENDING)], name='credit_score_idx'
+            self._create_index_safe(
+                self.assessments,
+                [('credit_score', ASCENDING)],
+                name='credit_score_idx',
             )
-            self.assessments.create_index(
-                [('assessment_date', DESCENDING)], name='assessment_date_idx'
+            self._create_index_safe(
+                self.assessments,
+                [('assessment_date', DESCENDING)],
+                name='assessment_date_idx',
             )
-            self.assessments.create_index(
+            self._create_index_safe(
+                self.assessments,
                 [('location.region', ASCENDING), ('risk_category', ASCENDING)],
                 name='region_risk_idx',
             )
-            logger.debug("✔ MongoDB indexes verified")
+            logger.debug("MongoDB indexes verified")
         except Exception as e:
-            logger.warning(f"Index creation note: {e}")
+            logger.warning("Index creation note: %s", e)
 
     def is_connected(self) -> bool:
         if not self.client:

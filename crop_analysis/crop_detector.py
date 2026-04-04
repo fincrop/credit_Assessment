@@ -1,29 +1,26 @@
 """
-Crop Detector and Classifier
-=============================
-Detects crop presence and classifies crop types from satellite time-series.
+Crop Detector and Classifier — VERSION 4.0
+============================================
+Design philosophy (v4.0):
+  PRIMARY GOAL: Detect CULTIVATION ACTIVITY and its INTENSITY.
+  SECONDARY GOAL: Identify the crop type (best-effort; never blocks the pipeline).
 
-VERSION 3.0 — Major Updates:
-1. Crop Presence Detection — Temporal Pattern (replaces single peak-NDVI check):
-   - Uses NDVI rise magnitude, fraction of scenes above threshold,
-     temporal variation (CV), and growth arc shape together
-   - Avoids false-positives from cloud-contaminated single scenes
-   - Avoids false-negatives on low-canopy crops (Groundnut, Bajra, Onion)
+Crop classification is now "enrichment-only":
+  - If the ML model predicts a crop with high confidence → great, use it.
+  - If classification fails, is low-confidence, or returns 'Unknown' →
+    all downstream steps (performance analysis, credit scoring) continue
+    using signal-based metrics instead of crop-specific benchmarks.
+  - The cultivation_signal (0–100) measures farming intensity purely from
+    NDVI shape: peak, area under curve, temporal variation, arc quality.
+    This is the primary driver for credit scoring in v4.0.
 
-2. ML Crop Classification — Chronological Features:
-   - Scenes sorted by date BEFORE feature extraction (was random order)
-   - Feature window increased: 15 scenes × 3 indices = 45 features
-   - Time-normalized positions used so model sees relative stage,
-     not absolute scene index
-
-3. Cross-season aware:
-   - Accepts merged_seasons from satellite_collector (cross-season events)
-   - Long-duration / late-sown crops processed as single events
-
-4. Cropping Intensity — Fixed calculation:
-   - Season pair based (Kharif + Rabi = 1 year)
-   - Cross-season crop counted once (not twice)
-   - No artificial "must have both kharif AND rabi" summer bonus
+Key changes from v3.0:
+  1. analyze_cycles() decoupled from fixed kharif/rabi season keys.
+     Cropping intensity computed from actual cycle date spans.
+  2. cultivation_signal added to every season_result.
+  3. ML failures handled gracefully — cycle is NOT dropped.
+  4. dominant_crop and crops_detected populated where possible,
+     left empty/Unknown when not — without affecting credit score.
 """
 
 import numpy as np
@@ -32,13 +29,8 @@ from collections import defaultdict
 from typing import Dict, List, Tuple, Optional
 import logging
 
-try:
-    from config.regional_config import RegionalConfig
-    REGIONAL_CONFIG_AVAILABLE = True
-except ImportError:
-    REGIONAL_CONFIG_AVAILABLE = False
 
-from config.pipeline_config import PipelineConfig
+from config import PipelineConfig
 
 logger = logging.getLogger(__name__)
 
@@ -68,15 +60,9 @@ class CropDetector:
         self.feature_names  = model_data['feature_names']
         self.crop_names     = model_data['crop_names']
 
-        # Regional thresholds
-        if REGIONAL_CONFIG_AVAILABLE and latitude is not None and longitude is not None:
-            self.regional_thresholds = RegionalConfig.get_crop_threshold(latitude, longitude)
-            self.ndvi_threshold      = self.regional_thresholds['min_ndvi']
-            self.region              = RegionalConfig.get_region(latitude, longitude)
-        else:
-            self.regional_thresholds = None
-            self.ndvi_threshold      = PipelineConfig.CROP_DETECTION_NDVI_THRESHOLD
-            self.region              = 'DEFAULT'
+        self.regional_thresholds = None
+        self.ndvi_threshold      = PipelineConfig.CROP_DETECTION_NDVI_THRESHOLD
+        self.region              = 'DEFAULT'
 
         logger.info(f"✔ CropDetector v3.0 initialized  (Region: {self.region})")
         logger.info(f"  NDVI threshold: {self.ndvi_threshold:.2f}  |  "
@@ -215,24 +201,231 @@ class CropDetector:
             'ndvi_threshold_used':   self.ndvi_threshold,
         }
 
+    def analyze_cycles(
+        self,
+        crop_cycles: List[Dict],
+        all_continuous_scenes: List[Dict],
+    ) -> Dict:
+        """
+        Cycle-based crop detection — uses exact detected cycle dates.
+
+        Instead of rigid Kharif/Rabi windows, this method:
+        1. Takes the list of crop cycles from CropCycleDetector
+           (each cycle has 'start_date', 'end_date', 'peak_ndvi', etc.)
+        2. For each cycle, filters the continuous scene list to that exact
+           date window and runs the ML crop classifier on those scenes.
+        3. Returns results in the same format as analyze_cropping_pattern(),
+           ensuring downstream compatibility.
+
+        Args:
+            crop_cycles: list of cycle dicts (start_date, end_date, peak_ndvi,
+                         duration_days, confidence) from CropCycleDetector.
+                         Also accepts objects with .start_date / .end_date attrs.
+            all_continuous_scenes: full 3-year scene list (date + indices).
+
+        Returns:
+            Dict compatible with analyze_cropping_pattern() output.
+        """
+        logger.info(f"\n{'='*70}")
+        logger.info("CYCLE-BASED CROP DETECTION")
+        logger.info(f"  Region: {self.region}  |  NDVI threshold: {self.ndvi_threshold:.2f}")
+        logger.info(f"  Cycles to classify: {len(crop_cycles)}")
+        logger.info(f"{'='*70}")
+
+        # ── Normalise cycle list (accept dict or object) ────────────────────
+        def _get(cyc, key: str):
+            """
+            Read a field from either:
+              - a dict returned by `CropCycle.to_dict()`, or
+              - a CropCycle object (sowing_date/harvest_date dataclass fields).
+            """
+            if isinstance(cyc, dict):
+                return cyc.get(key)
+
+            # CropCycle object compatibility: task wiring uses sowing/harvest,
+            # while this analyzer expects start_date/end_date for filtering.
+            if key == 'start_date':
+                sd = getattr(cyc, 'start_date', None) or getattr(cyc, 'sowing_date', None)
+                return sd.strftime('%Y-%m-%d') if hasattr(sd, 'strftime') else sd
+            if key == 'end_date':
+                hd = getattr(cyc, 'end_date', None) or getattr(cyc, 'harvest_date', None)
+                return hd.strftime('%Y-%m-%d') if hasattr(hd, 'strftime') else hd
+
+            return getattr(cyc, key, None)
+
+        season_results  = []
+        crops_detected  = defaultdict(int)
+        units_with_crops = 0
+
+        for i, cycle in enumerate(crop_cycles, 1):
+            start_str  = _get(cycle, 'start_date')
+            end_str    = _get(cycle, 'end_date')
+            peak_ndvi  = float(_get(cycle, 'peak_ndvi') or 0.0)
+            dur_days   = int(_get(cycle, 'duration_days') or 0)
+            confidence = float(_get(cycle, 'confidence') or 0.0)
+            label      = f"CYCLE {i} [{start_str} → {end_str}]"
+
+            if not start_str or not end_str:
+                continue
+
+            # Filter continuous scenes to this cycle's exact date window
+            cycle_scenes = [
+                s for s in all_continuous_scenes
+                if start_str <= s.get('date', '') <= end_str
+            ]
+
+            logger.info(
+                f"  {label}: {len(cycle_scenes)} scenes  "
+                f"peak_ndvi={peak_ndvi:.3f}  dur={dur_days}d"
+            )
+
+            if len(cycle_scenes) < PipelineConfig.MIN_OBSERVATIONS_PER_SEASON:
+                season_results.append({
+                    'season': f'cycle_{i}', 'year': int(start_str[:4]),
+                    'start_date': start_str, 'end_date': end_str,
+                    'crop_detected': False, 'predicted_crop': None,
+                    'n_scenes': len(cycle_scenes),
+                    'peak_ndvi': peak_ndvi, 'cycle_confidence': confidence,
+                    'reason': f'Too few scenes ({len(cycle_scenes)})',
+                })
+                continue
+
+            # Detect presence using temporal pattern analysis
+            crop_present, pattern_info = self._detect_crop_temporal(cycle_scenes)
+
+            if crop_present:
+                units_with_crops += 1
+                # ── cultivation_signal: crop-name-independent intensity score ──
+                cultivation_signal = self._compute_cultivation_signal(
+                    cycle_scenes, peak_ndvi, dur_days
+                )
+
+                # ── ML classification (best-effort; never blocks the cycle) ──
+                predicted_crop = None
+                crop_confidence = 0.0
+                all_probs = {}
+                classification_note = ''
+
+                try:
+                    crop_pred = self._classify_crop_chronological(cycle_scenes)
+                    predicted_crop  = crop_pred['crop']
+                    crop_confidence = crop_pred['confidence']
+                    all_probs       = crop_pred['all_probabilities']
+                    # Treat low-confidence predictions as Unclassified but keep name
+                    if crop_confidence < 0.25 and predicted_crop not in (None, 'Unknown'):
+                        classification_note = f'low_confidence ({crop_confidence:.0%})'
+                    crops_detected[predicted_crop or 'Unclassified'] += 1
+                except Exception as e:
+                    predicted_crop  = None
+                    classification_note = f'ml_error: {str(e)[:60]}'
+                    logger.debug(f"    ML classification skipped: {str(e)[:60]}")
+
+                season_results.append({
+                    'season':              f'cycle_{i}',
+                    'year':               int(start_str[:4]),
+                    'start_date':          start_str,
+                    'end_date':            end_str,
+                    'crop_detected':       True,
+                    # Primary signal (crop-name independent)
+                    'cultivation_signal':  cultivation_signal,
+                    # Classification (enrichment only)
+                    'predicted_crop':      predicted_crop,
+                    'crop_confidence':     round(crop_confidence, 3),
+                    'classification_note': classification_note,
+                    'all_probabilities':   all_probs,
+                    # Cycle metadata
+                    'cycle_confidence':    confidence,
+                    'duration_days':       dur_days,
+                    'is_cycle_based':      True,
+                    'scenes':              cycle_scenes,
+                    **pattern_info,
+                })
+                logger.info(
+                    f"    \u2714 Cultivation detected  "
+                    f"signal={cultivation_signal:.0f}/100  "
+                    f"peak={pattern_info['peak_ndvi']:.3f}  "
+                    + (f"crop={predicted_crop} ({crop_confidence:.0%})"
+                       if predicted_crop else "crop=Unclassified (ML skipped)")
+                )
+            else:
+                season_results.append({
+                    'season': f'cycle_{i}', 'year': int(start_str[:4]),
+                    'start_date': start_str, 'end_date': end_str,
+                    'crop_detected': False, 'predicted_crop': None,
+                    'cycle_confidence': confidence,
+                    **pattern_info,
+                    'reason': pattern_info.get('rejection_reason', 'No crop pattern'),
+                })
+                logger.info(f"    ✗ No crop [{pattern_info.get('rejection_reason','')}]")
+
+        dominant_crop = (
+            max(crops_detected.items(), key=lambda x: x[1])[0]
+            if crops_detected else None
+        )
+
+        # ── Cropping intensity from cycle DATE SPANS (not fixed kharif/rabi) ──
+        # v4.0: intensity = fraction of the total observation period actually
+        # under cultivation, averaged as crop-years.
+        cropping_intensity = self._calculate_intensity_from_cycles(
+            season_results, all_continuous_scenes
+        )
+
+        logger.info(f"\n\U0001f4ca Cycle Detection Summary:")
+        logger.info(f"  Cycles with crops: {units_with_crops}/{len(crop_cycles)}")
+        logger.info(f"  Dominant crop:     {dominant_crop or 'Unclassified'}")
+        logger.info(f"  Intensity:         {cropping_intensity:.3f}")
+        if crops_detected:
+            for crop, cnt in sorted(crops_detected.items(), key=lambda x: -x[1]):
+                logger.info(f"    {crop}: {cnt} cycle(s)")
+
+        # Average cultivation signal across cycles with crops
+        sig_vals = [
+            r.get('cultivation_signal', 0)
+            for r in season_results
+            if r.get('crop_detected')
+        ]
+        avg_cultivation_signal = round(float(np.mean(sig_vals)), 1) if sig_vals else 0.0
+        logger.info(f"  Avg cultivation signal: {avg_cultivation_signal}/100")
+
+        return {
+            'season_results':           season_results,
+            'crops_detected':           dict(crops_detected),
+            'dominant_crop':            dominant_crop,
+            'cropping_intensity':       cropping_intensity,
+            # Stage-2 metric (0-100) expected by Stage-6/AI features
+            'cultivation_signal':      avg_cultivation_signal,
+            'avg_cultivation_signal':   avg_cultivation_signal,
+            'seasons_with_crops':       units_with_crops,
+            'total_seasons_analyzed':   len(crop_cycles),
+            'region':                   self.region,
+            'ndvi_threshold_used':      self.ndvi_threshold,
+            'detection_mode':           'cycle_based',
+        }
+
     # =========================================================================
     # TEMPORAL PATTERN CROP DETECTION
     # =========================================================================
 
-    def _detect_crop_temporal(self, scenes: List[Dict]) -> Tuple[bool, Dict]:
+    def _detect_crop_temporal(
+        self,
+        scenes: List[Dict],
+        cycle_based: bool = False,
+    ) -> Tuple[bool, Dict]:
         """
         Detect crop presence using multi-signal temporal pattern analysis.
 
-        Signals used:
-          1. Peak NDVI — must exceed regional threshold
-          2. NDVI Rise — difference between early-season and peak
-             (eliminates permanent bare soil / concrete)
-          3. Fraction above threshold — at least N% of scenes are green
-             (eliminates single-scene cloud artifacts)
-          4. Coefficient of variation (CV) — seasonal crops show
-             meaningful variation; bare soil stays flat
-          5. Growth arc shape — NDVI should show a rise-peak-decline
-             pattern characteristic of cultivated crops
+        v2 KEY CHANGE — Adaptive rise threshold for missing early-season scenes:
+          When the NDVI peak occurs in the first 25% of available scenes,
+          it means the satellite missed the greenup phase (cloudy early season),
+          so we cannot fairly penalise for a low "rise" — instead we rely on:
+            • High peak NDVI (clear vegetation signal)
+            • Arc score (mid > late confirms senescence)
+            • CV (temporal variation consistent with cultivation)
+
+        Args:
+            scenes:       List of scene dicts with 'date' and 'indices' keys
+            cycle_based:  If True (called from analyze_cycles), relax gates
+                          since CropCycleDetector already validated the cycle
 
         Returns:
             (crop_present: bool, pattern_info: dict)
@@ -240,66 +433,85 @@ class CropDetector:
         if not scenes:
             return False, self._empty_pattern()
 
-        # Sort chronologically (defensive — should already be sorted)
         sorted_scenes = sorted(scenes, key=lambda s: s.get('date', ''))
-
-        ndvi_values = [s['indices'].get('NDVI_mean', 0.0) for s in sorted_scenes]
-        n           = len(ndvi_values)
+        ndvi_values   = [s['indices'].get('NDVI_mean', 0.0) for s in sorted_scenes]
+        n             = len(ndvi_values)
 
         # ── Basic stats ────────────────────────────────────────────────────
-        peak_ndvi   = float(np.max(ndvi_values))
-        avg_ndvi    = float(np.mean(ndvi_values))
-        std_ndvi    = float(np.std(ndvi_values))
-        ndvi_cv     = std_ndvi / max(avg_ndvi, 0.01)
+        peak_ndvi  = float(np.max(ndvi_values))
+        avg_ndvi   = float(np.mean(ndvi_values))
+        std_ndvi   = float(np.std(ndvi_values))
+        ndvi_cv    = std_ndvi / max(avg_ndvi, 0.01)
+        peak_scene = int(np.argmax(ndvi_values))
 
-        # NDVI rise: compare mean of first quarter vs peak
-        q = max(1, n // 4)
-        early_mean  = float(np.mean(ndvi_values[:q]))
-        ndvi_rise   = peak_ndvi - early_mean
+        # ── Adaptive rise calculation ───────────────────────────────────────
+        # If peak is in first quarter, early-season data is likely missing
+        early_missing = (peak_scene < max(1, n // 4))
 
-        # Fraction of scenes exceeding threshold
-        frac_above  = float(np.mean([v > self.ndvi_threshold for v in ndvi_values]))
+        q          = max(1, n // 4)
+        early_mean = float(np.mean(ndvi_values[:q]))
+        ndvi_rise  = peak_ndvi - early_mean
 
-        # Growth arc score (0–1): proper rise-peak-fall
-        arc_score   = self._compute_arc_score(ndvi_values)
+        frac_above = float(np.mean([v > self.ndvi_threshold for v in ndvi_values]))
+        arc_score  = self._compute_arc_score(ndvi_values)
 
-        # ── Decision logic ─────────────────────────────────────────────────
-        cfg = PipelineConfig
-
+        # ── Decision gates ─────────────────────────────────────────────────
+        cfg     = PipelineConfig
         reasons = []
 
         # Gate 1: peak must clear regional threshold
         if peak_ndvi <= self.ndvi_threshold:
-            reasons.append(f"peak_ndvi {peak_ndvi:.3f} ≤ threshold {self.ndvi_threshold:.3f}")
+            reasons.append(
+                f"peak_ndvi {peak_ndvi:.3f} ≤ threshold {self.ndvi_threshold:.3f}"
+            )
 
-        # Gate 2: enough green scenes
-        if frac_above < cfg.MIN_FRACTION_ABOVE_THRESHOLD:
-            reasons.append(f"only {frac_above:.0%} scenes above threshold "
-                           f"(need ≥{cfg.MIN_FRACTION_ABOVE_THRESHOLD:.0%})")
+        # Gate 2: enough green scenes (relaxed for cycle-based path)
+        min_frac = cfg.MIN_FRACTION_ABOVE_THRESHOLD * (0.6 if cycle_based else 1.0)
+        if frac_above < min_frac:
+            reasons.append(
+                f"only {frac_above:.0%} scenes above threshold (need ≥{min_frac:.0%})"
+            )
 
-        # Gate 3: meaningful NDVI rise (not permanent vegetation or bare soil)
-        if ndvi_rise < cfg.MIN_NDVI_RISE:
-            reasons.append(f"ndvi_rise {ndvi_rise:.3f} < min {cfg.MIN_NDVI_RISE:.3f}")
+        # Gate 3: NDVI rise — SKIP if early-season scenes are missing
+        # (in that case, rely on arc + CV as proxies)
+        if early_missing:
+            # Use arc + CV as proxy for rise validation
+            if arc_score < 0.3 and ndvi_cv < cfg.MIN_NDVI_CV_FOR_CROP:
+                reasons.append(
+                    f"early scenes missing: arc={arc_score:.2f} cv={ndvi_cv:.3f} "
+                    f"— insufficient vegetation signal"
+                )
+        else:
+            if ndvi_rise < cfg.MIN_NDVI_RISE:
+                reasons.append(
+                    f"ndvi_rise {ndvi_rise:.3f} < min {cfg.MIN_NDVI_RISE:.3f}"
+                )
 
-        # Gate 4: temporal variation in acceptable range
+        # Gate 4: temporal variation (skip upper bound for cycle-based path
+        # since cycle detector already smoothed out erratic scenes)
         if ndvi_cv < cfg.MIN_NDVI_CV_FOR_CROP:
-            reasons.append(f"cv {ndvi_cv:.3f} too flat (min {cfg.MIN_NDVI_CV_FOR_CROP:.3f})")
-        if ndvi_cv > cfg.MAX_NDVI_CV_FOR_CROP:
-            reasons.append(f"cv {ndvi_cv:.3f} too erratic (max {cfg.MAX_NDVI_CV_FOR_CROP:.3f})")
+            reasons.append(
+                f"cv {ndvi_cv:.3f} too flat (min {cfg.MIN_NDVI_CV_FOR_CROP:.3f})"
+            )
+        if not cycle_based and ndvi_cv > cfg.MAX_NDVI_CV_FOR_CROP:
+            reasons.append(
+                f"cv {ndvi_cv:.3f} too erratic (max {cfg.MAX_NDVI_CV_FOR_CROP:.3f})"
+            )
 
         crop_detected = len(reasons) == 0
 
         pattern_info = {
-            'peak_ndvi':        round(peak_ndvi, 4),
-            'avg_ndvi':         round(avg_ndvi,  4),
-            'ndvi_std':         round(std_ndvi,  4),
-            'ndvi_cv':          round(ndvi_cv,   4),
-            'ndvi_rise':        round(ndvi_rise,  4),
-            'early_mean_ndvi':  round(early_mean, 4),
-            'frac_above_thresh': round(frac_above, 4),
-            'arc_score':        round(arc_score,  4),
-            'n_scenes':         n,
-            'rejection_reason': '; '.join(reasons) if reasons else '',
+            'peak_ndvi':         round(peak_ndvi,   4),
+            'avg_ndvi':          round(avg_ndvi,    4),
+            'ndvi_std':          round(std_ndvi,    4),
+            'ndvi_cv':           round(ndvi_cv,     4),
+            'ndvi_rise':         round(ndvi_rise,   4),
+            'early_mean_ndvi':   round(early_mean,  4),
+            'frac_above_thresh': round(frac_above,  4),
+            'arc_score':         round(arc_score,   4),
+            'n_scenes':          n,
+            'early_season_missing': early_missing,
+            'rejection_reason':  '; '.join(reasons) if reasons else '',
         }
 
         return crop_detected, pattern_info
@@ -337,65 +549,71 @@ class CropDetector:
         """
         Classify crop type using chronologically ordered scenes.
 
-        Feature construction:
-          - Sort scenes by date (ascending)
-          - Select up to ML_FEATURE_SCENES evenly spaced scenes
-            (so the feature vector always represents the same temporal
-             positions regardless of how many scenes were collected)
-          - For each selected scene: NDVI_mean, EVI_mean, NDMI_mean
-          - Total features: ML_FEATURE_SCENES × 3
-
-        This ensures the model receives a consistent temporal fingerprint
-        of the crop's growth cycle.
+        FIXED v3.1 — Temporal interpolation instead of zero-padding:
+          - Scenes mapped onto normalized 0–1 time axis.
+          - Feature values at fixed grid positions obtained via linear interpolation.
+          - Confidence calibrated using top-2 class probability gap.
         """
         n_feat   = PipelineConfig.ML_FEATURE_SCENES
         indices  = PipelineConfig.ML_FEATURE_INDICES
 
-        # Sort chronologically
         sorted_scenes = sorted(scenes, key=lambda s: s.get('date', ''))
-
-        # Evenly sample n_feat scenes across the season
         n = len(sorted_scenes)
-        if n >= n_feat:
-            # Evenly spaced indices across the full series
-            idx_list = np.linspace(0, n - 1, n_feat, dtype=int)
-            selected = [sorted_scenes[i] for i in idx_list]
-        else:
-            # Pad with zeros at the end if fewer scenes than features
-            selected = sorted_scenes  # will be zero-padded below
 
-        # Build feature vector
+        t_obs  = np.linspace(0.0, 1.0, max(n, 1))
+        t_grid = np.linspace(0.0, 1.0, n_feat)
+
         feature_dict = {}
-        for t, scene in enumerate(selected[:n_feat]):
-            scene_indices = scene.get('indices', {})
-            for idx_name in indices:
-                key = f"{idx_name.replace('_mean', '')}_t{t+1:02d}"
-                feature_dict[key] = scene_indices.get(idx_name, 0.0)
+        for idx_name in indices:
+            obs_vals = np.array(
+                [s.get('indices', {}).get(idx_name, 0.0) for s in sorted_scenes],
+                dtype=float,
+            )
+            nan_mask = np.isnan(obs_vals)
+            if nan_mask.any():
+                x_valid = t_obs[~nan_mask]
+                y_valid = obs_vals[~nan_mask]
+                if len(x_valid) >= 2:
+                    obs_vals[nan_mask] = np.interp(t_obs[nan_mask], x_valid, y_valid)
+                else:
+                    obs_vals = np.where(nan_mask, 0.0, obs_vals)
 
-        # Zero-pad missing time steps
-        for t in range(len(selected), n_feat):
-            for idx_name in indices:
-                key = f"{idx_name.replace('_mean', '')}_t{t+1:02d}"
-                feature_dict[key] = 0.0
+            if n >= 2:
+                grid_vals = np.interp(t_grid, t_obs, obs_vals)
+            elif n == 1:
+                grid_vals = np.full(n_feat, obs_vals[0])
+            else:
+                grid_vals = np.zeros(n_feat)
 
-        # Align to model's feature order
+            short_name = idx_name.replace('_mean', '')
+            for t, val in enumerate(grid_vals):
+                feature_dict[f"{short_name}_t{t+1:02d}"] = float(val)
+
         feature_vector = [feature_dict.get(fn, 0.0) for fn in self.feature_names]
         X = np.nan_to_num(np.array([feature_vector]), nan=0.0)
 
         prediction    = self.model.predict(X)[0]
         probabilities = self.model.predict_proba(X)[0]
         crop_name     = self.label_encoder.inverse_transform([prediction])[0]
-        confidence    = float(probabilities.max())
+
+        sorted_probs      = np.sort(probabilities)[::-1]
+        raw_confidence    = float(probabilities.max())
+        top2_gap          = float(sorted_probs[0] - sorted_probs[1]) if len(sorted_probs) > 1 else raw_confidence
+        calibrated_conf   = min(raw_confidence, raw_confidence * min(1.0, top2_gap / 0.10 + 0.5))
 
         return {
             'crop':              crop_name,
-            'confidence':        confidence,
+            'confidence':        round(calibrated_conf, 4),
+            'raw_confidence':    round(raw_confidence, 4),
+            'top2_gap':          round(top2_gap, 4),
             'all_probabilities': {
                 c: float(p) for c, p in zip(self.crop_names, probabilities)
             },
-            'n_scenes_used':     min(n, n_feat),
+            'n_scenes_used':     n,
             'feature_scenes':    n_feat,
+            'method':            'temporal_interpolation',
         }
+
 
     # =========================================================================
     # CROPPING INTENSITY — Fixed calculation
@@ -466,6 +684,117 @@ class CropDetector:
             year_intensities.append(min(1.0, yr_intensity))
 
         return round(float(np.mean(year_intensities)), 3)
+
+    # =========================================================================
+    # CULTIVATION SIGNAL — Crop-name-independent intensity metric
+    # =========================================================================
+
+    @staticmethod
+    def _compute_cultivation_signal(
+        scenes:     List[Dict],
+        peak_ndvi:  float,
+        dur_days:   int,
+    ) -> float:
+        """
+        Signal score (0–100) that measures farming intensity purely from NDVI
+        shape, without any reference to crop name or species.
+
+        Components:
+          30 pts — Peak NDVI achievement   (how healthy is the canopy at max?)
+          25 pts — Area under NDVI curve   (proxy for total biomass production)
+          25 pts — Temporal dynamics (CV)  (inactive soil vs active crop cycle)
+          20 pts — Growth arc quality      (rise → peak → fall shape)
+
+        This score is the PRIMARY driver for credit scoring when crop
+        classification is unavailable or unreliable.
+        """
+        if not scenes:
+            return 0.0
+
+        sorted_scenes = sorted(scenes, key=lambda s: s.get('date', ''))
+        ndvi = np.array([s.get('indices', {}).get('NDVI_mean', 0.0)
+                         for s in sorted_scenes], dtype=float)
+        ndvi = np.clip(ndvi, 0.0, 1.0)
+        n = len(ndvi)
+        if n == 0:
+            return 0.0
+
+        # 1. Peak achievement (30 pts): peak NDVI of 0.80 = full 30
+        peak_score = min(30.0, (peak_ndvi / 0.80) * 30.0)
+
+        # 2. Area under curve (25 pts): cumulative NDVI / (n scenes * 0.65)
+        #    A crop scene average of 0.65 = full 25 pts
+        cum_ndvi    = float(np.sum(ndvi))
+        area_score  = min(25.0, (cum_ndvi / max(n * 0.65, 0.1)) * 25.0)
+
+        # 3. Temporal dynamics (25 pts): CV 0.20–0.45 is ideal cultivation
+        mean_v = max(float(np.mean(ndvi)), 0.01)
+        cv     = float(np.std(ndvi)) / mean_v
+        if 0.20 <= cv <= 0.45:
+            cv_score = 25.0
+        elif cv < 0.20:
+            cv_score = max(0.0, 25.0 * (cv / 0.20))
+        else:
+            cv_score = max(0.0, 25.0 * (1.0 - (cv - 0.45) / 0.35))
+
+        # 4. Growth arc quality (20 pts): rise → peak → fall
+        t = max(1, n // 3)
+        early = float(np.mean(ndvi[:t]))
+        mid   = float(np.mean(ndvi[t: 2 * t]))
+        late  = float(np.mean(ndvi[2 * t:]))
+        arc_score = 0.0
+        if mid > early + 0.05:  arc_score += 10.0  # clear growth phase
+        if mid > late  + 0.05:  arc_score += 10.0  # clear senescence
+        elif mid > late:         arc_score += 5.0   # mild decline
+
+        total = peak_score + area_score + cv_score + arc_score
+        return round(float(np.clip(total, 0.0, 100.0)), 1)
+
+    @staticmethod
+    def _calculate_intensity_from_cycles(
+        season_results: List[Dict],
+        all_scenes:     List[Dict],
+    ) -> float:
+        """
+        Compute cropping intensity from actual cycle date spans.
+
+        Intensity = (total days under cultivation) / (total observation period)
+        Capped at 1.0 (can be > 1.0 only in relay/multi-crop situations,
+        which we clamp).
+
+        This replaces the old kharif/rabi key lookup which was tied to
+        fixed season labels that no longer exist in ENHANCED mode.
+        """
+        if not season_results or not all_scenes:
+            return 0.0
+
+        # Total observation period
+        dates = sorted(s.get('date', '') for s in all_scenes if s.get('date'))
+        if len(dates) < 2:
+            return 0.0
+
+        from datetime import datetime
+        try:
+            obs_start = datetime.strptime(dates[0],  '%Y-%m-%d')
+            obs_end   = datetime.strptime(dates[-1], '%Y-%m-%d')
+            total_days = max(1, (obs_end - obs_start).days)
+        except Exception:
+            return 0.0
+
+        # Sum cultivation days across cycles
+        cult_days = 0
+        for r in season_results:
+            if not r.get('crop_detected'):
+                continue
+            try:
+                s = datetime.strptime(r['start_date'], '%Y-%m-%d')
+                e = datetime.strptime(r['end_date'],   '%Y-%m-%d')
+                cult_days += max(0, (e - s).days)
+            except Exception:
+                cult_days += r.get('duration_days', 0)
+
+        intensity = cult_days / total_days
+        return round(min(1.0, float(intensity)), 3)
 
     # =========================================================================
     # HELPERS

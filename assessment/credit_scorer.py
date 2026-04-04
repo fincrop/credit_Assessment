@@ -28,7 +28,7 @@
 # from typing import Dict, List, Optional
 # import logging
 
-# from config.pipeline_config import PipelineConfig
+# from config import PipelineConfig
 
 # logger = logging.getLogger(__name__)
 
@@ -570,7 +570,7 @@ Calculates credit score from satellite-derived agricultural metrics.
 from typing import Dict, List, Optional
 import logging
 
-from config.pipeline_config import PipelineConfig
+from config import PipelineConfig
 
 logger = logging.getLogger(__name__)
 

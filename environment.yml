@@ -21,7 +21,7 @@ dependencies:
   - pandas>=1.5,<2.2
   
   # Machine Learning
-  - scikit-learn>=1.2,<1.4
+  - scikit-learn>=1.6,<1.7
   - joblib>=1.2
   
   # Other packages

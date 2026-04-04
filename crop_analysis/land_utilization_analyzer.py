@@ -66,6 +66,8 @@ class LandUtilizationAnalyzer:
         
         result = {
             'crop_intensity': round(crop_intensity, 2),
+            # Backward/compat alias used by main + task descriptions
+            'crops_per_year': round(crop_intensity, 2),
             'land_utilization_index': round(utilization_index, 3),
             'cycle_duration_breakdown': cycle_duration_breakdown,
             'cropping_pattern': cropping_pattern,
