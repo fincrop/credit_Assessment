@@ -446,8 +446,9 @@ class SatelliteBasedCreditPipeline:
             assessment['pipeline_stages'].append('9_limit')
 
             # ============================================================
-            # STEP 8: Add crop cycles to output
+            # STEP 8: Assemble payload (cycles + utilization on assessment)
             # ============================================================
+            logger.info("\nSTEP 8: Assembling assessment payload...")
             assessment['crop_cycles'] = {
                 'detected': bool(crop_cycles),
                 'cycles_count': len(crop_cycles),
@@ -457,10 +458,13 @@ class SatelliteBasedCreditPipeline:
             }
             assessment['pipeline_stages'].append('10_payload')
 
-            # Optional Stage 12: LLM narrative / translation (env + AI_CONFIG)
+            # ============================================================
+            # STEP 9: AI enrichment (SHAP / counterfactuals / optional LLM)
+            # ============================================================
             try:
                 from ai_integration.enrichment import enrich_assessment_with_ai
 
+                logger.info("\nSTEP 9: AI enrichment (explainability)...")
                 if enrich_assessment_with_ai(assessment):
                     assessment['pipeline_stages'].append('12_ai')
                     logger.info("  ✓ AI enrichment attached (see assessment['ai_enrichment'])")
@@ -490,7 +494,7 @@ class SatelliteBasedCreditPipeline:
             # Save to MongoDB (if enabled)
             if save_to_db and self.use_mongodb:
                 try:
-                    logger.info("\nSTEP 11: Saving to MongoDB...")
+                    logger.info("\nSTEP 10: Saving to MongoDB...")
                     self.db.save_assessment(assessment)
                     assessment['pipeline_stages'].append('11_persist')
                     logger.info("  ✓ Saved successfully")
@@ -637,9 +641,9 @@ def main():
         description='Satellite-Based Agricultural Credit Assessment Pipeline v4.0'
     )
     parser.add_argument('--farmer-id', type=str, help='Farmer ID to assess')
-    parser.add_argument('--ml-mode', type=str, default='hybrid',
+    parser.add_argument('--ml-mode', type=str, default='rule_based',
                        choices=['rule_based', 'unsupervised', 'supervised', 'hybrid'],
-                       help='ML scoring mode (default: hybrid)')
+                       help='Credit scorer mode (default: rule_based; ML blend controlled in config)')
     parser.add_argument('--model-path', type=str, default='models/crop_classifier_model.joblib',
                        help='Path to crop classification model')
     parser.add_argument('--batch-file', type=str, help='JSON file with farmer IDs for batch processing')

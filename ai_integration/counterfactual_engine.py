@@ -58,6 +58,14 @@ class CounterfactualEngine:
         weak            = cr.get('weak_components', [])
 
         scenarios = self._generate_scenarios(assessment, component_scores, weak)
+        # Drop non-positive gains (bad heuristics must not reduce the headline projection)
+        pruned = []
+        for s in scenarios:
+            g = max(0.0, round(float(s.get('score_gain', 0)), 1))
+            if g > 0:
+                s['score_gain'] = g
+                pruned.append(s)
+        scenarios = pruned
         scenarios.sort(key=lambda s: s['score_gain'], reverse=True)
         top3 = scenarios[:3]
 
@@ -69,7 +77,7 @@ class CounterfactualEngine:
         logger.info(
             f"Counterfactuals: current={current_score}  "
             f"top_gain={top3[0]['score_gain'] if top3 else 0}  "
-            f"cumulative={cumulative}"
+            f"projected_if_top_scenarios={cumulative}"
         )
 
         return {
@@ -149,34 +157,42 @@ class CounterfactualEngine:
         if signal < 70 or crop_perf < 65:
             target_signal = min(85.0, signal + 20)
             target_perf   = min(100.0, crop_perf + 20)
-            # Crop detection uses signal × 0.50 for up to 50 pts
-            cur_det_score  = component_scores.get('crop_detection',  signal * 0.5)
-            new_det_score  = min(50, target_signal * 0.5)
-            gain_det       = ((new_det_score - cur_det_score) / 50) * _WEIGHTS['crop_detection'] * 0.6
-            gain_perf      = ((target_perf - crop_perf) / 100) * _WEIGHTS['crop_performance']
-            total_gain     = gain_det + gain_perf
-            scenarios.append({
-                'id':            'improve_cultivation_signal',
-                'title':         'Improve Crop Health and Vegetation Density',
-                'description':   (
-                    f"Your cultivation signal is {signal:.0f}/100 and crop health is "
-                    f"{crop_perf:.1f}/100. Stronger, healthier vegetation improves both "
-                    "the crop detection score and performance score."
-                ),
-                'actions': [
-                    "Schedule irrigation based on crop growth stage (vegetative/flowering/grain fill).",
-                    "Apply balanced NPK fertilizer aligned with soil test recommendations.",
-                    "Use drip/sprinkler irrigation to avoid water stress during peak growth.",
-                    "Monitor for pest/disease with weekly field scouting during vegetative stage.",
-                ],
-                'change_needed':             f"Cultivation signal: {signal:.0f} → {target_signal:.0f}, "
-                                             f"crop health: {crop_perf:.1f} → {target_perf:.1f}",
-                'score_gain':                round(total_gain, 1),
-                'projected_component_score': round(target_perf, 1),
-                'component':                 'crop_detection + crop_performance',
-                'feasibility':               'MEDIUM',
-                'timeframe':                 '1–2 growing seasons',
-            })
+            # crop_detection (v4) = min(50, signal×0.5) + consistency + cycles — only
+            # the signal slice is moved here; compare slice deltas, not full component.
+            cur_sig_pts = min(50.0, float(signal) * 0.5)
+            new_sig_pts = min(50.0, float(target_signal) * 0.5)
+            gain_det = max(
+                0.0,
+                ((new_sig_pts - cur_sig_pts) / 100.0) * _WEIGHTS['crop_detection'],
+            )
+            gain_perf = max(
+                0.0,
+                ((target_perf - crop_perf) / 100.0) * _WEIGHTS['crop_performance'],
+            )
+            total_gain = round(gain_det + gain_perf, 1)
+            if total_gain > 0:
+                scenarios.append({
+                    'id':            'improve_cultivation_signal',
+                    'title':         'Improve Crop Health and Vegetation Density',
+                    'description':   (
+                        f"Your cultivation signal is {signal:.0f}/100 and crop health is "
+                        f"{crop_perf:.1f}/100. Stronger, healthier vegetation improves both "
+                        "the crop detection score and performance score."
+                    ),
+                    'actions': [
+                        "Schedule irrigation based on crop growth stage (vegetative/flowering/grain fill).",
+                        "Apply balanced NPK fertilizer aligned with soil test recommendations.",
+                        "Use drip/sprinkler irrigation to avoid water stress during peak growth.",
+                        "Monitor for pest/disease with weekly field scouting during vegetative stage.",
+                    ],
+                    'change_needed':             f"Cultivation signal: {signal:.0f} → {target_signal:.0f}, "
+                                                 f"crop health: {crop_perf:.1f} → {target_perf:.1f}",
+                    'score_gain':                total_gain,
+                    'projected_component_score': round(target_perf, 1),
+                    'component':                 'crop_detection + crop_performance',
+                    'feasibility':               'MEDIUM',
+                    'timeframe':                 '1–2 growing seasons',
+                })
 
         # ── S3: Reduce Anomaly Events (HIGH-impact stress) ────────────────────
         if n_high >= 2:

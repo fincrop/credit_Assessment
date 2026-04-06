@@ -26,6 +26,8 @@ sentinelsat==1.2.1
 scikit-learn==1.4.2
 xgboost==2.0.3
 joblib==1.4.2
+# Explainability (Stage 12 — SHAP lib for Tree/Kernel explainers when a model is wired)
+shap==0.44.1
 
 # ========================================
 # DATABASE
@@ -48,9 +50,9 @@ matplotlib==3.8.3
 seaborn==0.13.2
 
 # ========================================
-# PERFORMANCE (OPTIONAL)
+# PERFORMANCE / SHAP (numba is a dependency of shap on Windows)
 # ========================================
-numba==0.59.1
+numba==0.65.0
 
 # ========================================
 # DEVELOPMENT (OPTIONAL)

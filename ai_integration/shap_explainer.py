@@ -23,6 +23,9 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Import check once per process — avoid WARNING spam when rule-based path is intended
+_SHAP_IMPORT_OK: Optional[bool] = None
+
 # Stage 6 component weights (must match AdvancedCreditScorer._WEIGHTS)
 _WEIGHTS = {
     'crop_detection':    35,
@@ -54,13 +57,19 @@ class SHAPExplainer:
 
     @staticmethod
     def _check_shap() -> bool:
+        global _SHAP_IMPORT_OK
+        if _SHAP_IMPORT_OK is not None:
+            return _SHAP_IMPORT_OK
         try:
             import shap  # noqa: F401
+
+            _SHAP_IMPORT_OK = True
             return True
         except ImportError:
-            logger.warning(
-                "SHAP package not installed. "
-                "Run: pip install shap  — rule-based attribution will be used."
+            _SHAP_IMPORT_OK = False
+            logger.debug(
+                "SHAP not installed — using rule-based credit attribution "
+                "(install with: pip install -r requirements.txt)."
             )
             return False
 
