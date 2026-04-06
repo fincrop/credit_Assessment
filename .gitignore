@@ -1,0 +1,39 @@
+# Local Conda / venv (never commit — breaks GitHub size limits, e.g. llvmlite.dll > 100MB)
+.conda/
+venv/
+.venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Secrets & local config
+.env
+.env.local
+*.pem
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Optional local models cache (uncomment if large artifacts live here)
+# models/*.bin
