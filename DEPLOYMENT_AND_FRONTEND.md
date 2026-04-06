@@ -100,9 +100,13 @@ Copy `.env.example` → `.env` for local runs. For **Render**, define the same k
 
 ---
 
-## 6. Frontend integration checklist (next steps)
+## 6. Bundled dashboard (`frontend/`)
 
-1. **Host:** static site (Vercel, Netlify, Render Static, S3+CloudFront) or small React/Vite app.  
+A **Vite + React** app lives in **`frontend/`**: run assessment by `farmer_id`, tabbed report (credit, components, cropping, performance, weather, cycles, AI, raw JSON). See **`frontend/README.md`**.
+
+## 7. Frontend integration checklist (next steps)
+
+1. **Host:** deploy `frontend/dist` to Vercel / Netlify / Render Static / S3+CloudFront, *or* iterate inside `frontend/` and move the folder out later.  
 2. **CORS:** set `CORS_ORIGINS` on the API to your frontend origin (not `*` if you use cookies later).  
 3. **Secrets:** never put `MONGODB_URI` or `API_SERVICE_KEY` in frontend code; only the **public** API base URL + optional `X-API-Key` if you expose a **scoped** key (better: **BFF** — your frontend talks to your Next/Express server, which holds the key).  
 4. **UX:** progress indicator + cancel is hard for sync HTTP; prefer messaging like “Analysis in progress (2–8 min)” or move to job + polling.  
@@ -110,7 +114,7 @@ Copy `.env.example` → `.env` for local runs. For **Render**, define the same k
 
 ---
 
-## 7. Local quick test
+## 8. Local quick test
 
 ```bash
 cp .env.example .env   # edit MONGODB_URI
@@ -122,7 +126,7 @@ Open `http://localhost:8000/docs` and try `POST /v1/assess`.
 
 ---
 
-## 8. Optional hardening (later)
+## 9. Optional hardening (later)
 
 - Rate limiting (e.g. `slowapi`).  
 - JWT or OAuth instead of static `X-API-Key`.  
