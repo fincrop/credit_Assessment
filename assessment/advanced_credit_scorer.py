@@ -121,6 +121,18 @@ class AdvancedCreditScorer:
             'crop_cycles':        crop_cycles or {},
         }
 
+        ml_blend = getattr(PipelineConfig, 'CREDIT_SCORE_ML_BLEND_ENABLED', False)
+        if not ml_blend and self.mode != 'rule_based':
+            out = self._rule_based_score(assessment)
+            out['ml_requested_mode'] = self.mode
+            out['ml_components_silenced'] = True
+            if self.verbose:
+                logger.info(
+                    "Credit: ML blend disabled — using rule_based only (requested %s)",
+                    self.mode,
+                )
+            return out
+
         if   self.mode == 'rule_based':    return self._rule_based_score(assessment)
         elif self.mode == 'unsupervised':  return self._unsupervised_score(assessment)
         elif self.mode == 'supervised':    return self._supervised_score(assessment)
@@ -468,9 +480,24 @@ class AdvancedCreditScorer:
         else:
             combined_risk = float(wa.get('weather_risk_score', 50.0))
 
-        # Penalty for many extreme events
-        extreme_events = int(wa.get('total_extreme_events', 0))
-        event_penalty  = min(15.0, extreme_events * 2.5)
+        # Penalty for extreme events — dedupe by (cycle, type, date) to limit double-counting
+        raw_ev = wa.get('extreme_events', []) or []
+        seen: set = set()
+        dedup_ct = 0
+        for e in raw_ev:
+            k = (
+                e.get('cycle_id'),
+                e.get('type'),
+                e.get('date') or e.get('start_date'),
+                e.get('end_date'),
+            )
+            if k in seen:
+                continue
+            seen.add(k)
+            dedup_ct += 1
+        unit = float(getattr(PipelineConfig, 'CREDIT_WEATHER_EXTREME_EVENT_UNIT', 1.0))
+        cap = float(getattr(PipelineConfig, 'CREDIT_WEATHER_EXTREME_EVENT_MAX_PENALTY', 10.0))
+        event_penalty = min(cap, dedup_ct * unit)
 
         safety_score = max(0.0, 100.0 - combined_risk - event_penalty)
         return round(min(100.0, safety_score), 1)
@@ -485,15 +512,30 @@ class AdvancedCreditScorer:
         if not sp:
             return 75.0   # Neutral when no data
 
-        n_high   = sum(len([e for e in p.get('anomaly_events', [])
-                            if e.get('impact') == 'HIGH'])   for p in sp)
-        n_medium = sum(len([e for e in p.get('anomaly_events', [])
-                            if e.get('impact') == 'MEDIUM']) for p in sp)
-        n_low    = sum(len([e for e in p.get('anomaly_events', [])
-                            if e.get('impact') == 'LOW'])    for p in sp)
+        ph = float(getattr(PipelineConfig, 'CREDIT_ANOMALY_PENALTY_HIGH', 2.5))
+        pm = float(getattr(PipelineConfig, 'CREDIT_ANOMALY_PENALTY_MEDIUM', 0.9))
+        pl = float(getattr(PipelineConfig, 'CREDIT_ANOMALY_PENALTY_LOW', 0.3))
+        pcap = float(getattr(PipelineConfig, 'CREDIT_ANOMALY_PENALTY_MAX', 22.0))
 
-        # Penalty: HIGH=8pts, MEDIUM=3pts, LOW=1pt
-        penalty = min(100.0, n_high * 8 + n_medium * 3 + n_low * 1)
+        # One debit per unique (season, date, type) anomaly to avoid stacked duplicates
+        seen_a: set = set()
+        n_high = n_medium = n_low = 0
+        for p in sp:
+            season = p.get('season', '')
+            for e in p.get('anomaly_events', []):
+                key = (season, e.get('type'), e.get('date'), e.get('scene_index'))
+                if key in seen_a:
+                    continue
+                seen_a.add(key)
+                imp = e.get('impact', 'LOW')
+                if imp == 'HIGH':
+                    n_high += 1
+                elif imp == 'MEDIUM':
+                    n_medium += 1
+                else:
+                    n_low += 1
+
+        penalty = min(pcap, n_high * ph + n_medium * pm + n_low * pl)
         return round(max(0.0, 100.0 - penalty), 1)
 
     @staticmethod

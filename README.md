@@ -33,28 +33,29 @@ models/crop_classifier_model.joblib
 
 ## 💻 Usage
 
-### Basic Usage
+### Default pipeline (continuous satellite + cycles)
 
 ```python
 from main import SatelliteBasedCreditPipeline
 
-# Initialize pipeline
+# Initialize (continuous time series, crop cycles, AdvancedCreditScorer)
 pipeline = SatelliteBasedCreditPipeline(
     crop_model_path="models/crop_classifier_model.joblib",
-    mode='BASIC',
-    verbose=True
+    ml_mode="hybrid",
+    verbose=True,
+    use_mongodb=True,
 )
 
-# Option 1: Using lat/long (will calculate buffer automatically)
+# Option 1: lat/lon + field area (buffer derived automatically)
 assessment = pipeline.assess_farmer(
     farmer_id="FARMER_001",
     latitude=18.5204,
     longitude=73.8567,
     field_area_ha=2.5,
-    analysis_years=3
+    save_to_db=False,
 )
 
-# Option 2: Using farm boundary geometry
+# Option 2: farm boundary geometry (+ area if needed)
 from shapely.geometry import Polygon
 
 farm_boundary = Polygon([
@@ -62,31 +63,24 @@ farm_boundary = Polygon([
     [73.857, 18.520],
     [73.857, 18.521],
     [73.856, 18.521],
-    [73.856, 18.520]
+    [73.856, 18.520],
 ])
 
 assessment = pipeline.assess_farmer(
     farmer_id="FARMER_001",
     geometry=farm_boundary,
-    analysis_years=3
+    field_area_ha=2.5,
+    save_to_db=False,
 )
-
-# Save results
-pipeline.save_assessment(assessment, output_dir="outputs")
 ```
 
-### Enhanced Mode (All v4.0 Features)
+### MongoDB entry path
 
 ```python
-# Initialize with ALL v4.0 features
 pipeline = SatelliteBasedCreditPipeline(
     crop_model_path='models/crop_classifier_model.joblib',
-    mode='ENHANCED',              # Use v4.0 features
-    ml_mode='hybrid',             # Hybrid ML + rule-based
+    ml_mode='hybrid',
     use_mongodb=True,
-    enable_continuous_data=True,  # 3-year time series
-    enable_crop_cycles=True,      # Automatic cycle detection
-    enable_advanced_ml=True,      # ML-based scoring
 )
 
 # Assess a farmer from database

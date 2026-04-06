@@ -40,15 +40,13 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 import logging
 
+from config import PipelineConfig
+
 try:
     from config import CropGrowthCurves
     CROP_PARAMS_AVAILABLE = True
 except ImportError:
-    try:
-        from config import CropGrowthCurves
-        CROP_PARAMS_AVAILABLE = True
-    except ImportError:
-        CROP_PARAMS_AVAILABLE = False
+    CROP_PARAMS_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -458,12 +456,18 @@ class CropPerformanceAnalyzer:
           LOW impact    â†’ 1.0 pts deducted
         Starts at 20 pts.
         """
+        dh = float(getattr(PipelineConfig, 'PERFORMANCE_STABILITY_DEDUCT_HIGH', 2.0))
+        dm = float(getattr(PipelineConfig, 'PERFORMANCE_STABILITY_DEDUCT_MEDIUM', 1.0))
+        dl = float(getattr(PipelineConfig, 'PERFORMANCE_STABILITY_DEDUCT_LOW', 0.35))
         score = 20.0
         for a in anomaly_events:
             impact = a.get('impact', 'LOW')
-            if   impact == 'HIGH':   score -= 5.0
-            elif impact == 'MEDIUM': score -= 2.5
-            else:                    score -= 1.0
+            if impact == 'HIGH':
+                score -= dh
+            elif impact == 'MEDIUM':
+                score -= dm
+            else:
+                score -= dl
         return round(max(0.0, score), 1)
 
     # =========================================================================
@@ -499,6 +503,11 @@ class CropPerformanceAnalyzer:
         q1  = float(np.percentile(cvi, 25))
         q3  = float(np.percentile(cvi, 75))
         iqr = max(q3 - q1, 0.05)    # floor to avoid near-zero IQR
+        iqr_f = float(getattr(PipelineConfig, 'PERFORMANCE_ANOMALY_IQR_FACTOR', 2.0))
+        sustained_min = int(getattr(PipelineConfig, 'PERFORMANCE_ANOMALY_SUSTAINED_MIN_SCENES', 4))
+        cv_med = float(getattr(PipelineConfig, 'PERFORMANCE_VOLATILITY_CV_MEDIUM', 0.48))
+        cv_hi = float(getattr(PipelineConfig, 'PERFORMANCE_VOLATILITY_CV_HIGH', 0.62))
+        hi_mult = float(getattr(PipelineConfig, 'PERFORMANCE_IMPACT_HIGH_MAG_IQR_MULT', 1.25))
 
         # --- Stage labelling at scene position ----------------------------
         def _stage(idx: int) -> str:
@@ -509,14 +518,16 @@ class CropPerformanceAnalyzer:
             else:             return 'RIPENING'
 
         def _impact(stage: str, magnitude: float) -> str:
-            if stage in ('FLOWERING', 'GRAIN_FILL') and magnitude > iqr:
+            if stage in ('FLOWERING', 'GRAIN_FILL') and magnitude > hi_mult * iqr:
                 return 'HIGH'
-            elif magnitude > 0.5 * iqr:
+            if magnitude > 0.65 * iqr:
+                return 'MEDIUM'
+            if magnitude > 0.35 * iqr:
                 return 'MEDIUM'
             return 'LOW'
 
-        # --- Sudden drops (outlier below Q1 - 1.5Ã—IQR) -------------------
-        lower_fence = q1 - 1.5 * iqr
+        # --- Sudden drops (outlier below Q1 - k·IQR; k>1.5 reduces false positives)
+        lower_fence = q1 - iqr_f * iqr
         for i in range(n):
             if cvi[i] < lower_fence:
                 mag   = q1 - cvi[i]
@@ -548,7 +559,7 @@ class CropPerformanceAnalyzer:
                 while j < n and below_q1[j]:
                     j += 1
                 run_len = j - i
-                if run_len >= 3:
+                if run_len >= sustained_min:
                     mid_i  = (i + j) // 2
                     mag    = float(q1 - np.mean(cvi[i:j]))
                     stage  = _stage(mid_i)
@@ -584,7 +595,7 @@ class CropPerformanceAnalyzer:
         peak_window = cvi[max(0, peak_idx - t): min(n, peak_idx + t + 1)]
         if len(peak_window) >= 3:
             cv_peak = float(np.std(peak_window)) / max(float(np.mean(peak_window)), 0.01)
-            if cv_peak > 0.40:
+            if cv_peak > cv_med:
                 stage = _stage(peak_idx)
                 anomalies.append({
                     'type':        'high_volatility',
@@ -593,7 +604,7 @@ class CropPerformanceAnalyzer:
                     'stage':       stage,
                     'cv_peak':     round(cv_peak, 3),
                     'magnitude':   round(cv_peak, 3),
-                    'impact':      'HIGH' if cv_peak > 0.65 else 'MEDIUM',
+                    'impact':      'HIGH' if cv_peak > cv_hi else 'MEDIUM',
                     'description': (
                         f"High vegetation volatility (CV={cv_peak:.2f}) around peak "
                         f"during {stage}. Erratic indices suggest repeated stress "

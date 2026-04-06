@@ -15,10 +15,12 @@ from ai_integration.groq_report_generator import GroqReportGenerator
 from ai_integration.sarvam_translator import SarvamTranslator
 from ai_integration.shap_explainer import SHAPExplainer
 from ai_integration.counterfactual_engine import CounterfactualEngine
+from ai_integration.enrichment import enrich_assessment_with_ai
 
 __all__ = [
     'GroqReportGenerator',
     'SarvamTranslator',
     'SHAPExplainer',
     'CounterfactualEngine',
+    'enrich_assessment_with_ai',
 ]

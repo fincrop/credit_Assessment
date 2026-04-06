@@ -121,6 +121,40 @@ class AssessmentSchema:
     """
 
     @staticmethod
+    def _shap_mongo_fallback(full: Optional[Dict]) -> Optional[Dict]:
+        if not isinstance(full, dict):
+            return None
+        return {
+            "method": full.get("method"),
+            "credit_summary": (full.get("credit_summary") or "")[:900],
+            "top_positive_drivers": (full.get("top_positive_drivers") or [])[:4],
+            "top_negative_drivers": (full.get("top_negative_drivers") or [])[:4],
+        }
+
+    @staticmethod
+    def _cf_mongo_fallback(full: Optional[Dict]) -> Optional[Dict]:
+        if not isinstance(full, dict):
+            return None
+        slim = []
+        for s in (full.get("scenarios") or [])[:5]:
+            if isinstance(s, dict):
+                slim.append(
+                    {
+                        "id": s.get("id"),
+                        "title": s.get("title"),
+                        "score_gain": s.get("score_gain"),
+                        "component": s.get("component"),
+                    }
+                )
+        return {
+            "current_score": _f(full.get("current_score")),
+            "projected_score_all_improvements": _f(
+                full.get("projected_score_all_improvements")
+            ),
+            "scenarios": slim,
+        }
+
+    @staticmethod
     def build(raw: Dict) -> Dict:
         doc: Dict = {}
 
@@ -131,6 +165,7 @@ class AssessmentSchema:
         doc['processing_time_s'] = _f(raw.get('processing_time_seconds', 0.0), 1)
         doc['warnings']          = raw.get('warnings', [])
         doc['errors']            = raw.get('errors',   [])
+        doc['pipeline_stages']   = raw.get('pipeline_stages', [])
 
         raw_date = raw.get('assessment_date')
         if isinstance(raw_date, str):
@@ -158,7 +193,13 @@ class AssessmentSchema:
         rec    = raw.get('credit_recommendations', {})
         doc['credit_score']             = _f(credit.get('credit_score'))
         doc['risk_category']            = credit.get('risk_category', 'UNKNOWN')
-        doc['recommended_credit_limit'] = _f(rec.get('recommended_credit_limit'))
+        doc['credit_method']            = credit.get('method', 'rule_based_v4')
+        doc['ml_components_silenced']   = bool(credit.get('ml_components_silenced', False))
+        doc['ml_requested_mode']        = credit.get('ml_requested_mode')
+        lim = rec.get('recommended_credit_limit')
+        if lim is None:
+            lim = rec.get('recommended_limit')
+        doc['recommended_credit_limit'] = _f(lim)
         doc['limit_per_hectare']        = _f(rec.get('limit_per_hectare'))
         doc['interest_rate']            = _f(rec.get('interest_rate'))
         doc['repayment_months']         = rec.get('repayment_period_months')
@@ -192,6 +233,7 @@ class AssessmentSchema:
         # ── Weather ───────────────────────────────────────────────────────
         wa = raw.get('weather_analysis', {})
         doc['weather_summary'] = AssessmentSchema._build_weather_summary(wa)
+        doc['cycle_weather_risks'] = wa.get('cycle_risk_scores', [])
         doc['extreme_events']  = AssessmentSchema._build_extreme_events(
             wa.get('extreme_events', [])
         )
@@ -213,6 +255,25 @@ class AssessmentSchema:
             }
             if benefits else None
         )
+
+        # Stage 12 — structured previews (full dict on API response / raw JSON)
+        ai = raw.get('ai_enrichment')
+        if isinstance(ai, dict):
+            def _clip(s: str, n: int = 2000) -> str:
+                s = (s or "").strip()
+                return s if len(s) <= n else s[: n - 3] + "..."
+
+            doc['ai_enrichment'] = {
+                'groq_used': bool(ai.get('groq_used')),
+                'groq_skipped_reason': ai.get('groq_skipped_reason'),
+                'english_preview': _clip(str(ai.get('english_narrative', ''))),
+                'translated_preview': _clip(str(ai.get('translated_narrative', ''))),
+                'translation_language': ai.get('translation_language'),
+                'explainability': ai.get('explainability_mongo')
+                or AssessmentSchema._shap_mongo_fallback(ai.get('explainability')),
+                'counterfactuals': ai.get('counterfactuals_mongo')
+                or AssessmentSchema._cf_mongo_fallback(ai.get('counterfactuals')),
+            }
 
         doc['saved_at'] = datetime.utcnow()
         return doc

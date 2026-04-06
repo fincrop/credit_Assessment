@@ -114,21 +114,8 @@ class PipelineConfig:
 
     TARGET_RESOLUTION_M = 10   # all bands resampled to 10m
 
-    # Continuous 3-year Sentinel-2: pick ONE best-quality scene per time step (lowest cloud).
-    # ~365/interval ≈ 36–37 scenes/year → ~110 over three years when bins are filled.
+    # Continuous 3-year Sentinel-2: fixed calendar bins; lowest-cloud STAC item per bin, else NaN.
     CONTINUOUS_SCENE_INTERVAL_DAYS = 10
-    # Legacy: ignore interval logic; subsample with _select_scenes_temporal_distribution.
-    CONTINUOUS_LEGACY_SCENE_SUBSAMPLE = False
-    CONTINUOUS_SCENE_TARGET_MIN = 30   # only if LEGACY True
-    CONTINUOUS_SCENE_TARGET_MAX = 500  # only if LEGACY True
-    # Parallel COG reads: too many threads can trigger Azure/GDAL flakes; tune per host.
-    # Use 0 for auto: min(24, max(4, (CPU count) × 3)).
-    # Parallel COG reads often *slow* work and cause TIFF tile errors (concurrent Azure/GDAL).
-    # Defaults: one scene at a time, years one after another (fastest stable on most networks).
-    SATELLITE_DOWNLOAD_SCENE_PARALLEL = False
-    SATELLITE_DOWNLOAD_MAX_WORKERS = 8    # only if SCENE_PARALLEL True (keep low)
-    # Kept for compatibility; parallel multi-year download removed from code (unstable).
-    SATELLITE_DOWNLOAD_MAX_YEAR_WORKERS = 1
     SATELLITE_BAND_READ_RETRIES = 4       # transient TIFFReadEncodedTile / partial HTTP
     SATELLITE_BAND_RETRY_DELAY_SEC = 1.0
     # Fetch multiple band COGs in parallel *within one scene* (separate URLs; often faster than
@@ -141,9 +128,8 @@ class PipelineConfig:
     SATELLITE_STAC_YEAR_SEARCH_WORKERS = 4   # parallel year searches (1 = sequential)
     SATELLITE_STAC_SEARCH_RETRIES = 2        # retry failed year search (API timeouts)
     SATELLITE_STAC_SEARCH_RETRY_DELAY_SEC = 2.0
-    # Process selected scenes grouped by calendar year (orderly logs); still one COG stream.
-    CONTINUOUS_DOWNLOAD_BATCH_BY_YEAR = True
-    SATELLITE_INTER_YEAR_PAUSE_SEC = 0.0     # pause between calendar-year batches (0 = none)
+    # Pause between calendar-year STAC segments (when split-by-year search is used).
+    SATELLITE_INTER_YEAR_PAUSE_SEC = 0.0
 
     # Fallback detection threshold (overridden per region by RegionalConfig)
     CROP_DETECTION_NDVI_THRESHOLD = 0.20
@@ -172,11 +158,42 @@ class PipelineConfig:
     MAX_NDVI_CV_FOR_CROP         = 0.80   # max variation (not cloud noise)
 
     # ========================================================================
+    # CREDIT SCORING (Stage 8) — rule-based primary; ML blend off by default
+    # ========================================================================
+    # When False, hybrid / unsupervised / supervised requests use rule_based only
+    # (ml_components_silenced=True on the result).
+    CREDIT_SCORE_ML_BLEND_ENABLED = False
+    # Anomaly component (0–100, higher = better): softer penalties + hard cap
+    CREDIT_ANOMALY_PENALTY_HIGH = 2.5
+    CREDIT_ANOMALY_PENALTY_MEDIUM = 0.9
+    CREDIT_ANOMALY_PENALTY_LOW = 0.3
+    CREDIT_ANOMALY_PENALTY_MAX = 22.0
+    # Weather safety: deduped extreme-event count × unit, capped
+    CREDIT_WEATHER_EXTREME_EVENT_UNIT = 1.0
+    CREDIT_WEATHER_EXTREME_EVENT_MAX_PENALTY = 10.0
+
+    # ========================================================================
+    # PERFORMANCE (Stage 7) — crop-agnostic anomaly calibration
+    # ========================================================================
+    PERFORMANCE_ANOMALY_IQR_FACTOR = 2.0          # sudden-drop fence (was 1.5)
+    PERFORMANCE_ANOMALY_SUSTAINED_MIN_SCENES = 4
+    PERFORMANCE_VOLATILITY_CV_MEDIUM = 0.48
+    PERFORMANCE_VOLATILITY_CV_HIGH = 0.62
+    PERFORMANCE_IMPACT_HIGH_MAG_IQR_MULT = 1.25
+    PERFORMANCE_STABILITY_DEDUCT_HIGH = 2.0
+    PERFORMANCE_STABILITY_DEDUCT_MEDIUM = 1.0
+    PERFORMANCE_STABILITY_DEDUCT_LOW = 0.35
+
+    # ========================================================================
     # ML CLASSIFICATION — Feature extraction
     # ========================================================================
 
     ML_FEATURE_SCENES  = 15                            # chronological scenes
     ML_FEATURE_INDICES = ['NDVI_mean', 'EVI_mean', 'NDMI_mean']
+
+    # Stage 5: when slicing scenes for a Stage-4 cycle, expand the date window by this
+    # many days on each side (ML + temporal features only; season_results dates stay exact).
+    CROP_DETECTOR_CYCLE_SCENE_PADDING_DAYS = 5
 
     # ========================================================================
     # CROP CYCLE DETECTION (continuous series -> sowing / harvest windows)
@@ -191,9 +208,9 @@ class PipelineConfig:
     # Raise to 360+ only for long-duration crops (e.g. sugarcane) on the same field.
     CROP_CYCLE_MAX_DURATION_DAYS = 195
     # Harvest triggers are only scanned this many calendar days after the CVI peak
-    # (14-day grid => ~10 bins). Prevents one crop from absorbing the next peaks.
+    # (e.g. 10-day grid => ~13 bins). Prevents one crop from absorbing the next peaks.
     CROP_CYCLE_MAX_DAYS_AFTER_PEAK = 135
-    # Minimum grid-point spacing between greenup events (~3 * 14d ≈ 42d).
+    # Minimum grid-point spacing between greenup events (~3 bins × interval_days).
     CROP_CYCLE_GREENUP_MIN_GRID_SEP = 3
     CROP_CYCLE_SUSTAINED_GROWTH_FRAC = 0.55
     # Merge two cycles only if overlap is large vs calendar AND vs shorter duration
@@ -204,6 +221,33 @@ class PipelineConfig:
     CROP_CYCLE_HINT_STEP_DAYS = 118
     CROP_CYCLE_MAX_HINT_ANCHORS = 40
 
+    # Sowing — NDVI-led (low baseline → rise over 2–3 bins); transplant path via EVI/NDMI
+    CROP_CYCLE_SOW_BASELINE_MAX = 0.24
+    CROP_CYCLE_SOW_CROSS_MIN = 0.27
+    CROP_CYCLE_SOW_MIN_RISE_STEPS = 3
+    CROP_CYCLE_SOW_NOISE_DROP_TOL = 0.018
+    CROP_CYCLE_SOW_TRANSPLANT_BASELINE_MAX = 0.40
+    CROP_CYCLE_SOW_TRANSPLANT_EVI_DELTA = 0.020
+    CROP_CYCLE_SOW_TRANSPLANT_NDMI_DELTA = 0.014
+
+    # Harvest — post-peak decline, cross low NDVI, then low plateau / minimum
+    CROP_CYCLE_HARVEST_LOW_NDVI = 0.36
+    CROP_CYCLE_HARVEST_DECLINE_STEPS = 3
+    CROP_CYCLE_HARVEST_DECLINE_MIN_DROP = 0.018
+    CROP_CYCLE_HARVEST_PEAK_DROP_FRAC = 0.06
+    CROP_CYCLE_HARVEST_STABLE_MAX_STD = 0.022
+    CROP_CYCLE_HARVEST_STABLE_RUN = 3
+
+    # Chronological imputation grid: match `CONTINUOUS_SCENE_INTERVAL_DAYS` when
+    # `detect_cycles(..., grid_step_days=...)` is passed from main (recommended).
+    CYCLE_GRID_STEP_DAYS = 10
+    # Only linear interpolation across NaN runs shorter than this (calendar days).
+    CYCLE_IMPUTE_SHORT_GAP_MAX_DAYS = 48
+    # Longer NaN runs use pre/post context (e.g. May plateau + Sep decline => hat in Kharif).
+    CYCLE_IMPUTE_LONG_GAP_MIN_DAYS = 36
+    CYCLE_IMPUTE_POST_DECLINE_LOOK = 6
+    CYCLE_IMPUTE_DECLINE_DELTA = 0.028
+
     # ========================================================================
     # WEATHER PARAMETERS
     # ========================================================================
@@ -212,14 +256,38 @@ class PipelineConfig:
     WEATHER_API_TIMEOUT      = 120
     WEATHER_API_MAX_RETRIES  = 3
 
-    HEATWAVE_THRESHOLD_C      = 40
-    HEATWAVE_MIN_DAYS         =  3
-    COLD_WAVE_THRESHOLD_C     = 10
-    COLD_WAVE_MIN_DAYS        =  3
-    HEAVY_RAIN_SINGLE_DAY_MM  = 100
-    HEAVY_RAIN_3DAY_MM        = 200
-    DROUGHT_MIN_DAYS          =  30
-    DROUGHT_DAILY_RAINFALL_MM =   2
+    # Extreme-event thresholds: default is per-cycle percentiles (local climate + season).
+    # Set WEATHER_USE_DYNAMIC_THRESHOLDS = False to use the static fallback block below only.
+    WEATHER_USE_DYNAMIC_THRESHOLDS = True
+    WEATHER_DYNAMIC_MIN_OBS = 21
+    WEATHER_DYNAMIC_HEAT_PERCENTILE = 91.0
+    WEATHER_DYNAMIC_HEAT_DELTA_C = 1.8
+    WEATHER_DYNAMIC_HEAT_FLOOR_C = 36.0
+    WEATHER_DYNAMIC_HEAT_CAP_C = 44.0
+    WEATHER_DYNAMIC_COLD_PERCENTILE = 10.0
+    WEATHER_DYNAMIC_COLD_DELTA_C = 1.5
+    WEATHER_DYNAMIC_COLD_FLOOR_C = 4.0
+    WEATHER_DYNAMIC_COLD_CAP_C = 10.0
+    WEATHER_HEAVY_RAIN_WET_PERCENTILE = 93.0
+    WEATHER_HEAVY_RAIN_FLOOR_MM = 42.0
+    WEATHER_HEAVY_3DAY_PERCENTILE = 90.0
+    WEATHER_HEAVY_3DAY_FLOOR_MM = 85.0
+    WEATHER_DROUGHT_DRY_PERCENTILE = 22.0
+    WEATHER_DROUGHT_DAILY_FLOOR_MM = 0.25
+    WEATHER_DROUGHT_DAILY_CEILING_MM = 6.0
+    WEATHER_DROUGHT_MIN_DAY_FRAC_OF_CYCLE = 0.13
+    WEATHER_DROUGHT_MIN_DAYS_FLOOR = 12
+    WEATHER_DROUGHT_MIN_DAYS_CAP = 42
+    WEATHER_DROUGHT_INTERVAL_FACTOR = 1.2
+
+    HEATWAVE_MIN_DAYS = 3
+    COLD_WAVE_MIN_DAYS = 3
+    HEATWAVE_THRESHOLD_C = 40
+    COLD_WAVE_THRESHOLD_C = 10
+    HEAVY_RAIN_SINGLE_DAY_MM = 100
+    HEAVY_RAIN_3DAY_MM = 200
+    DROUGHT_MIN_DAYS = 30
+    DROUGHT_DAILY_RAINFALL_MM = 2
 
     # ========================================================================
     # CREDIT SCORING WEIGHTS  (must sum to 100)
@@ -349,12 +417,14 @@ class PipelineConfig:
     AI_CONFIG = {
         # Groq — English report generation
         "groq": {
-            "api_key":    _os.environ.get("GROQ_API_KEY"),          # None → disable
+            "api_key":    _os.environ.get("GROQ_API_KEY"),
             "model":      _os.environ.get("GROQ_MODEL", "llama-3.1-70b-versatile"),
             "api_url":    "https://api.groq.com/openai/v1/chat/completions",
             "timeout":    30,
             "max_tokens": 400,
-            "enabled":    bool(_os.environ.get("GROQ_API_KEY")),
+            # Off unless GROQ_ENABLE=1 (avoids calls when no API / dry runs)
+            "enabled":    _os.environ.get("GROQ_ENABLE", "").strip().lower()
+                          in ("1", "true", "yes"),
         },
         # SarvamAI — Indian language translation
         "sarvam": {
@@ -392,14 +462,28 @@ class PipelineConfig:
             errors.append("TARGET > MAX scenes")
         if cls.MIN_SCENES_PER_SEASON > cls.TARGET_SCENES_PER_SEASON:
             errors.append("MIN > TARGET scenes")
-        if cls.CONTINUOUS_SCENE_TARGET_MIN > cls.CONTINUOUS_SCENE_TARGET_MAX:
-            errors.append("CONTINUOUS_SCENE_TARGET_MIN > MAX")
         if getattr(cls, "CONTINUOUS_SCENE_INTERVAL_DAYS", 10) < 1:
             errors.append("CONTINUOUS_SCENE_INTERVAL_DAYS must be >= 1")
         if getattr(cls, "SATELLITE_STAC_YEAR_SEARCH_WORKERS", 1) < 1:
             errors.append("SATELLITE_STAC_YEAR_SEARCH_WORKERS must be >= 1")
-        if getattr(cls, "SATELLITE_DOWNLOAD_MAX_YEAR_WORKERS", 1) < 1:
-            errors.append("SATELLITE_DOWNLOAD_MAX_YEAR_WORKERS must be >= 1")
+        for _nm in (
+            "WEATHER_DYNAMIC_HEAT_PERCENTILE",
+            "WEATHER_DYNAMIC_COLD_PERCENTILE",
+            "WEATHER_HEAVY_RAIN_WET_PERCENTILE",
+            "WEATHER_HEAVY_3DAY_PERCENTILE",
+            "WEATHER_DROUGHT_DRY_PERCENTILE",
+        ):
+            v = float(getattr(cls, _nm, 50.0))
+            if not (0.0 <= v <= 100.0):
+                errors.append(f"{_nm} must be in [0, 100]")
+        if float(getattr(cls, "WEATHER_DYNAMIC_HEAT_FLOOR_C", 0)) > float(
+            getattr(cls, "WEATHER_DYNAMIC_HEAT_CAP_C", 50)
+        ):
+            errors.append("WEATHER_DYNAMIC_HEAT_FLOOR_C must be <= WEATHER_DYNAMIC_HEAT_CAP_C")
+        if float(getattr(cls, "WEATHER_DYNAMIC_COLD_FLOOR_C", 0)) > float(
+            getattr(cls, "WEATHER_DYNAMIC_COLD_CAP_C", 20)
+        ):
+            errors.append("WEATHER_DYNAMIC_COLD_FLOOR_C must be <= WEATHER_DYNAMIC_COLD_CAP_C")
         if errors:
             raise ValueError(f"Config errors: {errors}")
         return True

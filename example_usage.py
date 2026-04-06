@@ -21,69 +21,60 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def example_1_basic_mode():
+def example_1_pipeline_init():
     """
-    Example 1: BASIC mode (v3.0 compatible)
-    - 100% backward compatible
-    - No new dependencies required
-    - Same behavior as v3.0
+    Example 1: Default pipeline (continuous satellite, cycles, advanced credit scorer).
     """
     print("\n" + "="*70)
-    print("EXAMPLE 1: BASIC MODE (v3.0 Compatible)")
+    print("EXAMPLE 1: PIPELINE INITIALIZATION")
     print("="*70)
-    
+
     from main import SatelliteBasedCreditPipeline
-    
-    # Initialize in BASIC mode
+
     pipeline = SatelliteBasedCreditPipeline(
         crop_model_path='models/crop_classifier_model.joblib',
-        mode='BASIC',  # v3.0 features only
+        ml_mode='hybrid',
         use_mongodb=False,
-        verbose=True
+        verbose=True,
     )
-    
-    # Assess farmer
+
+    print("Pipeline initialized (continuous path, crop cycles, AdvancedCreditScorer).")
+    return pipeline
+
+
+def example_2_direct_assessment():
+    """
+    Example 2: Run assessment without MongoDB (lat/lon + area).
+    """
+    print("\n" + "="*70)
+    print("EXAMPLE 2: DIRECT ASSESSMENT (no DB)")
+    print("="*70)
+
+    from main import SatelliteBasedCreditPipeline
+
+    pipeline = SatelliteBasedCreditPipeline(
+        crop_model_path='models/crop_classifier_model.joblib',
+        ml_mode='hybrid',
+        use_mongodb=False,
+        verbose=True,
+    )
+
     result = pipeline.assess_farmer(
         farmer_id='example_farmer_001',
         latitude=19.0760,
         longitude=72.8777,
-        field_area_ha=2.5
+        field_area_ha=2.5,
+        save_to_db=False,
     )
-    
-    # Print results
+
     print(f"\nRESULTS:")
     print(f"  Status: {result['status']}")
-    print(f"  Credit Score: {result['credit_assessment']['credit_score']}/100")
-    print(f"  Risk Category: {result['credit_assessment']['risk_category']}")
-    print(f"  Processing Time: {result['processing_time_seconds']:.1f}s")
-    
+    if result['status'] == 'SUCCESS':
+        print(f"  Credit Score: {result['credit_assessment']['credit_score']}/100")
+        print(f"  Risk Category: {result['credit_assessment']['risk_category']}")
+    print(f"  Processing Time: {result.get('processing_time_seconds', 0):.1f}s")
+
     return result
-
-
-def example_2_enhanced_mode():
-    """
-    Example 2: ENHANCED mode with all v4.0 features
-    """
-    print("\n" + "="*70)
-    print("EXAMPLE 2: ENHANCED MODE (All v4.0 Features)")
-    print("="*70)
-    
-    from main import SatelliteBasedCreditPipeline
-    
-    # Initialize with ALL v4.0 features
-    pipeline = SatelliteBasedCreditPipeline(
-        crop_model_path='models/crop_classifier_model.joblib',
-        mode='ENHANCED',
-        ml_mode='hybrid',
-        use_mongodb=False,
-        enable_continuous_data=True,
-        enable_crop_cycles=True,
-        enable_advanced_ml=True,
-        verbose=True
-    )
-    
-    print("Enhanced pipeline initialized successfully!")
-    return pipeline
 
 
 def example_3_crop_cycle_detection():
@@ -270,11 +261,9 @@ def main():
             print("Try: export PYTHONPATH=$PYTHONPATH:$(pwd)")
             return
         
-        # Example 1: Basic mode
-        example_1_basic_mode()
-        
-        # Example 2: Enhanced mode
-        example_2_enhanced_mode()
+        example_1_pipeline_init()
+
+        example_2_direct_assessment()
         
         # Example 3: Crop cycle detection
         example_3_crop_cycle_detection()

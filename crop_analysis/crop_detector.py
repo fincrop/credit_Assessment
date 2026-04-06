@@ -1,7 +1,7 @@
 """
-Crop Detector and Classifier — VERSION 4.0
+Crop Detector and Classifier — VERSION 4.1
 ============================================
-Design philosophy (v4.0):
+Design philosophy (v4.x):
   PRIMARY GOAL: Detect CULTIVATION ACTIVITY and its INTENSITY.
   SECONDARY GOAL: Identify the crop type (best-effort; never blocks the pipeline).
 
@@ -21,11 +21,18 @@ Key changes from v3.0:
   3. ML failures handled gracefully — cycle is NOT dropped.
   4. dominant_crop and crops_detected populated where possible,
      left empty/Unknown when not — without affecting credit score.
+
+v4.1 (Stage 5 ↔ Stage 4):
+  - Temporal gates use cycle_based=True (cycles already validated by CropCycleDetector).
+  - season_results carry peak_date, harvest_start_date, harvest_end_date, season_label.
+  - Scene slicing uses optional padding around sowing→harvest for ML context only;
+    reported start_date / end_date remain the Stage-4 sowing and final harvest dates.
 """
 
 import numpy as np
 import joblib
 from collections import defaultdict
+from datetime import datetime, timedelta
 from typing import Dict, List, Tuple, Optional
 import logging
 
@@ -40,6 +47,8 @@ class CropDetector:
     Detects crop presence via temporal NDVI pattern analysis and
     classifies crop type using a pre-trained ML model with
     chronologically ordered features.
+
+    ``analyze_cycles`` is the primary path with Stage-4 ``CropCycle`` intervals.
     """
 
     def __init__(
@@ -64,7 +73,7 @@ class CropDetector:
         self.ndvi_threshold      = PipelineConfig.CROP_DETECTION_NDVI_THRESHOLD
         self.region              = 'DEFAULT'
 
-        logger.info(f"✔ CropDetector v3.0 initialized  (Region: {self.region})")
+        logger.info(f"✔ CropDetector v4.1 initialized  (Region: {self.region})")
         logger.info(f"  NDVI threshold: {self.ndvi_threshold:.2f}  |  "
                     f"ML feature scenes: {PipelineConfig.ML_FEATURE_SCENES}  |  "
                     f"Crops: {len(self.crop_names)}")
@@ -201,30 +210,118 @@ class CropDetector:
             'ndvi_threshold_used':   self.ndvi_threshold,
         }
 
+    @staticmethod
+    def _norm_cycle_date(value) -> Optional[str]:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return value[:10] if len(value) >= 10 else value
+        if hasattr(value, 'strftime'):
+            return value.strftime('%Y-%m-%d')
+        return None
+
+    @staticmethod
+    def _cycle_scene_date_bounds(start_str: str, end_str: str) -> Tuple[str, str]:
+        """Widen [sowing, harvest] slightly for gathering scenes (ML / temporal only)."""
+        pad = int(
+            getattr(PipelineConfig, 'CROP_DETECTOR_CYCLE_SCENE_PADDING_DAYS', 0) or 0
+        )
+        if pad <= 0:
+            return start_str[:10], end_str[:10]
+        s = datetime.strptime(start_str[:10], '%Y-%m-%d')
+        e = datetime.strptime(end_str[:10], '%Y-%m-%d')
+        d = timedelta(days=pad)
+        return (s - d).strftime('%Y-%m-%d'), (e + d).strftime('%Y-%m-%d')
+
+    @staticmethod
+    def _collect_scenes_between(
+        all_continuous_scenes: List[Dict],
+        lo: str,
+        hi: str,
+    ) -> List[Dict]:
+        rows: List[Dict] = []
+        for s in all_continuous_scenes:
+            if s.get('missing'):
+                continue
+            raw = s.get('date', '') or ''
+            ds = raw[:10] if isinstance(raw, str) else str(raw)[:10]
+            if len(ds) < 10:
+                continue
+            if lo <= ds <= hi:
+                rows.append(s)
+        return sorted(rows, key=lambda x: (x.get('date') or '')[:10])
+
+    def _stage4_metadata(self, cycle, cycle_index: int) -> Dict:
+        """Mirror Stage-4 cycle fields into season_results (dict or CropCycle object)."""
+        meta: Dict = {
+            'cycle_index':          cycle_index,
+            'season_label':         '',
+            'peak_date':            None,
+            'harvest_start_date':   None,
+            'harvest_end_date':     None,
+            'baseline_ndvi':        None,
+            'peak_cvi':             None,
+            'integral_ndvi_days':   None,
+            'has_cloud_gap':        None,
+            'cloud_gap_days':       None,
+            'crop_type_hint':       None,
+        }
+        if isinstance(cycle, dict):
+            meta['season_label'] = cycle.get('season_label') or ''
+            meta['peak_date'] = self._norm_cycle_date(cycle.get('peak_date'))
+            meta['harvest_start_date'] = self._norm_cycle_date(
+                cycle.get('harvest_start_date')
+            )
+            meta['harvest_end_date'] = self._norm_cycle_date(
+                cycle.get('harvest_end_date')
+            )
+            for k in (
+                'baseline_ndvi', 'peak_cvi', 'integral_ndvi_days',
+                'cloud_gap_days', 'has_cloud_gap',
+            ):
+                if k in cycle:
+                    meta[k] = cycle.get(k)
+            meta['crop_type_hint'] = cycle.get('crop_type')
+        else:
+            meta['season_label'] = getattr(cycle, 'season_label', '') or ''
+            meta['peak_date'] = self._norm_cycle_date(getattr(cycle, 'peak_date', None))
+            meta['harvest_start_date'] = self._norm_cycle_date(
+                getattr(cycle, 'harvest_start_date', None)
+            )
+            meta['harvest_end_date'] = self._norm_cycle_date(
+                getattr(cycle, 'harvest_end_date', None)
+            )
+            meta['baseline_ndvi'] = getattr(cycle, 'baseline_ndvi', None)
+            meta['peak_cvi'] = getattr(cycle, 'peak_cvi', None)
+            meta['integral_ndvi_days'] = getattr(cycle, 'integral_ndvi_days', None)
+            meta['has_cloud_gap'] = getattr(cycle, 'has_cloud_gap', None)
+            meta['cloud_gap_days'] = getattr(cycle, 'cloud_gap_days', None)
+            meta['crop_type_hint'] = getattr(cycle, 'crop_type', None)
+        return meta
+
     def analyze_cycles(
         self,
         crop_cycles: List[Dict],
         all_continuous_scenes: List[Dict],
     ) -> Dict:
         """
-        Cycle-based crop detection — uses exact detected cycle dates.
+        Cycle-based crop detection — aligned with Stage-4 sowing / harvest intervals.
 
-        Instead of rigid Kharif/Rabi windows, this method:
-        1. Takes the list of crop cycles from CropCycleDetector
-           (each cycle has 'start_date', 'end_date', 'peak_ndvi', etc.)
-        2. For each cycle, filters the continuous scene list to that exact
-           date window and runs the ML crop classifier on those scenes.
-        3. Returns results in the same format as analyze_cropping_pattern(),
-           ensuring downstream compatibility.
+        1. Uses each cycle's **sowing → final harvest** as the authoritative
+           ``start_date`` / ``end_date`` in outputs (weather, performance, credit).
+        2. Gathers real (non-placeholder) scenes in that window, optionally
+           **padded** by ``CROP_DETECTOR_CYCLE_SCENE_PADDING_DAYS`` for ML + temporal
+           features only.
+        3. Runs relaxed temporal checks (``cycle_based=True``) then best-effort ML.
+        4. Copies Stage-4 fields: ``peak_date``, ``harvest_start_date``,
+           ``harvest_end_date``, ``season_label``, etc.
 
         Args:
-            crop_cycles: list of cycle dicts (start_date, end_date, peak_ndvi,
-                         duration_days, confidence) from CropCycleDetector.
-                         Also accepts objects with .start_date / .end_date attrs.
-            all_continuous_scenes: full 3-year scene list (date + indices).
+            crop_cycles: ``CropCycle`` objects or dicts from ``CropCycle.to_dict()``.
+            all_continuous_scenes: full continuous grid (may include ``missing`` bins).
 
         Returns:
-            Dict compatible with analyze_cropping_pattern() output.
+            Dict compatible with ``analyze_cropping_pattern()`` output.
         """
         logger.info(f"\n{'='*70}")
         logger.info("CYCLE-BASED CROP DETECTION")
@@ -263,19 +360,17 @@ class CropDetector:
             peak_ndvi  = float(_get(cycle, 'peak_ndvi') or 0.0)
             dur_days   = int(_get(cycle, 'duration_days') or 0)
             confidence = float(_get(cycle, 'confidence') or 0.0)
+            s4         = self._stage4_metadata(cycle, i)
             label      = f"CYCLE {i} [{start_str} → {end_str}]"
 
             if not start_str or not end_str:
                 continue
 
-            # Filter continuous scenes to this cycle's exact date window
-            cycle_scenes = [
-                s for s in all_continuous_scenes
-                if start_str <= s.get('date', '') <= end_str
-            ]
+            lo, hi = self._cycle_scene_date_bounds(start_str, end_str)
+            cycle_scenes = self._collect_scenes_between(all_continuous_scenes, lo, hi)
 
             logger.info(
-                f"  {label}: {len(cycle_scenes)} scenes  "
+                f"  {label}: {len(cycle_scenes)} scenes (window {lo}…{hi})  "
                 f"peak_ndvi={peak_ndvi:.3f}  dur={dur_days}d"
             )
 
@@ -287,11 +382,14 @@ class CropDetector:
                     'n_scenes': len(cycle_scenes),
                     'peak_ndvi': peak_ndvi, 'cycle_confidence': confidence,
                     'reason': f'Too few scenes ({len(cycle_scenes)})',
+                    **{k: v for k, v in s4.items() if v is not None and k != 'cycle_index'},
                 })
                 continue
 
-            # Detect presence using temporal pattern analysis
-            crop_present, pattern_info = self._detect_crop_temporal(cycle_scenes)
+            # Stage-4 already validated the interval — relax duplicate temporal gates
+            crop_present, pattern_info = self._detect_crop_temporal(
+                cycle_scenes, cycle_based=True
+            )
 
             if crop_present:
                 units_with_crops += 1
@@ -339,6 +437,7 @@ class CropDetector:
                     'is_cycle_based':      True,
                     'scenes':              cycle_scenes,
                     **pattern_info,
+                    **{k: v for k, v in s4.items() if v is not None and k != 'cycle_index'},
                 })
                 logger.info(
                     f"    \u2714 Cultivation detected  "
@@ -355,6 +454,7 @@ class CropDetector:
                     'cycle_confidence': confidence,
                     **pattern_info,
                     'reason': pattern_info.get('rejection_reason', 'No crop pattern'),
+                    **{k: v for k, v in s4.items() if v is not None and k != 'cycle_index'},
                 })
                 logger.info(f"    ✗ No crop [{pattern_info.get('rejection_reason','')}]")
 
@@ -773,7 +873,6 @@ class CropDetector:
         if len(dates) < 2:
             return 0.0
 
-        from datetime import datetime
         try:
             obs_start = datetime.strptime(dates[0],  '%Y-%m-%d')
             obs_end   = datetime.strptime(dates[-1], '%Y-%m-%d')

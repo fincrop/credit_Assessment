@@ -82,28 +82,30 @@ class WeatherAnalyzer:
         latitude:  Optional[float] = None,
         longitude: Optional[float] = None,
         verbose:   bool = True,
+        interval_days: Optional[int] = None,
     ):
         self.base_url  = PipelineConfig.NASA_POWER_BASE_URL
         self.params    = PipelineConfig.WEATHER_PARAMETERS
         self.verbose   = verbose
         self.latitude  = latitude
         self.longitude = longitude
+        self.interval_days = int(
+            interval_days
+            if interval_days is not None
+            else getattr(PipelineConfig, "CONTINUOUS_SCENE_INTERVAL_DAYS", 10)
+        )
 
-        # Unified thresholds
         self.thresholds = self._default_thresholds()
         self.region     = 'DEFAULT'
 
-        logger.info("WeatherAnalyzer v4.0 initialized  (Region: %s)", self.region)
-        logger.info(
-            "  Heatwave: >%s degC for %s+ days",
-            self.thresholds["heatwave_temp"],
-            self.thresholds["heatwave_min_days"],
-        )
-        logger.info(
-            "  Drought:  %s consecutive dry days (<%s mm/day)",
-            self.thresholds["drought_days"],
-            self.thresholds["drought_daily_mm"],
-        )
+        if self.verbose:
+            logger.info("WeatherAnalyzer v4.0 initialized (Region: %s)", self.region)
+            logger.info(
+                "  Static fallback heatwave: >%s C for %s+ d | satellite interval=%s d",
+                self.thresholds["heatwave_temp"],
+                self.thresholds["heatwave_min_days"],
+                self.interval_days,
+            )
 
     # =========================================================================
     # PUBLIC API
@@ -131,10 +133,11 @@ class WeatherAnalyzer:
             Dict: seasonal_weather, extreme_events, weather_risk_score,
                   total_extreme_events, region, thresholds_used
         """
-        logger.info(f"\n{'='*70}")
-        logger.info("ANALYZING WEATHER PATTERNS")
-        logger.info(f"  Region: {self.region}")
-        logger.info(f"{'='*70}")
+        if self.verbose:
+            logger.info(f"\n{'='*70}")
+            logger.info("ANALYZING WEATHER PATTERNS")
+            logger.info(f"  Region: {self.region}")
+            logger.info(f"{'='*70}")
 
         # Decide which season list drives the date windows
         analysis_windows = merged_seasons if merged_seasons else seasonal_data
@@ -164,21 +167,23 @@ class WeatherAnalyzer:
                 # Basic seasonal statistics
                 stats = self._compute_seasonal_stats(df, season, year, is_cross)
 
-                # Detect extreme events (regional thresholds)
-                events = self._detect_extreme_events(df, season, year, crop)
+                events, t_used, thr_mode = self._detect_extreme_events(df, season, year, crop)
                 stats['extreme_events'] = events
+                stats['weather_thresholds_used'] = t_used
+                stats['weather_threshold_mode'] = thr_mode
                 all_extreme_events.extend(events)
 
                 seasonal_weather.append(stats)
 
-                logger.info(
-                    "  %s: rain=%.0fmm  avg_temp=%.1f degC  max=%.1f degC  events=%d",
-                    label,
-                    stats["total_rainfall_mm"],
-                    stats["avg_temp_c"],
-                    stats["max_temp_c"],
-                    len(events),
-                )
+                if self.verbose:
+                    logger.info(
+                        "  %s: rain=%.0fmm  avg_temp=%.1f degC  max=%.1f degC  events=%d",
+                        label,
+                        stats["total_rainfall_mm"],
+                        stats["avg_temp_c"],
+                        stats["max_temp_c"],
+                        len(events),
+                    )
 
             except Exception as e:
                 logger.warning("  %s: Weather fetch failed - %s", label, str(e)[:60])
@@ -188,9 +193,10 @@ class WeatherAnalyzer:
             seasonal_weather, all_extreme_events
         )
 
-        logger.info("\nWeather summary:")
-        logger.info("  Total extreme events: %d", len(all_extreme_events))
-        logger.info("  Weather risk score:   %.1f/100", weather_risk_score)
+        if self.verbose:
+            logger.info("\nWeather summary:")
+            logger.info("  Total extreme events: %d", len(all_extreme_events))
+            logger.info("  Weather risk score:   %.1f/100", weather_risk_score)
 
         return {
             'seasonal_weather':    seasonal_weather,
@@ -199,6 +205,7 @@ class WeatherAnalyzer:
             'total_extreme_events': len(all_extreme_events),
             'region':              self.region,
             'thresholds_used':     self.thresholds,
+            'interval_days':       self.interval_days,
         }
 
     def analyze_cycle_weather(
@@ -225,10 +232,11 @@ class WeatherAnalyzer:
         Returns:
             Same schema as analyze_seasonal_weather() for drop-in compat.
         """
-        logger.info(f"\n{'='*70}")
-        logger.info("CYCLE-ALIGNED WEATHER ANALYSIS  (v4.0)")
-        logger.info(f"  Region: {self.region}")
-        logger.info(f"{'='*70}")
+        if self.verbose:
+            logger.info(f"\n{'='*70}")
+            logger.info("CYCLE-ALIGNED WEATHER ANALYSIS  (v4.0)")
+            logger.info(f"  Region: {self.region}")
+            logger.info(f"{'='*70}")
 
         season_results_list = crop_cycles_analysis.get('season_results', [])
         seasonal_weather: List[Dict] = []
@@ -273,7 +281,7 @@ class WeatherAnalyzer:
                 })
 
                 # â”€â”€ Extreme events with real-day stage mapping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                events = self._detect_cycle_extreme_events(
+                events, t_used, thr_mode = self._detect_cycle_extreme_events(
                     df             = df,
                     cycle_label    = cycle_label,
                     year           = result.get('year', 0),
@@ -282,28 +290,31 @@ class WeatherAnalyzer:
                 )
 
                 stats['extreme_events'] = events
+                stats['weather_thresholds_used'] = t_used
+                stats['weather_threshold_mode'] = thr_mode
                 all_extreme_events.extend(events)
                 seasonal_weather.append(stats)
 
                 critical_ct = sum(1 for e in events if e.get('crop_stage_critical'))
-                logger.info(
-                    "  %s:  rain=%.0fmm  avg_temp=%.1f degC  events=%d  critical=%d",
-                    label,
-                    stats.get("total_rainfall_mm", 0),
-                    stats.get("avg_temp_c", 0),
-                    len(events),
-                    critical_ct,
-                )
-                for ev in events:
-                    crit_tag = " [!] CRITICAL" if ev.get("crop_stage_critical") else ""
+                if self.verbose:
                     logger.info(
-                        "    - [%s] %s | stage=%s%s | %s",
-                        ev["type"],
-                        ev.get("severity", "?"),
-                        ev.get("stage_name", "?"),
-                        crit_tag,
-                        ev.get("crop_impact_narrative", "")[:70],
+                        "  %s:  rain=%.0fmm  avg_temp=%.1f degC  events=%d  critical=%d",
+                        label,
+                        stats.get("total_rainfall_mm", 0),
+                        stats.get("avg_temp_c", 0),
+                        len(events),
+                        critical_ct,
                     )
+                    for ev in events:
+                        crit_tag = " [!] CRITICAL" if ev.get("crop_stage_critical") else ""
+                        logger.info(
+                            "    - [%s] %s | stage=%s%s | %s",
+                            ev["type"],
+                            ev.get("severity", "?"),
+                            ev.get("stage_name", "?"),
+                            crit_tag,
+                            ev.get("crop_impact_narrative", "")[:70],
+                        )
 
             except Exception as e:
                 logger.warning("  %s: Weather fetch failed - %s", label, str(e)[:60])
@@ -314,10 +325,20 @@ class WeatherAnalyzer:
         )
 
         critical_count = sum(1 for ev in all_extreme_events if ev.get('crop_stage_critical'))
-        logger.info("\nCycle weather summary:")
-        logger.info("  Total extreme events:    %d", len(all_extreme_events))
-        logger.info("  Critical-stage events:   %d", critical_count)
-        logger.info("  Weather risk score:      %.1f/100", weather_risk_score)
+        if self.verbose:
+            logger.info("\nCycle weather summary:")
+            logger.info("  Total extreme events:    %d", len(all_extreme_events))
+            logger.info("  Critical-stage events:   %d", critical_count)
+            logger.info("  Weather risk score:      %.1f/100", weather_risk_score)
+
+        cycle_risk_scores = [
+            {
+                'cycle_id':   s.get('cycle_id'),
+                'risk_score': WeatherAnalyzer._per_cycle_weather_risk(s),
+                'n_events':   len(s.get('extreme_events') or []),
+            }
+            for s in seasonal_weather
+        ]
 
         return {
             'seasonal_weather':      seasonal_weather,
@@ -325,8 +346,10 @@ class WeatherAnalyzer:
             'weather_risk_score':    weather_risk_score,
             'total_extreme_events':  len(all_extreme_events),
             'critical_stage_events': critical_count,
+            'cycle_risk_scores':     cycle_risk_scores,
             'region':                self.region,
             'thresholds_used':       self.thresholds,
+            'interval_days':         self.interval_days,
             'analysis_mode':         'cycle_aligned_v4',
         }
 
@@ -433,6 +456,109 @@ class WeatherAnalyzer:
         return stats
 
     # =========================================================================
+    # DYNAMIC THRESHOLDS (per cycle, aligned with satellite sampling interval)
+    # =========================================================================
+
+    def _cycle_extreme_thresholds(
+        self,
+        df: pd.DataFrame,
+        cycle_duration: int,
+    ) -> Tuple[Dict, str]:
+        """
+        Build temperature/rain/drought cutoffs from this cycle's NASA POWER series.
+        Spell lengths scale with ``self.interval_days`` (same as satellite grid step).
+        Falls back to ``self.thresholds`` when disabled or data are too short.
+        """
+        base = dict(self.thresholds)
+        P = PipelineConfig
+        if not getattr(P, "WEATHER_USE_DYNAMIC_THRESHOLDS", True):
+            return base, "fixed_config"
+
+        n = len(df)
+        min_obs = int(getattr(P, "WEATHER_DYNAMIC_MIN_OBS", 21))
+        if n < min_obs:
+            return base, "fixed_short_series"
+
+        interval = max(3, int(self.interval_days or 10))
+        spell = max(
+            int(base["heatwave_min_days"]),
+            int(np.ceil(interval / 3.0)),
+        )
+
+        t = dict(base)
+        t["heatwave_min_days"] = spell
+        t["cold_wave_min_days"] = spell
+
+        try:
+            if "T2M_MAX" in df.columns:
+                tmax = df["T2M_MAX"].dropna().astype(float)
+                if len(tmax) >= 14:
+                    qh = float(np.nanpercentile(tmax.values, P.WEATHER_DYNAMIC_HEAT_PERCENTILE))
+                    t["heatwave_temp"] = float(
+                        np.clip(
+                            qh + float(P.WEATHER_DYNAMIC_HEAT_DELTA_C),
+                            float(P.WEATHER_DYNAMIC_HEAT_FLOOR_C),
+                            float(P.WEATHER_DYNAMIC_HEAT_CAP_C),
+                        )
+                    )
+
+            if "T2M_MIN" in df.columns:
+                tmin = df["T2M_MIN"].dropna().astype(float)
+                if len(tmin) >= 14:
+                    qc = float(np.nanpercentile(tmin.values, P.WEATHER_DYNAMIC_COLD_PERCENTILE))
+                    t["cold_wave_temp"] = float(
+                        min(
+                            float(P.WEATHER_DYNAMIC_COLD_CAP_C),
+                            max(
+                                float(P.WEATHER_DYNAMIC_COLD_FLOOR_C),
+                                qc - float(P.WEATHER_DYNAMIC_COLD_DELTA_C),
+                            ),
+                        )
+                    )
+
+            if "PRECTOTCORR" in df.columns:
+                prect = df["PRECTOTCORR"].fillna(0).astype(float)
+                wet = prect[prect > 0.5]
+                if len(wet) >= 7:
+                    t["heavy_rain_single_mm"] = float(
+                        max(
+                            float(P.WEATHER_HEAVY_RAIN_FLOOR_MM),
+                            float(np.nanpercentile(wet.values, P.WEATHER_HEAVY_RAIN_WET_PERCENTILE)),
+                        )
+                    )
+                roll3 = prect.rolling(3, min_periods=3).sum().dropna()
+                if len(roll3) >= 14:
+                    t["heavy_rain_3day_mm"] = float(
+                        max(
+                            float(P.WEATHER_HEAVY_3DAY_FLOOR_MM),
+                            float(np.nanpercentile(roll3.values, P.WEATHER_HEAVY_3DAY_PERCENTILE)),
+                        )
+                    )
+
+                dry_guess = float(
+                    np.nanpercentile(prect.values, float(P.WEATHER_DROUGHT_DRY_PERCENTILE))
+                )
+                t["drought_daily_mm"] = float(
+                    np.clip(
+                        dry_guess,
+                        float(P.WEATHER_DROUGHT_DAILY_FLOOR_MM),
+                        float(P.WEATHER_DROUGHT_DAILY_CEILING_MM),
+                    )
+                )
+
+                dspell = max(
+                    int(P.WEATHER_DROUGHT_MIN_DAYS_FLOOR),
+                    int(np.ceil(cycle_duration * float(P.WEATHER_DROUGHT_MIN_DAY_FRAC_OF_CYCLE))),
+                    int(np.ceil(interval * float(P.WEATHER_DROUGHT_INTERVAL_FACTOR))),
+                )
+                t["drought_days"] = int(min(dspell, int(P.WEATHER_DROUGHT_MIN_DAYS_CAP)))
+
+            return t, "dynamic_percentile"
+        except Exception as ex:
+            logger.debug("Dynamic weather thresholds failed (%s); using static.", ex)
+            return base, "fixed_error"
+
+    # =========================================================================
     # EXTREME EVENT DETECTION  â€”  v4.0 Cycle-aligned (primary)
     # =========================================================================
 
@@ -443,28 +569,25 @@ class WeatherAnalyzer:
         year:           int,
         crop:           Optional[str],
         cycle_duration: int,
-    ) -> List[Dict]:
+    ) -> Tuple[List[Dict], Dict, str]:
         """
         Detect extreme weather events anchored to ACTUAL CROP GROWING DAYS.
 
-        Improvements vs v3:
-          A. Event timing = real days-since-sowing (df-index date delta, not
-             index-fraction). Eliminates mis-staging when weather data has gaps.
-          B. stage_name on every event (VEGETATIVE / FLOWERING / GRAIN_FILL /
-             RIPENING or named stages from CropGrowthCurves).
-          C. Adaptive drought threshold scaled by cycle length:
-             â‰¤90d â†’ drought_daysâˆ’5;  90â€“150d â†’ config value;  â‰¥150d â†’ +5.
-          D. Drought severity expressed as % of cycle duration, not flat days.
-          E. crop_impact_narrative: plain-English agronomic consequence.
+        Returns (events, thresholds_used, threshold_mode).
         """
         events: List[Dict] = []
-        t = self.thresholds
+        t, thr_mode = self._cycle_extreme_thresholds(df, cycle_duration)
 
-        # Adaptive drought threshold
-        base_dt = t['drought_days']
-        if   cycle_duration <= 90:  drought_thresh = max(15, base_dt - 5)
-        elif cycle_duration >= 150: drought_thresh = base_dt + 5
-        else:                       drought_thresh = base_dt
+        if thr_mode == "dynamic_percentile":
+            drought_thresh = int(t["drought_days"])
+        else:
+            base_dt = t["drought_days"]
+            if cycle_duration <= 90:
+                drought_thresh = max(15, base_dt - 5)
+            elif cycle_duration >= 150:
+                drought_thresh = base_dt + 5
+            else:
+                drought_thresh = base_dt
 
         # Critical stage fractions + named stage map from crop config
         critical_fracs, stage_map = self._get_critical_stage_fracs_v4(crop)
@@ -642,7 +765,7 @@ class WeatherAnalyzer:
                                                         dur=duration, pct=pct, tot=total_r),
                 })
 
-        return events
+        return events, self._plain_threshold_dict(t), thr_mode
 
     # â”€â”€ Legacy detection (BASIC mode / analyze_seasonal_weather) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _detect_extreme_events(
@@ -651,12 +774,12 @@ class WeatherAnalyzer:
         season: str,
         year:   int,
         crop:   Optional[str] = None,
-    ) -> List[Dict]:
-        """Legacy extreme event detection (BASIC mode, fixed seasonal windows)."""
+    ) -> Tuple[List[Dict], Dict, str]:
+        """Season-window extreme detection; thresholds from dynamic percentiles when enabled."""
         events: List[Dict] = []
-        t = self.thresholds
-        critical_fracs = self._get_critical_stage_fracs(crop)
         n_days = len(df)
+        t, thr_mode = self._cycle_extreme_thresholds(df, max(n_days, 1))
+        critical_fracs = self._get_critical_stage_fracs(crop)
 
         if 'T2M_MAX' in df.columns:
             hot   = df['T2M_MAX'] > t['heatwave_temp']
@@ -726,7 +849,8 @@ class WeatherAnalyzer:
                     })
 
             dry   = df['PRECTOTCORR'] < t['drought_daily_mm']
-            spans = DataProcessor.find_consecutive_periods(dry, t['drought_days'])
+            dspell = int(t['drought_days'])
+            spans = DataProcessor.find_consecutive_periods(dry, dspell)
             for s_idx, e_idx in spans:
                 duration  = e_idx - s_idx + 1
                 total_r   = float(df['PRECTOTCORR'].iloc[s_idx:e_idx+1].sum())
@@ -739,11 +863,11 @@ class WeatherAnalyzer:
                     'end_date':   df.index[e_idx].strftime('%Y-%m-%d'),
                     'duration_days': duration,
                     'total_rain_mm': round(total_r, 1),
-                    'threshold_days': t['drought_days'],
+                    'threshold_days': dspell,
                     'crop_stage_critical': critical,
                 })
 
-        return events
+        return events, self._plain_threshold_dict(t), thr_mode
 
     # =========================================================================
     # WEATHER RISK SCORE â€” v4.0 cycle-aligned (primary)
@@ -834,7 +958,8 @@ class WeatherAnalyzer:
         # 5. Temperature extremity (5%)
         max_temps = [s['max_temp_c'] for s in seasonal_weather if 'max_temp_c' in s]
         if max_temps:
-            extreme_thresh   = self.thresholds['heatwave_temp'] + 3
+            med_ht = self._median_heatwave_threshold_from_stats(seasonal_weather)
+            extreme_thresh   = med_ht + 3
             frac_extreme_hot = sum(tt > extreme_thresh for tt in max_temps) / len(max_temps)
             temp_risk        = min(100.0, frac_extreme_hot * 150)
         else:
@@ -842,6 +967,24 @@ class WeatherAnalyzer:
         risk += temp_risk * 0.05
 
         return round(min(100.0, max(0.0, risk)), 1)
+
+    @staticmethod
+    def _per_cycle_weather_risk(stats: Dict) -> float:
+        """
+        Per-cycle 0–100 risk from that cycle's extreme_events (for credit blending).
+        Calibrated mild when no events; scales with severity + critical-stage flags.
+        """
+        events = stats.get('extreme_events') or []
+        if not events:
+            return 22.0
+        sev_w = {'medium': 1.0, 'high': 2.0, 'extreme': 3.5}
+        wsum = 0.0
+        for e in events:
+            sev = str(e.get('severity', 'medium') or 'medium').lower()
+            wsum += float(sev_w.get(sev, 1.0))
+        crit = sum(1 for e in events if e.get('crop_stage_critical'))
+        score = 18.0 + min(52.0, wsum * 4.0) + min(22.0, crit * 5.0)
+        return round(min(100.0, score), 1)
 
     # â”€â”€ Legacy risk scorer (BASIC mode) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def _calculate_weather_risk(
@@ -899,7 +1042,8 @@ class WeatherAnalyzer:
 
         max_temps = [s['max_temp_c'] for s in seasonal_weather if 'max_temp_c' in s]
         if max_temps:
-            extreme_thresh   = self.thresholds['heatwave_temp'] + 3
+            med_ht = self._median_heatwave_threshold_from_stats(seasonal_weather)
+            extreme_thresh   = med_ht + 3
             frac_extreme_hot = sum(tt > extreme_thresh for tt in max_temps) / len(max_temps)
             temp_risk        = min(100.0, frac_extreme_hot * 150)
         else:
@@ -907,6 +1051,31 @@ class WeatherAnalyzer:
         risk += temp_risk * 0.05
 
         return round(min(100.0, max(0.0, risk)), 1)
+
+    @staticmethod
+    def _plain_threshold_dict(t: Dict) -> Dict:
+        out: Dict = {}
+        for k, v in t.items():
+            if isinstance(v, (np.floating, float)):
+                out[k] = float(v)
+            elif isinstance(v, (np.integer, int)):
+                out[k] = int(v)
+            else:
+                out[k] = v
+        return out
+
+    def _median_heatwave_threshold_from_stats(self, seasonal_weather: List[Dict]) -> float:
+        hts: List[float] = []
+        for s in seasonal_weather:
+            w = s.get('weather_thresholds_used')
+            if isinstance(w, dict) and 'heatwave_temp' in w:
+                try:
+                    hts.append(float(w['heatwave_temp']))
+                except (TypeError, ValueError):
+                    continue
+        if hts:
+            return float(np.median(hts))
+        return float(self.thresholds['heatwave_temp'])
 
     # =========================================================================
     # CROP-STAGE HELPERS  â€” v4.0

@@ -19,6 +19,8 @@ Usage:
 import logging
 from typing import Dict, List
 
+from config import PipelineConfig
+
 logger = logging.getLogger(__name__)
 
 # Must match AdvancedCreditScorer._WEIGHTS  (Stage 6)
@@ -179,9 +181,10 @@ class CounterfactualEngine:
         # ── S3: Reduce Anomaly Events (HIGH-impact stress) ────────────────────
         if n_high >= 2:
             target_high = max(0, n_high - 2)
+            ph = float(getattr(PipelineConfig, "CREDIT_ANOMALY_PENALTY_HIGH", 2.5))
             cur_ap     = component_scores.get('anomaly_penalty',
-                         max(0, 100 - n_high * 8))
-            new_ap     = min(100, max(0, 100 - target_high * 8))
+                         max(0.0, 100.0 - n_high * ph))
+            new_ap     = min(100.0, max(0.0, 100.0 - target_high * ph))
             gain       = ((new_ap - cur_ap) / 100) * _WEIGHTS['anomaly_penalty']
             scenarios.append({
                 'id':            'reduce_stress_events',

@@ -1210,30 +1210,19 @@
 
 
 """
-Satellite Data Collector - UPGRADED VERSION 4.0
-================================================
-MAJOR CHANGES:
-1. Continuous 3-year data collection as DEFAULT (not seasonal)
-2. Parallel scene downloading for 10x speed improvement
-3. Proper cloud threshold application (60% Rabi, 80% Kharif)
-4. Removed duplicate methods
-5. Better band validation and error handling
-
-WORKFLOW:
-1. Download 3 years of continuous data in parallel
-2. Calculate all vegetation indices (NDVI, EVI, NDMI, PSRI, NDRE, NDWI)
-3. Return time-series ready for crop cycle detection
-4. Optional: Also provide seasonal breakdown if requested
+Satellite Data Collector (continuous 3-year grid)
+=================================================
+- Window start: agricultural anchors **15 June** (Kharif) / **15 October** (Rabi), ~3 years back.
+- Fixed ``CONTINUOUS_SCENE_INTERVAL_DAYS`` bins; lowest-cloud Sentinel-2 L2A per bin.
+- Empty bins → placeholders (NaN indices); Stage 4 imputes.
+- STAC cloud cap: looser Jun–Oct (Kharif + monsoon tail), stricter Nov–May (Rabi).
 """
 
 import numpy as np
-import pandas as pd
 from datetime import datetime, timedelta, date, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Tuple, Optional, Union
+from typing import Any, Dict, List, Tuple, Optional
 import logging
 import gc
-import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -1263,9 +1252,8 @@ logger = logging.getLogger(__name__)
 
 class SatelliteDataCollector:
     """
-    Collects Sentinel-2 satellite imagery with continuous time-series approach.
-    DEFAULT: 3-year continuous data → crop cycle detection
-    OPTIONAL: Seasonal breakdown for backward compatibility
+    Sentinel-2 continuous pipeline: ~3-year window from season anchors (15 Jun / 15 Oct),
+    fixed N-day bins, one STAC pick per bin (or NaN placeholder). Downstream imputes gaps.
     """
 
     def __init__(self, verbose: bool = True):
@@ -1290,10 +1278,12 @@ class SatelliteDataCollector:
         logging.getLogger("rasterio._env").setLevel(logging.WARNING)
         logging.getLogger("rasterio").setLevel(logging.WARNING)
 
-        logger.info("✔ SatelliteDataCollector v4.0 UPGRADED initialized")
-        logger.info(f"  DEFAULT MODE: Continuous 3-year time-series")
-        logger.info(f"  Cloud thresholds: Kharif={self.max_cloud_kharif}%, "
-                   f"Rabi={self.max_cloud_rabi}%, Continuous={self.max_cloud_continuous}%")
+        logger.info("SatelliteDataCollector initialized (3-year continuous, season anchors)")
+        logger.info(
+            "  STAC cloud filter: Kharif months -> <%s%%  |  other -> <%s%%",
+            self.max_cloud_kharif,
+            self.max_cloud_rabi,
+        )
 
     # =========================================================================
     # NEW DEFAULT METHOD: Continuous 3-Year Collection
@@ -1305,31 +1295,14 @@ class SatelliteDataCollector:
         longitude: Optional[float] = None,
         field_area_ha: Optional[float] = None,
         geometry: Optional[object] = None,
-        use_continuous: bool = True,  # NEW: Default to continuous
-        num_seasons: int = None,
     ) -> Dict:
         """
-        UPGRADED: Collects data with continuous time-series as default.
-        
-        Args:
-            latitude, longitude: Field centre point
-            field_area_ha: Field area in hectares
-            geometry: Shapely Polygon (alternative to lat/lon)
-            use_continuous: If True (default), use 3-year continuous data
-            num_seasons: Number of seasons (only if use_continuous=False)
-            
-        Returns:
-            Dict with continuous_data, crop_cycles, and optional seasonal_data
+        Collect ~3 years of Sentinel-2 as a fixed-interval series (see PipelineConfig
+        CONTINUOUS_SCENE_INTERVAL_DAYS). Season-aligned start; missing bins are NaN.
         """
-        if use_continuous:
-            return self._collect_continuous_approach(
-                latitude, longitude, field_area_ha, geometry
-            )
-        else:
-            # Fallback to old seasonal approach
-            return self._collect_seasonal_approach(
-                latitude, longitude, field_area_ha, geometry, num_seasons
-            )
+        return self._collect_continuous_approach(
+            latitude, longitude, field_area_ha, geometry
+        )
 
     def _collect_continuous_approach(
         self,
@@ -1364,19 +1337,21 @@ class SatelliteDataCollector:
         if not GeometryUtils.validate_bbox(bbox):
             raise ValueError(f"Invalid bounding box: {bbox}")
 
-        # ── Calculate date range (season-aligned start) ───────────────────
+        # ── Rolling window: season anchors (15 Jun / 15 Oct), ~3 years to today ──
         today = date.today()
-        # Snap back to the start of the nearest past agricultural season.
-        # This guarantees we always start at a clean season boundary rather
-        # than mid-cycle, which would give us a truncated/misleading NDVI curve.
         snapped_start = self._snap_to_season_start(today, lookback_years=3)
         start_date = snapped_start.strftime('%Y-%m-%d')
         end_date = today.strftime('%Y-%m-%d')
 
         total_days_approx = (today - snapped_start).days
-        logger.info(f"Date range: {start_date} → {end_date}  (~{total_days_approx} days)")
-        logger.info(f"  (Season-aligned: snapped to nearest season start for complete cycles)")
-        logger.info(f"BBox: {[round(v, 5) for v in bbox]}")
+        logger.info(
+            "Window %s → %s (~%d d); anchor=%s (Kharif=Jun15, Rabi=Oct15)",
+            start_date,
+            end_date,
+            total_days_approx,
+            start_date,
+        )
+        logger.info("BBox: %s", [round(v, 5) for v in bbox])
 
         # ── Search for all scenes in 3-year period ─────────────────────────
         split_years = bool(getattr(PipelineConfig, "SATELLITE_STAC_SPLIT_BY_YEAR", True))
@@ -1387,7 +1362,12 @@ class SatelliteDataCollector:
         if split_years:
             candidates = self._search_scenes_multi_year_parallel(bbox, start_date, end_date)
         else:
-            candidates = self._search_scenes_continuous(bbox, start_date, end_date)
+            d0 = datetime.strptime(start_date, "%Y-%m-%d").date()
+            d1 = datetime.strptime(end_date, "%Y-%m-%d").date()
+            mid = date.fromordinal((d0.toordinal() + d1.toordinal()) // 2)
+            candidates = self._search_scenes_continuous(
+                bbox, start_date, end_date, cloud_lt=self._cloud_lt_for_calendar_day(mid)
+            )
         logger.info(f"Found {len(candidates)} candidate scenes (before same-day dedupe)")
         candidates = self._deduplicate_scenes_by_day(candidates)
 
@@ -1395,57 +1375,48 @@ class SatelliteDataCollector:
             logger.warning("No satellite data available for the period")
             return self._empty_continuous_result(centroid_lat, centroid_lon, field_area)
 
-        # ── Select scenes: one best (lowest cloud) per N-day interval ───────
-        n_cand = len(candidates)
         interval = max(1, int(getattr(PipelineConfig, "CONTINUOUS_SCENE_INTERVAL_DAYS", 10)))
-        legacy = bool(getattr(PipelineConfig, "CONTINUOUS_LEGACY_SCENE_SUBSAMPLE", False))
-        if legacy:
-            tmin = int(getattr(PipelineConfig, "CONTINUOUS_SCENE_TARGET_MIN", 30))
-            tmax = int(getattr(PipelineConfig, "CONTINUOUS_SCENE_TARGET_MAX", 500))
-            target_scenes = min(tmax, max(tmin, n_cand))
-            selected = self._select_scenes_temporal_distribution(candidates, target_scenes)
-            logger.info(
-                f"Selected {len(selected)} scenes (legacy temporal subsample, "
-                f"target={target_scenes}, unique_dates={n_cand})"
-            )
-        else:
-            selected = self._select_best_scene_per_interval(
-                candidates, snapped_start, today, interval_days=interval
-            )
-            est_bins = self._estimate_interval_bin_count(snapped_start, today, interval)
-            logger.info(
-                f"Selected {len(selected)} scenes (best cloud per {interval}d bin; "
-                f"~{est_bins} bins over range, {n_cand} unique-day candidates)"
-            )
+        slots = self._build_interval_slots(candidates, snapped_start, today, interval)
+        n_bins = len(slots)
+        n_pick = sum(1 for _, it in slots if it is not None)
+        n_miss = n_bins - n_pick
+        logger.info(
+            "%d-day bins: total=%d  STAC pick=%d  empty=%d  (unique-day candidates=%d)",
+            interval,
+            n_bins,
+            n_pick,
+            n_miss,
+            len(candidates),
+        )
 
-        if not selected:
-            logger.warning("No scenes selected for download after binning; check interval and STAC coverage.")
+        to_fetch: List[Tuple[Any, str]] = [
+            (it, b0.strftime("%Y-%m-%d")) for b0, it in slots if it is not None
+        ]
+        if not to_fetch:
+            logger.warning("No bins contained STAC items; widen cloud or check AOI")
             return self._empty_continuous_result(centroid_lat, centroid_lon, field_area)
 
-        # ── Download / extract indices (default: by calendar year, one scene at a time) ──
-        batched = bool(getattr(PipelineConfig, "CONTINUOUS_DOWNLOAD_BATCH_BY_YEAR", True))
-        scene_parallel = bool(getattr(PipelineConfig, "SATELLITE_DOWNLOAD_SCENE_PARALLEL", False))
-        if batched:
-            band_par = bool(getattr(PipelineConfig, "SATELLITE_BAND_DOWNLOAD_PARALLEL", False))
-            logger.info(
-                f"\nDownloading / processing {len(selected)} scenes: "
-                f"by calendar year, "
-                f"{'parallel per scene (not recommended)' if scene_parallel else 'one scene at a time'}, "
-                f"{'parallel band reads per scene' if band_par else 'sequential band reads per scene'}..."
-            )
-            processed_scenes = self._download_scenes_parallel_batched_by_year(selected, bbox)
-        elif scene_parallel:
-            logger.info(f"\nDownloading / processing {len(selected)} scenes (single parallel pool)...")
-            processed_scenes = self._download_scenes_parallel(selected, bbox)
-        else:
-            logger.info(f"\nDownloading / processing {len(selected)} scenes (fully sequential)...")
-            processed_scenes = self._download_scenes_sequential(selected, bbox, label="")
-        
-        if not processed_scenes:
-            logger.error("No scenes could be processed successfully")
-            return self._empty_continuous_result(centroid_lat, centroid_lon, field_area)
+        logger.info(
+            "Reading %d COG scene(s) (one stream at a time; grid date = bin start)...",
+            len(to_fetch),
+        )
+        by_anchor = self._download_anchor_scene_pairs(to_fetch, bbox)
 
-        logger.info(f"✓ Successfully processed {len(processed_scenes)} scenes")
+        processed_scenes: List[Dict] = []
+        for b0, it in slots:
+            ds = b0.strftime("%Y-%m-%d")
+            if it is None:
+                processed_scenes.append(self._missing_scene_placeholder(b0))
+            elif ds in by_anchor:
+                processed_scenes.append(by_anchor[ds])
+            else:
+                processed_scenes.append(self._missing_scene_placeholder(b0))
+
+        n_ok = sum(1 for s in processed_scenes if not s.get("missing"))
+        logger.info("Grid merge: slots=%d  downloaded_ok=%d  placeholders=%d", len(slots), n_ok, len(slots) - n_ok)
+        if n_ok == 0:
+            logger.error("No scenes produced valid indices")
+            return self._empty_continuous_result(centroid_lat, centroid_lon, field_area)
 
         # ── Extract time-series data ───────────────────────────────────────
         dates = [s['date'] for s in processed_scenes]
@@ -1465,14 +1436,12 @@ class SatelliteDataCollector:
             logger.info(f"  Scenes with valid NDVI: {len(valid_ndvi)}/{len(ndvi_values)}")
 
         total_days = (today - snapped_start).days
-        
-        logger.info(f"\n{'='*70}")
-        logger.info(f"CONTINUOUS COLLECTION COMPLETE")
-        logger.info(f"  Scenes collected: {len(processed_scenes)}")
-        logger.info(f"  Date range: {dates[0]} → {dates[-1]}")
-        logger.info(f"  Total days: {total_days}")
-        logger.info(f"  Avg interval: {total_days/len(processed_scenes):.1f} days")
-        logger.info(f"{'='*70}")
+
+        logger.info("%s", "=" * 70)
+        logger.info("CONTINUOUS COLLECTION COMPLETE")
+        logger.info("  Grid slots: %d  |  interval: %d d  |  valid NDVI: %d", len(processed_scenes), interval, len(valid_ndvi))
+        logger.info("  Span: %s → %s  (%d d)", dates[0], dates[-1], total_days)
+        logger.info("%s", "=" * 70)
 
         return {
             'mode': 'continuous',
@@ -1491,14 +1460,19 @@ class SatelliteDataCollector:
                 'start_date': start_date,
                 'end_date': end_date,
                 'total_days': total_days,
+                'interval_days': interval,
                 'scene_count': len(processed_scenes),
+                'valid_observations': n_ok,
+                'missing_observations': len(processed_scenes) - n_ok,
             },
             'collection_date': datetime.now().isoformat(),
             'summary': {
                 'total_scenes': len(processed_scenes),
                 'valid_ndvi_scenes': len(valid_ndvi),
+                'missing_slots': len(processed_scenes) - n_ok,
+                'interval_days': interval,
                 'date_range': f"{dates[0]} to {dates[-1]}",
-                'collection_mode': 'continuous_3year',
+                'collection_mode': 'continuous_3year_grid',
             },
         }
 
@@ -1509,26 +1483,16 @@ class SatelliteDataCollector:
     @staticmethod
     def _snap_to_season_start(reference_date: date, lookback_years: int = 3) -> date:
         """
-        Snap a reference date (today) back to the start of the nearest
-        complete agricultural season that lies at least `lookback_years` ago.
+        Earliest date for the rolling window: latest agricultural anchor on or before
+        ``reference_date - lookback_years`` (approximate calendar span).
 
-        Indian crop calendar season starts:
-          Kharif : June  1  (Jun 1 – Oct 15)
-          Rabi   : Nov  15  (Nov 15 – May 15)
-
-        Why this matters:
-          A plain "today - 3 years" calculation may fall mid-season (e.g. Feb).
-          Starting mid-Rabi means we miss the first half of that cycle, causing
-          the NDVI curve to look like a truncated/anomalous event. By snapping
-          to the nearest past season start we get complete, interpretable cycles.
-
-        Returns:
-            date: Season-aligned start date (≥ lookback_years back).
+        Anchors (Indian cropping calendar):
+          Kharif: 15 June
+          Rabi:   15 October
         """
-        # Season starts in (month, day) format
         SEASON_STARTS = [
-            (6, 1),   # Kharif start
-            (11, 15), # Rabi start
+            (6, 15),   # Kharif
+            (10, 15),  # Rabi
         ]
 
         # Build a list of all season-start dates from (lookback_years+1) years
@@ -1556,145 +1520,8 @@ class SatelliteDataCollector:
         return cutoff
 
     # =========================================================================
-    # DOWNLOAD: optional parallel across years; scenes sequential by default
+    # STAC search (year-split) + per-anchor downloads: _download_anchor_scene_pairs
     # =========================================================================
-
-    def _download_scenes_sequential(
-        self,
-        items: List[Any],
-        bbox: List[float],
-        label: str = "",
-    ) -> List[Dict]:
-        """
-        Process scenes one after another (one COG window read chain at a time).
-        """
-        out: List[Dict] = []
-        n = len(items)
-        if n == 0:
-            return out
-        started = time.time()
-        tag = f"year {label}" if label else "batch"
-        for i, item in enumerate(items):
-            r = self._download_and_process_single_scene(item, bbox, i, n)
-            if r is not None:
-                out.append(r)
-            if (i + 1) % 10 == 0 or (i + 1) == n:
-                elapsed = time.time() - started
-                logger.info(
-                    f"  [{tag}] scene {i + 1}/{n} (ok={len(out)}, {elapsed:.1f}s elapsed)"
-                )
-        return out
-
-    def _download_scenes_parallel(
-        self,
-        items: List,
-        bbox: List[float],
-        max_workers: Optional[int] = None
-    ) -> List[Dict]:
-        """
-        Download and process scenes in parallel using ThreadPoolExecutor.
-        Worker count is capped to reduce GDAL/Azure flake rate; override via
-        PipelineConfig.SATELLITE_DOWNLOAD_MAX_WORKERS (0 = auto).
-        """
-        processed_scenes = []
-        cfg_workers = PipelineConfig.SATELLITE_DOWNLOAD_MAX_WORKERS
-        if max_workers is not None:
-            mw = max_workers
-        elif cfg_workers and cfg_workers > 0:
-            mw = cfg_workers
-        else:
-            cpu = os.cpu_count() or 4
-            mw = min(24, max(4, cpu * 3))
-
-        logger.info(f"Parallel scene download: max_workers={mw}")
-
-        started_at = time.time()
-        with ThreadPoolExecutor(max_workers=mw) as executor:
-            # Submit all download tasks
-            future_to_item = {
-                executor.submit(self._download_and_process_single_scene, item, bbox, i, len(items)): item
-                for i, item in enumerate(items)
-            }
-            
-            # Collect results as they complete
-            completed = 0
-            success = 0
-            for future in as_completed(future_to_item):
-                completed += 1
-                try:
-                    result = future.result()
-                    if result is not None:
-                        processed_scenes.append(result)
-                        success += 1
-                except Exception as e:
-                    logger.warning(f"Scene processing failed: {str(e)[:60]}")
-                    continue
-                if completed % 10 == 0 or completed == len(items):
-                    elapsed = max(1e-6, time.time() - started_at)
-                    rate = completed / elapsed
-                    logger.info(
-                        f"  progress {completed}/{len(items)} complete "
-                        f"(valid={success}, rate={rate:.2f} scenes/s)"
-                    )
-        
-        # Sort by date
-        processed_scenes.sort(key=lambda s: s['date'])
-        
-        return processed_scenes
-
-    def _download_scenes_parallel_batched_by_year(
-        self,
-        items: List[Any],
-        bbox: List[float],
-    ) -> List[Dict]:
-        """
-        Group STAC items by calendar year for logging, then process **strictly
-        sequentially**: one year after another, one scene at a time within each
-        year. Parallel year workers were removed — concurrent COG reads routinely
-        caused slow runs and GDAL ``TIFFReadEncodedTile`` / partial-byte errors.
-
-        Set ``SATELLITE_DOWNLOAD_SCENE_PARALLEL=True`` for an experimental within-year
-        thread pool only (still one year at a time).
-        """
-        if not items:
-            return []
-
-        by_year: Dict[int, List[Any]] = {}
-        for it in items:
-            dt = getattr(it, "datetime", None)
-            if not dt:
-                continue
-            by_year.setdefault(dt.year, []).append(it)
-
-        years = sorted(by_year.keys())
-        if not years:
-            return []
-
-        scene_parallel = bool(getattr(PipelineConfig, "SATELLITE_DOWNLOAD_SCENE_PARALLEL", False))
-
-        if len(years) == 1:
-            yr = years[0]
-            batch = by_year[yr]
-            if scene_parallel:
-                return self._download_scenes_parallel(batch, bbox)
-            return self._download_scenes_sequential(batch, bbox, label=str(yr))
-
-        merged: List[Dict] = []
-        pause = float(getattr(PipelineConfig, "SATELLITE_INTER_YEAR_PAUSE_SEC", 0) or 0)
-
-        for yi, yr in enumerate(years):
-            batch = by_year[yr]
-            if scene_parallel:
-                logger.info(f"  Year {yr}: {len(batch)} scene(s), parallel per-scene pool...")
-                merged.extend(self._download_scenes_parallel(batch, bbox))
-            else:
-                logger.info(f"  Year {yr}: {len(batch)} scene(s), one-by-one...")
-                merged.extend(self._download_scenes_sequential(batch, bbox, label=str(yr)))
-            if pause > 0 and yi < len(years) - 1:
-                time.sleep(pause)
-
-        merged.sort(key=lambda s: s["date"])
-        return merged
 
     @staticmethod
     def _yearly_date_segments(d0: date, d1: date) -> List[Tuple[date, date]]:
@@ -1737,10 +1564,13 @@ class SatelliteDataCollector:
 
         def fetch_segment(seg: Tuple[date, date]) -> List:
             a, b = seg
+            mid = date.fromordinal((a.toordinal() + b.toordinal()) // 2)
+            cloud = self._cloud_lt_for_calendar_day(mid)
             return self._search_scenes_continuous(
                 bbox,
                 a.strftime("%Y-%m-%d"),
                 b.strftime("%Y-%m-%d"),
+                cloud_lt=cloud,
             )
 
         if len(windows) == 1:
@@ -1765,22 +1595,62 @@ class SatelliteDataCollector:
         merged.sort(key=lambda i: i.datetime if i.datetime else datetime.min)
         return merged
 
+    def _cloud_lt_for_calendar_day(self, d: date) -> float:
+        """STAC eo:cloud_cover upper bound: looser Jun–Oct (Kharif + monsoon tail)."""
+        if d.month in (6, 7, 8, 9, 10):
+            return float(self.max_cloud_kharif)
+        return float(self.max_cloud_rabi)
+
+    def _download_anchor_scene_pairs(
+        self,
+        pairs: List[Tuple[Any, str]],
+        bbox: List[float],
+    ) -> Dict[str, Dict]:
+        """
+        Download/process each (STAC item, grid_anchor_date) preserving anchor keys.
+        One scene at a time; batches log lines by anchor year.
+        """
+        from collections import defaultdict
+
+        if not pairs:
+            return {}
+        by_y: Dict[int, List[Tuple[Any, str]]] = defaultdict(list)
+        for item, anchor_ds in pairs:
+            by_y[int(anchor_ds[:4])].append((item, anchor_ds))
+        out: Dict[str, Dict] = {}
+        pause = float(getattr(PipelineConfig, "SATELLITE_INTER_YEAR_PAUSE_SEC", 0) or 0)
+        years = sorted(by_y.keys())
+        for yi, y in enumerate(years):
+            batch = by_y[y]
+            logger.info("  Year %s: reading %d scene(s)...", y, len(batch))
+            for j, (item, anchor_ds) in enumerate(batch):
+                r = self._download_and_process_single_scene(
+                    item, bbox, j, len(batch), output_date=anchor_ds
+                )
+                if r is not None:
+                    out[anchor_ds] = r
+            if pause > 0 and yi < len(years) - 1:
+                time.sleep(pause)
+        return out
+
     def _download_and_process_single_scene(
         self,
         item,
         bbox: List[float],
         scene_num: int,
-        total_scenes: int
+        total_scenes: int,
+        output_date: Optional[str] = None,
     ) -> Optional[Dict]:
         """
         Download band windows for one STAC item and compute index statistics.
         Used from sequential loops and optionally from a per-scene thread pool.
         """
         try:
-            scene_date = item.datetime.strftime('%Y-%m-%d') if item.datetime else None
+            acq = item.datetime.strftime('%Y-%m-%d') if item.datetime else None
+            scene_date = output_date or acq
             if not scene_date:
                 return None
-            
+
             cloud_pct = float(item.properties.get('eo:cloud_cover', 0))
             
             # Download bands
@@ -1796,12 +1666,16 @@ class SatelliteDataCollector:
             if np.isnan(indices.get('NDVI_mean', np.nan)):
                 return None
             
-            return {
+            rec: Dict = {
                 'date': scene_date,
+                'missing': False,
                 'cloud_cover': cloud_pct,
                 'indices': indices,
                 'bands_available': list(band_data.keys()),
             }
+            if output_date and acq and acq != output_date:
+                rec['acquisition_date'] = acq
+            return rec
             
         except Exception as e:
             logger.debug(f"Scene {scene_num} failed: {str(e)[:40]}")
@@ -1815,14 +1689,18 @@ class SatelliteDataCollector:
         self,
         bbox: List[float],
         start_date: str,
-        end_date: str
+        end_date: str,
+        cloud_lt: Optional[float] = None,
     ) -> List:
         """
-        Search for scenes in continuous mode with appropriate cloud threshold.
+        Search for scenes; cloud cap from ``cloud_lt`` or balanced default.
         Retries transient STAC/API failures (see SATELLITE_STAC_SEARCH_RETRIES).
         """
         retries = max(0, int(getattr(PipelineConfig, "SATELLITE_STAC_SEARCH_RETRIES", 0)))
         delay = float(getattr(PipelineConfig, "SATELLITE_STAC_SEARCH_RETRY_DELAY_SEC", 2.0))
+        cap = float(
+            cloud_lt if cloud_lt is not None else self.max_cloud_continuous
+        )
 
         for attempt in range(retries + 1):
             try:
@@ -1830,7 +1708,7 @@ class SatelliteDataCollector:
                     collections=[PipelineConfig.SENTINEL2_COLLECTION],
                     bbox=bbox,
                     datetime=f"{start_date}/{end_date}",
-                    query={"eo:cloud_cover": {"lt": self.max_cloud_continuous}},
+                    query={"eo:cloud_cover": {"lt": cap}},
                     limit=500,  # page size; items() paginates across all matches
                 )
                 items = list(search.items())
@@ -1893,33 +1771,45 @@ class SatelliteDataCollector:
         return dt.date()
 
     @staticmethod
-    def _estimate_interval_bin_count(range_start: date, range_end: date, interval_days: int) -> int:
-        """Approximate number of fixed-width bins from range_start through range_end (inclusive)."""
-        if interval_days < 1 or range_start > range_end:
-            return 0
-        n = 0
-        cur = range_start
-        while cur <= range_end:
-            n += 1
-            cur += timedelta(days=interval_days)
-        return n
+    def _nan_index_bundle() -> Dict:
+        """Placeholder index dict aligned with _calculate_indices keys."""
+        return {
+            'NDVI_mean': np.nan,
+            'NDVI_std': np.nan,
+            'NDVI_p90': np.nan,
+            'EVI_mean': np.nan,
+            'NDMI_mean': np.nan,
+            'PSRI_mean': np.nan,
+            'NDRE_mean': np.nan,
+            'NDWI_mean': np.nan,
+        }
 
-    def _select_best_scene_per_interval(
+    @staticmethod
+    def _missing_scene_placeholder(bin_start: date) -> Dict:
+        """No usable STAC scene in this bin — NaNs for downstream imputation."""
+        return {
+            'date': bin_start.strftime('%Y-%m-%d'),
+            'missing': True,
+            'cloud_cover': None,
+            'indices': SatelliteDataCollector._nan_index_bundle(),
+            'bands_available': [],
+        }
+
+    def _build_interval_slots(
         self,
         candidates: List,
         range_start: date,
         range_end: date,
-        interval_days: int = 10,
-    ) -> List:
+        interval_days: int,
+    ) -> List[Tuple[date, Optional[Any]]]:
         """
-        Partition [range_start, range_end] into consecutive ``interval_days`` windows.
-        In each window, keep at most one scene: the candidate with lowest eo:cloud_cover.
-        Expect ~36–37 points/year for a 10-day step (~110 over 3 years if every bin has data).
+        Partition [range_start, range_end] into half-open [t, t+interval_days) bins.
+        Returns (bin_start, best_item_or_None) for every bin through range_end.
         """
-        if not candidates or interval_days < 1 or range_start > range_end:
+        if interval_days < 1 or range_start > range_end:
             return []
 
-        selected: List = []
+        slots: List[Tuple[date, Optional[Any]]] = []
         cur = range_start
         while cur <= range_end:
             bin_end = cur + timedelta(days=interval_days)
@@ -1929,75 +1819,15 @@ class SatelliteDataCollector:
                 and cur <= d <= range_end
                 and d < bin_end
             ]
+            best: Optional[Any] = None
             if pool:
                 best = min(
                     pool,
-                    key=lambda c: float(c.properties.get("eo:cloud_cover", 100)),
+                    key=lambda c: float(c.properties.get('eo:cloud_cover', 100)),
                 )
-                selected.append(best)
+            slots.append((cur, best))
             cur = bin_end
-
-        selected.sort(key=lambda c: c.datetime if c.datetime else datetime.min)
-        return selected
-
-    def _select_scenes_temporal_distribution(
-        self,
-        candidates: List,
-        target_scenes: int
-    ) -> List:
-        """
-        Select scenes with good temporal distribution across the entire period.
-        Ensures even coverage rather than clustering.
-        """
-        if not candidates:
-            return []
-
-        if len(candidates) <= target_scenes:
-            return candidates
-
-        # Get date range
-        dates = [(c.datetime, c) for c in candidates if c.datetime]
-        dates.sort(key=lambda x: x[0])
-
-        if not dates:
-            return candidates[:target_scenes]
-
-        min_dt = dates[0][0]
-        max_dt = dates[-1][0]
-        span_days = (max_dt - min_dt).total_seconds() / 86400
-
-        # Create time bins
-        bin_size = span_days / target_scenes
-        selected = []
-        used_dates = set()
-
-        for i in range(target_scenes):
-            bin_start = min_dt + timedelta(days=i * bin_size)
-            bin_end = min_dt + timedelta(days=(i + 1) * bin_size)
-
-            # Find scenes in this bin
-            bin_scenes = [
-                c for dt, c in dates
-                if bin_start <= dt < bin_end and dt not in used_dates
-            ]
-
-            if bin_scenes:
-                # Pick lowest cloud in bin
-                best = min(bin_scenes, key=lambda c: c.properties.get('eo:cloud_cover', 100))
-                selected.append(best)
-                used_dates.add(best.datetime)
-
-        # Fill remaining slots if needed
-        if len(selected) < target_scenes:
-            remaining = [c for _, c in dates if c.datetime not in used_dates]
-            remaining.sort(key=lambda c: c.properties.get('eo:cloud_cover', 100))
-            needed = target_scenes - len(selected)
-            selected.extend(remaining[:needed])
-
-        # Sort chronologically
-        selected.sort(key=lambda c: c.datetime if c.datetime else datetime.min)
-
-        return selected
+        return slots
 
     # =========================================================================
     # BAND DOWNLOAD & INDEX CALCULATION (FIXED)
@@ -2213,28 +2043,6 @@ class SatelliteDataCollector:
     # =========================================================================
     # FALLBACK: Old Seasonal Approach (Backward Compatibility)
     # =========================================================================
-
-    def _collect_seasonal_approach(
-        self,
-        latitude: Optional[float],
-        longitude: Optional[float],
-        field_area_ha: Optional[float],
-        geometry: Optional[object],
-        num_seasons: int = None,
-    ) -> Dict:
-        """
-        LEGACY: Seasonal collection for backward compatibility.
-        NOT RECOMMENDED - Use continuous approach instead.
-        """
-        logger.warning("Using LEGACY seasonal approach - continuous mode recommended")
-        
-        # [Keep old implementation for backward compatibility]
-        # This would be the old collect_historical_data logic
-        # For now, raise a deprecation warning
-        
-        raise NotImplementedError(
-            "Seasonal mode deprecated. Use continuous mode (use_continuous=True)"
-        )
 
     # =========================================================================
     # HELPERS

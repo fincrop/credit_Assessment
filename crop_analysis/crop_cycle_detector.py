@@ -31,6 +31,13 @@ KEY IMPROVEMENTS IN v3.0
 5.  CONFIDENCE WITH CLOUD PENALTY
     Cycles that span long cloud gaps get a small confidence penalty to
     signal that their exact sowing/harvest dates carry more uncertainty.
+
+6.  v3.1 STAGE-4 ALIGNMENT
+    - Processing grid step matches satellite ``interval_days`` (passed from main).
+    - Linear edge extrapolation on the imputation grid (not flat fill).
+    - Sowing: NDVI-led stable rise from low baseline; transplant path via EVI+NDMI.
+    - Harvest: post-peak NDVI decline → cross low threshold → low plateau / min;
+      optional rapid CVI drop and NDMI/NDVI divergence shorten the end date.
 """
 
 import numpy as np
@@ -48,9 +55,9 @@ logger = logging.getLogger(__name__)
 # CONSTANTS
 # =============================================================================
 
-# Season starts (month, day) used for hint-building only
-_KHARIF_START = (6, 1)
-_RABI_START   = (11, 15)
+# Season anchors aligned with satellite window (hint-building); see satellite_collector._snap_to_season_start
+_KHARIF_START = (6, 15)
+_RABI_START   = (10, 15)
 
 # Minimum gap (days) between consecutive observations to flag as a cloud gap
 _CLOUD_GAP_MIN_DAYS = 25
@@ -128,10 +135,13 @@ class CropCycle:
 
     # Season hint (derived, not detected)
     season_label: str = ""
+    # Post-peak harvest phases (grid dates; harvest_date == final clearance / stabilize)
+    harvest_start_date: Optional[datetime] = None
+    harvest_end_date:   Optional[datetime] = None
 
     def to_dict(self) -> Dict:
         """Serialise to dict — includes start_date/end_date aliases."""
-        return {
+        d = {
             # Primary aliases used by CropDetector.analyze_cycles()
             'start_date':         self.sowing_date.strftime('%Y-%m-%d'),
             'end_date':           self.harvest_date.strftime('%Y-%m-%d'),
@@ -157,6 +167,11 @@ class CropCycle:
             'cloud_gap_days':     self.cloud_gap_days,
             'has_cloud_gap':      self.has_cloud_gap,
         }
+        if self.harvest_start_date is not None:
+            d['harvest_start_date'] = self.harvest_start_date.strftime('%Y-%m-%d')
+        if self.harvest_end_date is not None:
+            d['harvest_end_date'] = self.harvest_end_date.strftime('%Y-%m-%d')
+        return d
 
 
 # =============================================================================
@@ -225,6 +240,7 @@ class CropCycleDetector:
         scenes:      Optional[List[Dict]]  = None,  # raw scenes for index extraction
         sowing_date_hint: Optional[object] = None,
         crop_hint: Optional[str] = None,
+        grid_step_days: Optional[float] = None,
     ) -> List['CropCycle']:
         """
         Detect all crop cycles from a continuous time series.
@@ -236,6 +252,8 @@ class CropCycleDetector:
             ndmi_values: NDMI for each date (optional; falls back to zeros if absent)
             scenes:      Raw scene dicts from satellite_collector (used to extract
                          evi/ndmi if evi_values/ndmi_values not passed separately)
+            grid_step_days: Bin size in days — should match ``continuous_data['interval_days']``
+                         (e.g. 10). If None, uses ``PipelineConfig.CYCLE_GRID_STEP_DAYS``.
 
         Returns:
             List[CropCycle] sorted chronologically.
@@ -293,9 +311,16 @@ class CropCycleDetector:
                 )
             )
 
+        P = PipelineConfig
+        step_days = float(
+            grid_step_days
+            if grid_step_days is not None
+            else getattr(P, "CYCLE_GRID_STEP_DAYS", 10)
+        )
+
         # ── 5. Regularise to uniform time grid & impute cloud gaps ─────────
         reg_dates, reg_ndvi, reg_evi, reg_ndmi = self._regularise_and_impute(
-            dt_dates, ndvi_arr, evi_arr, ndmi_arr, cloud_gaps
+            dt_dates, ndvi_arr, evi_arr, ndmi_arr, cloud_gaps, step_days=step_days
         )
 
         # ── 6. Build Composite Vegetation Index (CVI) ──────────────────────
@@ -368,6 +393,7 @@ class CropCycleDetector:
                 greenup_idx= gi,
                 cloud_gaps = cloud_gaps,
                 max_duration_days_override=max_duration_override,
+                bin_days   = step_days,
             )
             if cycle and self._validate_cycle(cycle):
                 cycles.append(cycle)
@@ -475,6 +501,177 @@ class CropCycleDetector:
     # TIME-AWARE REGULARISATION & IMPUTATION
     # =========================================================================
 
+    @staticmethod
+    def _iter_nan_runs(arr: np.ndarray):
+        """Yield (lo, hi) inclusive indices for contiguous NaN segments."""
+        n = len(arr)
+        i = 0
+        while i < n:
+            if np.isfinite(arr[i]):
+                i += 1
+                continue
+            lo = i
+            while i < n and not np.isfinite(arr[i]):
+                i += 1
+            yield lo, i - 1
+
+    @staticmethod
+    def _snap_observations_to_grid(
+        obs_offsets: np.ndarray,
+        values: np.ndarray,
+        n_grid: int,
+        step_days: float,
+    ) -> np.ndarray:
+        """Map irregular obs onto nearest 14-day bin (mean if multiple hit same bin)."""
+        acc_sum = np.zeros(n_grid, dtype=float)
+        acc_cnt = np.zeros(n_grid, dtype=int)
+        for off, v in zip(obs_offsets, values):
+            if v is None or (isinstance(v, float) and np.isnan(v)):
+                continue
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            if np.isnan(fv):
+                continue
+            gi = int(np.round(float(off) / step_days))
+            gi = int(np.clip(gi, 0, n_grid - 1))
+            acc_sum[gi] += fv
+            acc_cnt[gi] += 1
+        out = np.full(n_grid, np.nan, dtype=float)
+        m = acc_cnt > 0
+        out[m] = acc_sum[m] / acc_cnt[m]
+        return out
+
+    @staticmethod
+    def _extrapolate_finite_edges_linear(arr: np.ndarray, fill: float = 0.22) -> np.ndarray:
+        """Extrapolate leading/trailing NaN bins using neighbour slope (not flat clamp)."""
+        a = np.array(arr, dtype=float, copy=True)
+        good = np.where(np.isfinite(a))[0]
+        if len(good) == 0:
+            a[:] = fill
+            return a
+        fi, li = int(good[0]), int(good[-1])
+        if fi > 0:
+            if fi + 1 < len(a) and np.isfinite(a[fi + 1]):
+                slope = float(a[fi + 1] - a[fi])
+            else:
+                slope = 0.0
+            for j in range(fi - 1, -1, -1):
+                a[j] = a[j + 1] - slope
+        if li < len(a) - 1:
+            if li > 0 and np.isfinite(a[li - 1]):
+                slope = float(a[li] - a[li - 1])
+            else:
+                slope = 0.0
+            for j in range(li + 1, len(a)):
+                a[j] = a[j - 1] + slope
+        return a
+
+    def _fill_short_nan_runs_linear(
+        self,
+        arr: np.ndarray,
+        grid_offsets: np.ndarray,
+        step: float,
+        short_max_days: float,
+    ) -> np.ndarray:
+        a = np.array(arr, dtype=float, copy=True)
+        for lo, hi in self._iter_nan_runs(a):
+            if lo == 0 or hi == len(a) - 1:
+                continue
+            span = float(grid_offsets[hi] - grid_offsets[lo] + step)
+            if span > short_max_days:
+                continue
+            y0, y1 = float(a[lo - 1]), float(a[hi + 1])
+            n = hi - lo + 1
+            a[lo : hi + 1] = np.linspace(y0, y1, n + 2)[1:-1]
+        return a
+
+    @staticmethod
+    def _post_segment_declining(
+        arr: np.ndarray,
+        start_j: int,
+        look: int,
+        delta: float,
+    ) -> bool:
+        """
+        True if the first few finite samples after index start_j trend downward
+        (post-monsoon / harvest side — informs Kharif gap imputation).
+        """
+        seq: List[float] = []
+        n = len(arr)
+        for k in range(start_j, min(start_j + look, n)):
+            v = arr[k]
+            if np.isfinite(v):
+                seq.append(float(v))
+            if len(seq) >= 5:
+                break
+        if len(seq) < 3:
+            return False
+        early = float(np.mean(seq[:2]))
+        late = float(np.mean(seq[-2:]))
+        return late < early - delta
+
+    @staticmethod
+    def _shape_long_gap(
+        y0: float,
+        y1: float,
+        n: int,
+        declining_post: bool,
+    ) -> np.ndarray:
+        """
+        Synthetic profile across n grid steps between known endpoints.
+        Uses a hat when post-gap vegetation is declining (Kharif peak inside gap).
+        """
+        if n <= 0:
+            return np.array([], dtype=float)
+        xs = np.linspace(0.0, 1.0, n + 2)[1:-1]
+        out = np.zeros(n, dtype=float)
+        if declining_post:
+            base = max(y0, y1, 0.18)
+            peak = min(0.82, base + min(0.22, 0.35 * max(0.0, 0.55 - min(y0, y1))))
+            peak_t = 0.50 if y1 < y0 + 0.08 else 0.58
+            for i, t in enumerate(xs):
+                if t <= peak_t:
+                    out[i] = y0 + (peak - y0) * (t / max(peak_t, 1e-6))
+                else:
+                    out[i] = peak + (y1 - peak) * ((t - peak_t) / max(1.0 - peak_t, 1e-6))
+        elif y1 > y0 + 0.035:
+            out[:] = np.linspace(y0, y1, n, endpoint=True)
+        else:
+            out[:] = np.linspace(y0, y1, n, endpoint=True)
+        return np.clip(out, -0.1, 1.0)
+
+    def _fill_long_nan_runs_contextual(
+        self,
+        arr: np.ndarray,
+        grid_offsets: np.ndarray,
+        step: float,
+        long_min_days: float,
+        decline_look: int,
+        decline_delta: float,
+        reference_for_decline: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """
+        Fill NaN runs longer than long_min_days using endpoint context.
+        Declining trend is read from reference_for_decline (usually NDVI) after the gap.
+        """
+        a = np.array(arr, dtype=float, copy=True)
+        ref = a if reference_for_decline is None else reference_for_decline
+        for lo, hi in list(self._iter_nan_runs(a)):
+            if lo == 0 or hi == len(a) - 1:
+                continue
+            span = float(grid_offsets[hi] - grid_offsets[lo] + step)
+            if span < long_min_days:
+                continue
+            y0, y1 = float(a[lo - 1]), float(a[hi + 1])
+            declining = self._post_segment_declining(
+                ref, hi + 1, decline_look, decline_delta
+            )
+            n = hi - lo + 1
+            a[lo : hi + 1] = self._shape_long_gap(y0, y1, n, declining)
+        return a
+
     def _regularise_and_impute(
         self,
         dt_dates: List[datetime],
@@ -482,85 +679,145 @@ class CropCycleDetector:
         evi:      np.ndarray,
         ndmi:     np.ndarray,
         cloud_gaps: List[CloudGap],
+        step_days: float,
     ) -> Tuple[List[datetime], np.ndarray, np.ndarray, np.ndarray]:
         """
-        Converts the irregular observation schedule into a uniform 14-day grid,
-        then fills cloud-gap periods using biologically-sound interpolation.
+        Uniform 14-day grid + chronological imputation.
 
-        DESIGN RATIONALE
-        ----------------
-        The critical issue: during June–August (Indian Kharif sowing period),
-        monsoon cloud cover can block all usable observations for 30–60 days.
-        If we simply linearly interpolate by scene index, a gap of index 2 and
-        a gap of index 20 get the same treatment — which is biologically wrong.
+        Short gaps: linear between known bins (real observations preserved at snap).
 
-        Instead we:
-        1. Build a uniform 14-day time grid across the full observation period.
-        2. Fill the existing observations onto the nearest grid points.
-        3. For gap periods: apply Piecewise Cubic Hermite Interpolating
-           Polynomial (PCHIP) which is:
-           - Monotone within each segment (no artificial overshoots)
-           - Smooth (C1 continuous) at knot points
-           - Biologically realistic (no negative NDVI spikes from Runge effect)
-        4. For EVI, if it was entirely NaN (not collected), we proxy from NDVI
-           using a calibrated linear model (EVI ≈ 0.85 * NDVI + 0.02).
+        Long gaps (typical Kharif cloud blackout): do **not** use a single straight
+        line from pre-monsoon to post-monsoon — that erases a peak inside the gap.
+        We use the **first clear samples after the gap** (e.g. September): if NDVI/CVI
+        is **declining**, we impute a **unimodal hat** (emergence → peak → drawdown)
+        so crop presence and seasonality stay interpretable for cycle detection.
+
+        Gaps are **not dropped**; every grid cell gets a value, but long-gap segments
+        are explicitly modelled from boundary + post-boundary dynamics.
         """
+        P = PipelineConfig
+        step = float(step_days)
+        short_max = float(getattr(P, "CYCLE_IMPUTE_SHORT_GAP_MAX_DAYS", 48))
+        long_min = float(getattr(P, "CYCLE_IMPUTE_LONG_GAP_MIN_DAYS", 36))
+        decline_look = int(getattr(P, "CYCLE_IMPUTE_POST_DECLINE_LOOK", 6))
+        decline_delta = float(getattr(P, "CYCLE_IMPUTE_DECLINE_DELTA", 0.028))
+
         start = dt_dates[0]
         end   = dt_dates[-1]
         total_days = (end - start).days
 
-        # Build uniform 14-day grid
         grid_dates = [
             start + timedelta(days=d)
-            for d in range(0, total_days + 1, 14)
+            for d in range(0, total_days + 1, int(step))
         ]
         if grid_dates[-1] < end:
             grid_dates.append(end)
 
-        # Day offsets for both irregular observations and grid
-        obs_offsets  = np.array([(d - start).days for d in dt_dates], dtype=float)
+        obs_offsets = np.array([(d - start).days for d in dt_dates], dtype=float)
         grid_offsets = np.array([(d - start).days for d in grid_dates], dtype=float)
+        n_grid = len(grid_dates)
 
-        def _pchip_interp(values: np.ndarray) -> np.ndarray:
-            """PCHIP interpolation (no overshoot, biologically realistic)."""
-            valid_mask = ~np.isnan(values)
-            if valid_mask.sum() < 2:
-                # Not enough knots — fall back to last-known-value for-ward fill
-                filled = np.full(len(grid_offsets), np.nanmean(values) if valid_mask.any() else 0.2)
-                return filled
-            # NOTE: In some of your runs, SciPy PCHIP triggers a low-level crash
-            # (process exits without Python traceback). To keep the pipeline stable
-            # and still do time-aware interpolation across gaps, we use `np.interp`
-            # on a de-duplicated knot set here.
-            x = obs_offsets[valid_mask]
-            y = values[valid_mask]
+        ndvi_a = np.asarray(ndvi, dtype=float)
+        evi_a = np.asarray(evi, dtype=float)
+        ndmi_a = np.asarray(ndmi, dtype=float)
 
-            order = np.argsort(x)
-            x = x[order]
-            y = y[order]
+        reg_ndvi = self._snap_observations_to_grid(obs_offsets, ndvi_a, n_grid, step)
+        evi_valid_frac = float(np.sum(np.isfinite(evi_a))) / max(len(evi_a), 1)
+        use_evi_proxy = evi_valid_frac < 0.3
 
-            unique_x, inverse = np.unique(x, return_inverse=True)
-            y_agg = np.zeros(len(unique_x), dtype=float)
-            for ui in range(len(unique_x)):
-                y_agg[ui] = float(np.mean(y[inverse == ui]))
+        if use_evi_proxy:
+            reg_evi = np.full(n_grid, np.nan, dtype=float)
+        else:
+            reg_evi = self._snap_observations_to_grid(obs_offsets, evi_a, n_grid, step)
 
-            result = np.interp(grid_offsets, unique_x, y_agg)
-            # Clip to plausible NDVI/EVI/NDMI range.
-            return np.clip(result, -0.1, 1.0)
+        reg_ndmi = self._snap_observations_to_grid(obs_offsets, ndmi_a, n_grid, step)
 
-        reg_ndvi = _pchip_interp(ndvi)
-        reg_ndmi = _pchip_interp(ndmi)
+        reg_ndvi = self._extrapolate_finite_edges_linear(reg_ndvi)
+        if not use_evi_proxy:
+            reg_evi = self._extrapolate_finite_edges_linear(reg_evi)
+        reg_ndmi = self._extrapolate_finite_edges_linear(reg_ndmi, fill=0.0)
 
-        # EVI: if mostly NaN (not recorded), proxy from NDVI
-        evi_valid_frac = float(np.sum(~np.isnan(evi))) / max(len(evi), 1)
-        if evi_valid_frac < 0.3:
+        reg_ndvi = self._fill_short_nan_runs_linear(
+            reg_ndvi, grid_offsets, step, short_max
+        )
+        if not use_evi_proxy:
+            reg_evi = self._fill_short_nan_runs_linear(
+                reg_evi, grid_offsets, step, short_max
+            )
+        reg_ndmi = self._fill_short_nan_runs_linear(
+            reg_ndmi, grid_offsets, step, short_max
+        )
+
+        reg_ndvi = self._fill_long_nan_runs_contextual(
+            reg_ndvi,
+            grid_offsets,
+            step,
+            long_min,
+            decline_look,
+            decline_delta,
+            reference_for_decline=reg_ndvi,
+        )
+        if not use_evi_proxy:
+            reg_evi = self._fill_long_nan_runs_contextual(
+                reg_evi,
+                grid_offsets,
+                step,
+                long_min,
+                decline_look,
+                decline_delta,
+                reference_for_decline=reg_ndvi,
+            )
+        reg_ndmi = self._fill_long_nan_runs_contextual(
+            reg_ndmi,
+            grid_offsets,
+            step,
+            long_min,
+            decline_look,
+            decline_delta,
+            reference_for_decline=reg_ndvi,
+        )
+
+        reg_ndvi = self._fill_short_nan_runs_linear(
+            reg_ndvi, grid_offsets, step, short_max
+        )
+        if not use_evi_proxy:
+            reg_evi = self._fill_short_nan_runs_linear(
+                reg_evi, grid_offsets, step, short_max
+            )
+        reg_ndmi = self._fill_short_nan_runs_linear(
+            reg_ndmi, grid_offsets, step, short_max
+        )
+
+        def _finite_or_mean(x: np.ndarray, fb: float = 0.25) -> np.ndarray:
+            z = np.asarray(x, dtype=float).copy()
+            bad = ~np.isfinite(z)
+            if not np.any(bad):
+                return z
+            gm = float(np.nanmean(z[np.isfinite(z)])) if np.any(np.isfinite(z)) else fb
+            z[bad] = gm
+            return z
+
+        reg_ndvi = _finite_or_mean(reg_ndvi, 0.22)
+        reg_ndmi = _finite_or_mean(reg_ndmi, 0.0)
+        if not use_evi_proxy:
+            reg_evi = _finite_or_mean(reg_evi, 0.2)
+
+        if use_evi_proxy:
             logger.debug(
-                f"EVI data sparse ({evi_valid_frac:.0%} valid) — "
-                "proxying from NDVI (EVI ≈ 0.85·NDVI + 0.02)"
+                "EVI sparse on grid — proxy from imputed NDVI (EVI ~ 0.85*NDVI+0.02)"
             )
             reg_evi = np.clip(0.85 * reg_ndvi + 0.02, 0.0, 1.0)
-        else:
-            reg_evi = _pchip_interp(evi)
+
+        reg_ndvi = np.clip(reg_ndvi, -0.1, 1.0)
+        reg_evi = np.clip(reg_evi, 0.0, 1.0)
+        reg_ndmi = np.clip(reg_ndmi, -0.6, 0.8)
+
+        if cloud_gaps:
+            logger.info(
+                "  Chronological imputation: long gaps (>=%.0f d) use pre/post bins + "
+                "post-gap trend (e.g. Sep decline => Kharif-shaped fill).",
+                long_min,
+            )
 
         return grid_dates, reg_ndvi, reg_evi, reg_ndmi
 
@@ -675,6 +932,72 @@ class CropCycleDetector:
         diffs = np.diff(segment)
         return float(np.sum(diffs > 0)) / len(diffs) >= threshold
 
+    def _refine_sowing_index(
+        self,
+        gi: int,
+        ndvi: np.ndarray,
+        evi: np.ndarray,
+        ndmi: np.ndarray,
+        cvi: np.ndarray,
+    ) -> int:
+        """
+        Sowing = first stable rise in NDVI from a low baseline (~<0.2–0.25), crossing
+        ~>0.25–0.3 over 2–3 bins with continued increase (noise rejection). Transplanted
+        crops: higher pre-baseline allowed if EVI and NDMI rise with NDVI/CVI.
+        """
+        P = PipelineConfig
+        n = len(ndvi)
+        bl_max = float(getattr(P, "CROP_CYCLE_SOW_BASELINE_MAX", 0.24))
+        cross = float(getattr(P, "CROP_CYCLE_SOW_CROSS_MIN", 0.27))
+        n_rise = int(getattr(P, "CROP_CYCLE_SOW_MIN_RISE_STEPS", 3))
+        tol = float(getattr(P, "CROP_CYCLE_SOW_NOISE_DROP_TOL", 0.018))
+        tp_bl = float(getattr(P, "CROP_CYCLE_SOW_TRANSPLANT_BASELINE_MAX", 0.40))
+        tevi = float(getattr(P, "CROP_CYCLE_SOW_TRANSPLANT_EVI_DELTA", 0.02))
+        tndmi = float(getattr(P, "CROP_CYCLE_SOW_TRANSPLANT_NDMI_DELTA", 0.014))
+
+        lo = max(0, gi - 6)
+        hi = min(n - 1, gi + 2)
+        scan_hi = min(hi, n - n_rise - 2)
+        candidates: List[int] = []
+
+        for s in range(max(3, lo), scan_hi + 1):
+            pre = float(np.nanmean(ndvi[max(0, s - 3): s]))
+            if pre > bl_max + 1e-6:
+                continue
+            seg = [float(ndvi[s + k]) for k in range(n_rise)]
+            if not all(np.isfinite(seg)):
+                continue
+            rising = all(seg[k + 1] > seg[k] - tol for k in range(n_rise - 1))
+            if not rising or seg[-1] < cross:
+                continue
+            if s + n_rise < n:
+                nxt = float(ndvi[s + n_rise])
+                if np.isfinite(nxt) and nxt < seg[-1] - tol:
+                    continue
+            candidates.append(s)
+
+        if candidates:
+            return min(candidates)
+
+        for s in range(max(3, lo), scan_hi + 1):
+            pre = float(np.nanmean(ndvi[max(0, s - 3): s]))
+            if pre > tp_bl + 1e-6 or pre < 0.10:
+                continue
+            seg_n = [float(ndvi[s + k]) for k in range(n_rise)]
+            seg_e = [float(evi[s + k]) for k in range(n_rise)]
+            seg_m = [float(ndmi[s + k]) for k in range(n_rise)]
+            if not all(np.isfinite(seg_n)) or not all(np.isfinite(seg_e)):
+                continue
+            evi_ok = seg_e[-1] - seg_e[0] >= tevi
+            ndmi_ok = all(np.isfinite(seg_m)) and seg_m[-1] - seg_m[0] >= tndmi
+            ndvi_ok = seg_n[-1] > seg_n[0] + 0.04 and seg_n[-1] >= 0.22
+            cvi_seg = [float(cvi[s + k]) for k in range(n_rise)]
+            cvi_ok = all(np.isfinite(cvi_seg)) and cvi_seg[-1] > cvi_seg[0] + 0.03
+            if ndvi_ok and cvi_ok and (evi_ok or ndmi_ok or seg_n[-1] >= 0.26):
+                return s
+
+        return gi
+
     # =========================================================================
     # CYCLE TRACING  (dt_dates explicitly passed — BUG FIX)
     # =========================================================================
@@ -691,157 +1014,209 @@ class CropCycleDetector:
         greenup_idx: int,
         cloud_gaps:  List[CloudGap],
         max_duration_days_override: Optional[int] = None,
+        bin_days:    float = 10.0,
     ) -> Optional['CropCycle']:
-        """Trace a complete crop cycle from a greenup event to harvest."""
-        remaining = len(cvi_smooth) - greenup_idx - 1
-        # Search window: max_duration / 14-day grid interval
+        """Trace a full cycle: refine sowing on NDVI rules, peak on CVI, harvest in 3 NDVI phases."""
+        bd = max(float(bin_days), 1.0)
+        sowing_idx = self._refine_sowing_index(
+            greenup_idx, ndvi_smooth, evi_raw, ndmi_raw, cvi_smooth,
+        )
+
+        remaining = len(cvi_smooth) - sowing_idx - 1
         max_days = int(max_duration_days_override) if max_duration_days_override else int(self.max_duration_days)
-        search_max = min(int(max_days / 14) + 10, remaining)
+        search_max = min(int(max_days / bd) + 12, remaining)
 
         if search_max < 5:
             return None
 
-        window_end = greenup_idx + search_max
+        window_end = sowing_idx + search_max
 
-        # ── Find peak in CVI ──────────────────────────────────────────────
-        peak_rel  = int(np.argmax(cvi_smooth[greenup_idx: window_end]))
-        peak_idx  = greenup_idx + peak_rel
-        peak_cvi  = float(cvi_smooth[peak_idx])
+        peak_rel = int(np.argmax(cvi_smooth[sowing_idx: window_end]))
+        peak_idx = sowing_idx + peak_rel
+        peak_cvi = float(cvi_smooth[peak_idx])
         peak_ndvi = float(ndvi_smooth[peak_idx])
 
-        if peak_cvi < self.min_peak_cvi:
+        if peak_idx <= sowing_idx or peak_cvi < self.min_peak_cvi:
             return None
 
-        # Cap harvest search after peak so one crop cannot absorb the next season's signal.
-        post_peak_bins = max(5, int(np.ceil(self.max_days_after_peak / 14.0)) + 2)
+        post_peak_bins = max(5, int(np.ceil(self.max_days_after_peak / bd)) + 2)
         harvest_window_end = min(window_end, peak_idx + post_peak_bins)
 
-        # ── Detect harvest (senescence) ───────────────────────────────────
-        harvest_idx = self._detect_harvest(
-            cvi_smooth  = cvi_smooth,
-            ndvi_smooth = ndvi_smooth,
-            evi_raw     = evi_raw,
-            ndmi_raw    = ndmi_raw,
-            peak_idx    = peak_idx,
-            max_idx     = harvest_window_end,
+        phases = self._detect_harvest_phases(
+            cvi_smooth=cvi_smooth,
+            ndvi_smooth=ndvi_smooth,
+            ndmi_raw=ndmi_raw,
+            peak_idx=peak_idx,
+            max_idx=harvest_window_end,
         )
-        if harvest_idx is None:
+        if phases is None:
             return None
+        h_start_idx, h_end_idx, harvested_idx = phases
 
-        # ── Date extraction — uses the PASSED dt_dates (v2 NameError fixed) ──
-        sowing_date  = dt_dates[greenup_idx]
-        peak_date    = dt_dates[peak_idx]
-        harvest_date = dt_dates[harvest_idx]
+        sowing_date = dt_dates[sowing_idx]
+        peak_date = dt_dates[peak_idx]
+        harvest_start_date = dt_dates[h_start_idx]
+        harvest_end_date = dt_dates[h_end_idx]
+        harvest_date = dt_dates[harvested_idx]
         duration_days = (harvest_date - sowing_date).days
 
         if not (self.min_duration_days <= duration_days <= self.max_duration_days):
             return None
 
-        # ── Compute integrals ─────────────────────────────────────────────
-        ndvi_seg = ndvi_raw[greenup_idx: harvest_idx + 1]
+        ndvi_seg = ndvi_raw[sowing_idx: harvested_idx + 1]
         day_offsets = np.array(
             [(dt_dates[j] - sowing_date).days
-             for j in range(greenup_idx, harvest_idx + 1)],
+             for j in range(sowing_idx, harvested_idx + 1)],
             dtype=float,
         )
-        integral_ndvi      = float(np.nansum(ndvi_seg))
+        integral_ndvi = float(np.nansum(ndvi_seg))
         integral_ndvi_days = (
             float(np.trapz(ndvi_seg, day_offsets)) if len(ndvi_seg) > 1 else 0.0
         )
-        baseline_ndvi = float(np.mean(ndvi_smooth[max(0, greenup_idx - 3): greenup_idx + 1]))
+        baseline_ndvi = float(
+            np.mean(ndvi_smooth[max(0, sowing_idx - 3): sowing_idx + 1])
+        )
 
-        # ── Cloud gap analysis within this cycle ──────────────────────────
         cycle_gaps = [
             g for g in cloud_gaps
             if g.start_date >= sowing_date and g.end_date <= harvest_date
         ]
         cloud_gap_days = sum(g.gap_days for g in cycle_gaps)
 
-        # ── Confidence score ──────────────────────────────────────────────
         confidence = self._calculate_confidence(
-            ndvi_seg      = ndvi_seg,
-            duration_days = duration_days,
-            peak_cvi      = peak_cvi,
-            cloud_gap_days= cloud_gap_days,
+            ndvi_seg=ndvi_seg,
+            duration_days=duration_days,
+            peak_cvi=peak_cvi,
+            cloud_gap_days=cloud_gap_days,
         )
 
         return CropCycle(
-            sowing_date        = sowing_date,
-            harvest_date       = harvest_date,
-            peak_date          = peak_date,
-            duration_days      = duration_days,
-            crop_type          = self._classify_by_duration_and_indices(
-                                     duration_days, peak_ndvi, peak_cvi),
-            peak_ndvi          = peak_ndvi,
-            baseline_ndvi      = baseline_ndvi,
-            ndvi_rise          = float(peak_ndvi - ndvi_smooth[greenup_idx]),
-            integral_ndvi      = integral_ndvi,
-            integral_ndvi_days = integral_ndvi_days,
-            peak_evi           = float(np.nanmean(evi_raw[peak_idx - 1: peak_idx + 2])),
-            peak_ndmi          = float(np.nanmean(ndmi_raw[peak_idx - 1: peak_idx + 2])),
-            peak_cvi           = peak_cvi,
-            confidence         = confidence,
-            cloud_gap_days     = cloud_gap_days,
-            has_cloud_gap      = len(cycle_gaps) > 0,
+            sowing_date=sowing_date,
+            harvest_date=harvest_date,
+            peak_date=peak_date,
+            duration_days=duration_days,
+            crop_type=self._classify_by_duration_and_indices(
+                duration_days, peak_ndvi, peak_cvi),
+            peak_ndvi=peak_ndvi,
+            baseline_ndvi=baseline_ndvi,
+            ndvi_rise=float(peak_ndvi - ndvi_smooth[sowing_idx]),
+            integral_ndvi=integral_ndvi,
+            integral_ndvi_days=integral_ndvi_days,
+            peak_evi=float(np.nanmean(evi_raw[peak_idx - 1: peak_idx + 2])),
+            peak_ndmi=float(np.nanmean(ndmi_raw[peak_idx - 1: peak_idx + 2])),
+            peak_cvi=peak_cvi,
+            confidence=confidence,
+            cloud_gap_days=cloud_gap_days,
+            has_cloud_gap=len(cycle_gaps) > 0,
+            harvest_start_date=harvest_start_date,
+            harvest_end_date=harvest_end_date,
         )
 
-    def _detect_harvest(
+    def _detect_harvest_phases(
         self,
-        cvi_smooth:  np.ndarray,
+        cvi_smooth: np.ndarray,
         ndvi_smooth: np.ndarray,
-        evi_raw:     np.ndarray,
-        ndmi_raw:    np.ndarray,
-        peak_idx:    int,
-        max_idx:     int,
-    ) -> Optional[int]:
+        ndmi_raw: np.ndarray,
+        peak_idx: int,
+        max_idx: int,
+    ) -> Optional[Tuple[int, int, int]]:
         """
-        Three-trigger cascade harvest detection (v3):
-
-        Trigger A — Rapid CVI drop (mechanical harvest / irrigation cut)
-            CVI drops ≥ 0.07/obs and falls below 80% of peak.
-
-        Trigger B — Sustained low vegetation (natural senescence)
-            CVI < 0.32 AND next 3-obs mean also < 0.30 (not just noise).
-
-        Trigger C — Multi-index divergence (soil exposure after harvest)
-            NDMI rises (soil gets wetter) while NDVI falls — typical of
-            post-harvest bare soil + monsoon rain.
-
-        Last resort: minimum CVI point in the post-peak search window.
+        Harvest_start: post-peak sustained NDVI decline (several consecutive drops).
+        Harvest_end: NDVI falls below low threshold (~0.3–0.4).
+        Harvested (returned as cycle end): low plateau / minimum after that, or rapid
+        CVI collapse (mechanical harvest) if earlier.
         """
-        search_end = min(max_idx, len(cvi_smooth) - 1)
-        if search_end <= peak_idx + 2:
+        P = PipelineConfig
+        low_ndvi = float(getattr(P, "CROP_CYCLE_HARVEST_LOW_NDVI", 0.36))
+        n_decl = int(getattr(P, "CROP_CYCLE_HARVEST_DECLINE_STEPS", 3))
+        min_drop = float(getattr(P, "CROP_CYCLE_HARVEST_DECLINE_MIN_DROP", 0.018))
+        peak_drop_frac = float(getattr(P, "CROP_CYCLE_HARVEST_PEAK_DROP_FRAC", 0.06))
+        stab_std = float(getattr(P, "CROP_CYCLE_HARVEST_STABLE_MAX_STD", 0.022))
+        stab_run = int(getattr(P, "CROP_CYCLE_HARVEST_STABLE_RUN", 3))
+
+        search_end = min(max_idx, len(ndvi_smooth) - 1, len(cvi_smooth) - 1)
+        if search_end <= peak_idx + n_decl:
             return None
 
-        cvi_post  = cvi_smooth[peak_idx: search_end + 1]
-        ndvi_post = ndvi_smooth[peak_idx: search_end + 1]
-        evi_seg   = evi_raw[peak_idx: search_end + 1]
-        ndmi_seg  = ndmi_raw[peak_idx: search_end + 1]
-        peak_cvi  = cvi_post[0]
+        peak_ndvi = float(ndvi_smooth[peak_idx])
+        peak_cvi = float(cvi_smooth[peak_idx])
 
+        harvest_start: Optional[int] = None
+        for i in range(peak_idx + n_decl, search_end + 1):
+            ok = True
+            for t in range(n_decl):
+                if float(ndvi_smooth[i - t]) >= float(ndvi_smooth[i - t - 1]) - min_drop:
+                    ok = False
+                    break
+            if not ok:
+                continue
+            if float(ndvi_smooth[i]) > peak_ndvi * (1.0 - peak_drop_frac):
+                continue
+            harvest_start = i
+            break
+
+        if harvest_start is None:
+            for i in range(peak_idx + 2, search_end + 1):
+                if float(ndvi_smooth[i]) < peak_ndvi - 0.04:
+                    harvest_start = i
+                    break
+        if harvest_start is None:
+            harvest_start = peak_idx + 2
+
+        harvest_end = harvest_start
+        for k in range(harvest_start, search_end + 1):
+            if float(ndvi_smooth[k]) < low_ndvi:
+                harvest_end = k
+                break
+        else:
+            harvest_end = search_end
+
+        harvested = harvest_end
+        stabilized = False
+        upper = min(search_end - stab_run + 1, len(ndvi_smooth) - stab_run)
+        for j in range(harvest_end, upper + 1):
+            chunk = ndvi_smooth[j: j + stab_run]
+            if np.all(np.isfinite(chunk)) and float(np.std(chunk)) < stab_std:
+                harvested = j + stab_run - 1
+                stabilized = True
+                break
+        if not stabilized:
+            tail = ndvi_smooth[harvest_end: search_end + 1]
+            if len(tail) > 0:
+                harvested = harvest_end + int(np.argmin(tail))
+
+        cvi_post = cvi_smooth[peak_idx: search_end + 1]
+        rapid_idx: Optional[int] = None
         for i in range(1, len(cvi_post) - 1):
-            val  = cvi_post[i]
-            rate = cvi_post[i - 1] - val  # drop per time-step
-
-            # Trigger A: rapid CVI collapse
+            val = float(cvi_post[i])
+            rate = float(cvi_post[i - 1]) - val
             if rate >= 0.07 and val < peak_cvi * 0.80:
-                return peak_idx + i
+                rapid_idx = peak_idx + i
+                break
 
-            # Trigger B: sustained low CVI (senescence)
-            lookahead = cvi_post[i: min(i + 4, len(cvi_post))]
-            if val < 0.32 and float(np.mean(lookahead)) < 0.30:
-                return peak_idx + i
+        if rapid_idx is not None and peak_idx < rapid_idx <= harvested:
+            harvested = rapid_idx
+            harvest_end = min(harvest_end, harvested)
+            harvest_start = min(harvest_start, max(peak_idx + 1, rapid_idx - 1))
 
-            # Trigger C: NDMI rising + NDVI falling (soil exposure)
-            if i >= 2 and len(ndmi_seg) > i + 1:
-                ndvi_drop  = ndvi_post[i - 2] - ndvi_post[i]
-                ndmi_rise  = ndmi_seg[i] - ndmi_seg[i - 2]
+        ndvi_post = ndvi_smooth[peak_idx: search_end + 1]
+        ndmi_seg = ndmi_raw[peak_idx: search_end + 1]
+        for i in range(2, len(ndvi_post) - 1):
+            ndvi_drop = float(ndvi_post[i - 2]) - float(ndvi_post[i])
+            if len(ndmi_seg) > i + 1 and np.isfinite(ndmi_seg[i]) and np.isfinite(ndmi_seg[i - 2]):
+                ndmi_rise = float(ndmi_seg[i]) - float(ndmi_seg[i - 2])
                 if ndvi_drop > 0.08 and ndmi_rise > 0.05:
-                    return peak_idx + i
+                    alt = peak_idx + i
+                    if alt < harvested:
+                        harvested = alt
+                        harvest_end = min(harvest_end, harvested)
+                    break
 
-        # Last resort: minimum CVI in post-peak window
-        decline_idx = int(np.argmin(cvi_post[1:])) + 1
-        return peak_idx + decline_idx if decline_idx > 0 else None
+        harvest_start = int(np.clip(harvest_start, peak_idx + 1, search_end))
+        harvest_end = int(np.clip(max(harvest_end, harvest_start), harvest_start, search_end))
+        harvested = int(np.clip(max(harvested, harvest_end), harvest_end, search_end))
+
+        return harvest_start, harvest_end, harvested
 
     # =========================================================================
     # CLASSIFICATION & SCORING

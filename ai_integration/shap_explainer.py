@@ -253,6 +253,18 @@ class SHAPExplainer:
             for k, v in sorted_c if v < 0
         ][:5]
 
+        cr_full = assessment.get('credit_assessment', {})
+        total = float(cr_full.get('credit_score', 50))
+        weak = cr_full.get('weak_components') or []
+        credit_summary = (
+            f"Credit score {total:.0f}/100. "
+            + (
+                f"Relative weaknesses: {', '.join(weak)}."
+                if weak
+                else "No major weak components vs the 50-point benchmark."
+            )
+        )
+
         return {
             'shap_available':        True,
             'method':                'rule_based_attribution_v2',
@@ -261,6 +273,7 @@ class SHAPExplainer:
             'top_positive_drivers':  top_positive,
             'top_negative_drivers':  top_negative,
             'feature_values':        {k: round(v, 1) for k, v in component_scores.items()},
+            'credit_summary':        credit_summary,
         }
 
     # =========================================================================
