@@ -42,6 +42,13 @@ requests==2.31.0
 python-dateutil==2.8.2
 pytz==2024.1
 tqdm==4.66.2
+python-dotenv==1.0.1
+
+# ========================================
+# HTTP API (Docker / Render)
+# ========================================
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
 
 # ========================================
 # VISUALIZATION (OPTIONAL)

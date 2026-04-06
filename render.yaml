@@ -1,0 +1,23 @@
+# Render Blueprint (optional): New → Blueprint → paste this file.
+# Set MONGODB_URI (and optional API_SERVICE_KEY) in the dashboard — do not commit secrets.
+
+services:
+  - type: web
+    name: agri-credit-pipeline-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        value: agricultural_credit_db
+      - key: ML_MODE
+        value: rule_based
+      - key: USE_MONGODB
+        value: "true"
+      - key: CORS_ORIGINS
+        value: "*"
+      # - key: API_SERVICE_KEY
+      #   sync: false

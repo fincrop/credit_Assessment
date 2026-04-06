@@ -78,6 +78,7 @@ farm_info:
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -86,11 +87,8 @@ from pymongo.errors import ConnectionFailure, DuplicateKeyError, OperationFailur
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_URI = (
-    "mongodb+srv://gopik0586_db_read-write_user:clientRW123456@"
-    "creditriskassessment.lysxpkf.mongodb.net/?appName=CreditRiskAssessment"
-)
-_DB_NAME               = "agricultural_credit_db"
+# Secrets: set MONGODB_URI in the environment (see .env.example). Never commit credentials.
+_DB_NAME = os.environ.get("MONGODB_DATABASE", "agricultural_credit_db")
 _FARM_COLLECTION       = "farm_info"
 _ASSESSMENT_COLLECTION = "credit_assessments"
 _PIPELINE_VERSION      = "3.0"
@@ -403,7 +401,12 @@ class MongoDBHelper:
     """
 
     def __init__(self, connection_string: Optional[str] = None):
-        self.uri         = connection_string or _DEFAULT_URI
+        self.uri = (connection_string or os.environ.get("MONGODB_URI") or "").strip()
+        if not self.uri:
+            raise ValueError(
+                "MongoDB URI is not configured. Set the MONGODB_URI environment variable "
+                "(see .env.example) or pass MongoDBHelper(connection_string=...)."
+            )
         self.client      = None
         self.db          = None
         self.farms       = None
