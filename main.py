@@ -45,11 +45,12 @@ import traceback
 from datetime import datetime, timedelta, date
 from typing import Dict, List, Optional
 
-try:
-    from sklearn.exceptions import InconsistentVersionWarning
-    warnings.filterwarnings('ignore', category=InconsistentVersionWarning)
-except ImportError:
-    pass
+# Pickled crop model: sklearn emits unpickle version skew warnings without needing
+# a top-level sklearn import (keeps editors/pyright happy when sklearn path differs).
+warnings.filterwarnings(
+    "ignore",
+    message=r"Trying to unpersist estimator\b.*",
+)
 
 # Import existing components
 from data_acquisition.satellite_collector import SatelliteDataCollector
