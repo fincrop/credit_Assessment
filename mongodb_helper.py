@@ -87,7 +87,7 @@ from pymongo.errors import ConnectionFailure, DuplicateKeyError, OperationFailur
 
 logger = logging.getLogger(__name__)
 
-# Secrets: set MONGODB_URI in the environment (see .env.example). Never commit credentials.
+# Secrets: set MONGODB_URI in the environment (see .env). Never commit credentials.
 _DB_NAME = os.environ.get("MONGODB_DATABASE", "agricultural_credit_db")
 _FARM_COLLECTION       = "farm_info"
 _ASSESSMENT_COLLECTION = "credit_assessments"
@@ -405,7 +405,7 @@ class MongoDBHelper:
         if not self.uri:
             raise ValueError(
                 "MongoDB URI is not configured. Set the MONGODB_URI environment variable "
-                "(see .env.example) or pass MongoDBHelper(connection_string=...)."
+                "(see .env) or pass MongoDBHelper(connection_string=...)."
             )
         self.client      = None
         self.db          = None

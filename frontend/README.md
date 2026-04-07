@@ -7,7 +7,7 @@ Self-contained **Vite + React + TypeScript** UI for the satellite credit pipelin
 ```bash
 cd frontend
 npm install
-cp .env.example .env   # optional
+# edit .env (optional)
 npm run dev
 ```
 

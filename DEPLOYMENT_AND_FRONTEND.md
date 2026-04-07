@@ -11,7 +11,7 @@ This document matches the **FastAPI** layer in `api/app.py`, the **MongoDB** sch
 | `api/app.py` | FastAPI app: `POST /v1/assess`, `GET /v1/assess/{farmer_id}`, `GET /health` |
 | `api/serialization.py` | Shrinks JSON (no satellite scene arrays; optional strip of `satellite_data`) |
 | `Dockerfile` | Conda env from `environment.yml` + `pip install -r requirements.txt`, runs **uvicorn** |
-| `.env.example` | **Template only** — copy to `.env` locally; set real vars on Render |
+| `.env` | Local env template file (fill real values locally). On Render set vars in dashboard. |
 | `.dockerignore` | Keeps `.conda`, `.env`, git metadata out of the image |
 
 **Secrets:** `MONGODB_URI` is read from the environment. Hardcoded Mongo credentials were removed from `mongodb_helper.py`.
@@ -20,7 +20,7 @@ This document matches the **FastAPI** layer in `api/app.py`, the **MongoDB** sch
 
 ## 2. Environment variables (deployment)
 
-Copy `.env.example` → `.env` for local runs. For **Render**, define the same keys in **Environment**.
+Use the root `.env` for local runs. For **Render**, define the same keys in **Environment**.
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
@@ -117,7 +117,7 @@ A **Vite + React** app lives in **`frontend/`**: run assessment by `farmer_id`, 
 ## 8. Local quick test
 
 ```bash
-cp .env.example .env   # edit MONGODB_URI
+# edit .env (set MONGODB_URI)
 conda activate ./.conda   # or your env
 uvicorn api.app:app --reload --host 0.0.0.0 --port 8000
 ```
