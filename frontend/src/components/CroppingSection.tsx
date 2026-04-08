@@ -47,6 +47,9 @@ function CropsList({ ca }: { ca: CroppingAnalysis }) {
 export function CroppingSection({ data }: { data: AssessmentPayload }) {
   const ca = data.cropping_analysis;
   const stats = data.continuous_data_stats;
+  const series = (ca?.season_results ?? [])
+    .flatMap((r) => ((r as Record<string, unknown>).interval_indices as Record<string, unknown>[] | undefined) ?? [])
+    .slice(0, 120);
 
   if (!ca && !stats) {
     return (
@@ -104,8 +107,44 @@ export function CroppingSection({ data }: { data: AssessmentPayload }) {
           </div>
           <h3 style={{ fontSize: "0.9rem", margin: "1rem 0 0.5rem" }}>Crops detected</h3>
           <CropsList ca={ca} />
+          {series.length > 2 && (
+            <>
+              <h3 style={{ fontSize: "0.9rem", margin: "1rem 0 0.5rem" }}>Vegetation indices trend</h3>
+              <div className="spark-wrap">
+                {["ndvi", "evi", "ndmi"].map((key) => (
+                  <MiniSeries
+                    key={key}
+                    label={key.toUpperCase()}
+                    values={series.map((x) => Number(x[key] ?? 0))}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </>
       )}
+    </div>
+  );
+}
+
+function MiniSeries({ label, values }: { label: string; values: number[] }) {
+  const width = 260;
+  const height = 70;
+  const min = Math.min(...values);
+  const max = Math.max(...values, min + 0.001);
+  const points = values
+    .map((v, i) => {
+      const x = (i / Math.max(1, values.length - 1)) * width;
+      const y = height - ((v - min) / (max - min)) * height;
+      return `${x},${y}`;
+    })
+    .join(" ");
+  return (
+    <div className="spark-card">
+      <div className="spark-title">{label}</div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="spark-svg" preserveAspectRatio="none">
+        <polyline fill="none" stroke="var(--accent)" strokeWidth="2" points={points} />
+      </svg>
     </div>
   );
 }

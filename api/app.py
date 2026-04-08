@@ -99,6 +99,14 @@ class AssessRequest(BaseModel):
         False,
         description="If true, include trimmed satellite metadata only (never full scene arrays).",
     )
+    pm_kisan_enrolled: bool = Field(
+        False,
+        description="Optional override for PM-KISAN enrollment.",
+    )
+    has_crop_insurance: bool = Field(
+        False,
+        description="Optional override for crop insurance enrollment.",
+    )
 
 
 def verify_service_key(x_api_key: Optional[str] = Header(default=None)) -> None:
@@ -126,7 +134,13 @@ async def _run_assessment(body: AssessRequest) -> Dict[str, Any]:
     loop = asyncio.get_event_loop()
 
     def _run() -> Dict[str, Any]:
-        return _pipeline.assess_farmer_from_db(fid)
+        return _pipeline.assess_farmer_from_db(
+            fid,
+            farmer_benefits_override={
+                "pm_kisan_enrolled": body.pm_kisan_enrolled,
+                "has_crop_insurance": body.has_crop_insurance,
+            },
+        )
 
     try:
         result: Dict[str, Any] = await loop.run_in_executor(None, _run)

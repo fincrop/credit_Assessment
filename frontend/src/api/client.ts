@@ -5,18 +5,15 @@ function normalizeBase(url: string): string {
 }
 
 export async function runAssessment(params: {
-  baseUrl: string;
   farmerId: string;
-  apiKey?: string;
   includeHeavy?: boolean;
+  pmKisanEnrolled?: boolean;
+  hasCropInsurance?: boolean;
 }): Promise<AssessmentPayload> {
-  const base = normalizeBase(params.baseUrl);
+  const base = defaultApiBase();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  if (params.apiKey?.trim()) {
-    headers["X-API-Key"] = params.apiKey.trim();
-  }
 
   const res = await fetch(`${base}/v1/assess`, {
     method: "POST",
@@ -24,6 +21,8 @@ export async function runAssessment(params: {
     body: JSON.stringify({
       farmer_id: params.farmerId.trim(),
       include_heavy: params.includeHeavy ?? false,
+      pm_kisan_enrolled: params.pmKisanEnrolled ?? false,
+      has_crop_insurance: params.hasCropInsurance ?? false,
     }),
   });
 
@@ -50,5 +49,5 @@ export function defaultApiBase(): string {
   const v = import.meta.env.VITE_API_BASE_URL as string | undefined;
   if (v?.trim()) return normalizeBase(v.trim());
   if (import.meta.env.DEV) return "http://127.0.0.1:8000";
-  return "";
+  return "https://credit-assessment-43t0.onrender.com";
 }

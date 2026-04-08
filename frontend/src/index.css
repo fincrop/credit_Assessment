@@ -47,6 +47,10 @@ body {
   padding: 1.25rem 1.5rem 4rem;
 }
 
+.assess-card {
+  animation: floatIn 0.45s ease;
+}
+
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -128,6 +132,17 @@ body {
   font-family: var(--font-sans);
   font-size: 0.95rem;
   padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.text-area {
+  min-height: 88px;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 0.6rem 0.7rem;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
@@ -344,6 +359,28 @@ details summary {
   color: var(--text-muted);
 }
 
+.loading-hero {
+  border-color: rgba(107, 207, 122, 0.4);
+  background: linear-gradient(120deg, rgba(107, 207, 122, 0.12), rgba(94, 184, 212, 0.08));
+}
+
+.step-track {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 0.3rem;
+  margin-top: 0.65rem;
+}
+
+.step-dot {
+  height: 6px;
+  background: rgba(143, 168, 148, 0.35);
+  border-radius: 8px;
+}
+
+.step-dot.done {
+  background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+}
+
 .spinner {
   width: 22px;
   height: 22px;
@@ -353,9 +390,37 @@ details summary {
   animation: spin 0.7s linear infinite;
 }
 
+.pulse {
+  box-shadow: 0 0 0 0 rgba(107, 207, 122, 0.5);
+  animation: spin 0.7s linear infinite, pulse 1.8s infinite;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(107, 207, 122, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(107, 207, 122, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(107, 207, 122, 0);
+  }
+}
+
+@keyframes floatIn {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
   }
 }
 
@@ -381,6 +446,65 @@ details summary {
   background: var(--bg-elevated);
   color: var(--accent);
   border-color: var(--accent-dim);
+}
+
+.mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.mode-switch button {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0.6rem 0.7rem;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.mode-switch button.active {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: rgba(107, 207, 122, 0.08);
+}
+
+.map-placeholder {
+  grid-column: 1 / -1;
+  border: 1px dashed var(--accent-dim);
+  border-radius: 10px;
+  min-height: 110px;
+  padding: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: var(--text-muted);
+  background: rgba(107, 207, 122, 0.06);
+}
+
+.spark-wrap {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.7rem;
+}
+
+.spark-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+
+.spark-title {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+.spark-svg {
+  width: 100%;
+  height: 72px;
 }
 
 section[id] {

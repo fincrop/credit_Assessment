@@ -153,7 +153,11 @@ class SatelliteBasedCreditPipeline:
     # Public: database mode
     # ------------------------------------------------------------------
 
-    def assess_farmer_from_db(self, farmer_id: str) -> Dict:
+    def assess_farmer_from_db(
+        self,
+        farmer_id: str,
+        farmer_benefits_override: Optional[Dict] = None,
+    ) -> Dict:
         """Fetch farm from MongoDB, run full assessment, save result."""
         farmer_id = (farmer_id or "").strip()
         if not farmer_id:
@@ -184,13 +188,30 @@ class SatelliteBasedCreditPipeline:
 
         geometry = self._convert_geometry_from_db(farm.get("geometry"))
 
+        db_benefits = farm.get('farmer_benefits') or {}
+        merged_benefits = {
+            'pm_kisan_enrolled': bool(db_benefits.get('pm_kisan_enrolled', False)),
+            'has_crop_insurance': bool(db_benefits.get('has_crop_insurance', False)),
+        }
+        if isinstance(farmer_benefits_override, dict):
+            merged_benefits['pm_kisan_enrolled'] = bool(
+                farmer_benefits_override.get(
+                    'pm_kisan_enrolled', merged_benefits['pm_kisan_enrolled']
+                )
+            )
+            merged_benefits['has_crop_insurance'] = bool(
+                farmer_benefits_override.get(
+                    'has_crop_insurance', merged_benefits['has_crop_insurance']
+                )
+            )
+
         return self.assess_farmer(
             farmer_id=farmer_id,
             latitude=farm.get('latitude'),
             longitude=farm.get('longitude'),
             field_area_ha=farm.get('field_area_ha'),
             geometry=geometry,
-            farmer_benefits=farm.get('farmer_benefits'),
+            farmer_benefits=merged_benefits,
             crop_hint=crop_hint,
             sowing_date=sowing_date,
             save_to_db=True,

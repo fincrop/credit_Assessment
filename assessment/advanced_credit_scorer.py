@@ -512,22 +512,26 @@ class AdvancedCreditScorer:
         if not sp:
             return 75.0   # Neutral when no data
 
-        ph = float(getattr(PipelineConfig, 'CREDIT_ANOMALY_PENALTY_HIGH', 2.5))
-        pm = float(getattr(PipelineConfig, 'CREDIT_ANOMALY_PENALTY_MEDIUM', 0.9))
-        pl = float(getattr(PipelineConfig, 'CREDIT_ANOMALY_PENALTY_LOW', 0.3))
-        pcap = float(getattr(PipelineConfig, 'CREDIT_ANOMALY_PENALTY_MAX', 22.0))
+        ph = float(getattr(PipelineConfig, 'CREDIT_ANOMALY_PENALTY_HIGH', 1.8))
+        pm = float(getattr(PipelineConfig, 'CREDIT_ANOMALY_PENALTY_MEDIUM', 0.55))
+        pl = float(getattr(PipelineConfig, 'CREDIT_ANOMALY_PENALTY_LOW', 0.15))
+        pcap = float(getattr(PipelineConfig, 'CREDIT_ANOMALY_PENALTY_MAX', 16.0))
 
-        # One debit per unique (season, date, type) anomaly to avoid stacked duplicates
+        # One debit per unique (season, date, type) anomaly to avoid stacked duplicates.
+        # Also suppress low-confidence artifacts from very sparse cycles.
         seen_a: set = set()
         n_high = n_medium = n_low = 0
         for p in sp:
             season = p.get('season', '')
+            n_scenes = int(p.get('n_scenes', 0) or 0)
             for e in p.get('anomaly_events', []):
                 key = (season, e.get('type'), e.get('date'), e.get('scene_index'))
                 if key in seen_a:
                     continue
                 seen_a.add(key)
                 imp = e.get('impact', 'LOW')
+                if n_scenes < 6 and imp == 'LOW':
+                    continue
                 if imp == 'HIGH':
                     n_high += 1
                 elif imp == 'MEDIUM':
@@ -535,7 +539,9 @@ class AdvancedCreditScorer:
                 else:
                     n_low += 1
 
-        penalty = min(pcap, n_high * ph + n_medium * pm + n_low * pl)
+        n_seasons = max(1, len(sp))
+        raw_penalty = n_high * ph + n_medium * pm + n_low * pl
+        penalty = min(pcap, raw_penalty / np.sqrt(n_seasons))
         return round(max(0.0, 100.0 - penalty), 1)
 
     @staticmethod

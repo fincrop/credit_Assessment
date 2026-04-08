@@ -68,6 +68,18 @@ export interface WeatherAnalysis {
   extreme_events?: Record<string, unknown>[];
   kharif_avg_rainfall_mm?: number;
   rabi_avg_rainfall_mm?: number;
+  seasonal_weather?: Record<string, unknown>[];
+}
+
+export interface WeatherInterval {
+  cycle_id?: string;
+  crop?: string;
+  start_date?: string;
+  end_date?: string;
+  duration_days?: number;
+  weather_risk?: number;
+  event_count?: number;
+  events?: Record<string, unknown>[];
 }
 
 export interface CroppingAnalysis {
@@ -163,6 +175,7 @@ export interface AssessmentPayload {
   cropping_analysis?: CroppingAnalysis;
   performance_analysis?: PerformanceAnalysis;
   weather_analysis?: WeatherAnalysis;
+  weather_intervals?: WeatherInterval[];
   crop_cycles?: CropCyclesBlock;
   farmer_benefits?: {
     pm_kisan_enrolled?: boolean;

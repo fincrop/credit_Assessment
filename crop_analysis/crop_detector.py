@@ -856,19 +856,13 @@ class CropDetector:
         all_scenes:     List[Dict],
     ) -> float:
         """
-        Compute cropping intensity from actual cycle date spans.
-
-        Intensity = (total days under cultivation) / (total observation period)
-        Capped at 1.0 (can be > 1.0 only in relay/multi-crop situations,
-        which we clamp).
-
-        This replaces the old kharif/rabi key lookup which was tied to
-        fixed season labels that no longer exist in ENHANCED mode.
+        Compute cropping intensity as cycles per year over the observed window.
+        This better reflects multi-cycle farming (e.g., 7 cycles in 3 years)
+        and aligns with credit scoring thresholds (0-3+ range).
         """
         if not season_results or not all_scenes:
             return 0.0
 
-        # Total observation period
         dates = sorted(s.get('date', '') for s in all_scenes if s.get('date'))
         if len(dates) < 2:
             return 0.0
@@ -880,20 +874,14 @@ class CropDetector:
         except Exception:
             return 0.0
 
-        # Sum cultivation days across cycles
-        cult_days = 0
+        cycles_detected = 0
         for r in season_results:
-            if not r.get('crop_detected'):
-                continue
-            try:
-                s = datetime.strptime(r['start_date'], '%Y-%m-%d')
-                e = datetime.strptime(r['end_date'],   '%Y-%m-%d')
-                cult_days += max(0, (e - s).days)
-            except Exception:
-                cult_days += r.get('duration_days', 0)
+            if r.get('crop_detected'):
+                cycles_detected += 1
 
-        intensity = cult_days / total_days
-        return round(min(1.0, float(intensity)), 3)
+        years_observed = max(total_days / 365.25, 0.5)
+        intensity = cycles_detected / years_observed
+        return round(min(3.5, float(intensity)), 3)
 
     # =========================================================================
     # HELPERS

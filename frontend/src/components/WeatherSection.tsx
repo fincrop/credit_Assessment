@@ -3,6 +3,7 @@ import { formatNumber } from "../utils/format";
 
 export function WeatherSection({ data }: { data: AssessmentPayload }) {
   const wa = data.weather_analysis;
+  const intervalBlocks = data.weather_intervals ?? [];
   if (!wa) {
     return (
       <div className="card">
@@ -94,6 +95,36 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
                 Showing 25 of {events.length} — see raw JSON for full list.
               </p>
             )}
+          </div>
+        </>
+      )}
+
+      {intervalBlocks.length > 0 && (
+        <>
+          <h3 style={{ fontSize: "0.9rem", margin: "1rem 0 0.5rem" }}>Weather events by crop interval</h3>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Cycle</th>
+                  <th>Window</th>
+                  <th>Risk</th>
+                  <th>Events</th>
+                </tr>
+              </thead>
+              <tbody>
+                {intervalBlocks.map((w, i) => (
+                  <tr key={i}>
+                    <td>{w.cycle_id ?? "-"}</td>
+                    <td style={{ fontSize: "0.75rem" }}>
+                      {w.start_date ?? "?"} → {w.end_date ?? "?"}
+                    </td>
+                    <td>{formatNumber(w.weather_risk, 1)}</td>
+                    <td>{w.event_count ?? w.events?.length ?? 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </>
       )}

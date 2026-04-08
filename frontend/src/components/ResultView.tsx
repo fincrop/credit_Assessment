@@ -1,10 +1,8 @@
 import { useMemo, useState } from "react";
 import type { AssessmentPayload } from "../types/assessment";
 import { AIEnrichmentSection } from "./AIEnrichmentSection";
-import { ComponentScores } from "./ComponentScores";
 import { CropCyclesSection } from "./CropCyclesSection";
 import { CroppingSection } from "./CroppingSection";
-import { JsonInspector } from "./JsonInspector";
 import { LocationStrip } from "./LocationStrip";
 import { PerformanceSection } from "./PerformanceSection";
 import { SummaryHero } from "./SummaryHero";
@@ -12,18 +10,15 @@ import { WeatherSection } from "./WeatherSection";
 
 const TABS = [
   { id: "overview", label: "Overview" },
-  { id: "scores", label: "Components" },
-  { id: "crops", label: "Cropping" },
-  { id: "performance", label: "Performance" },
+  { id: "cropPerf", label: "Crop & Performance" },
   { id: "weather", label: "Weather" },
   { id: "cycles", label: "Cycles" },
-  { id: "ai", label: "AI / Explain" },
-  { id: "raw", label: "Raw JSON" },
+  { id: "ai", label: "Explainability" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
-export function ResultView({ data }: { data: AssessmentPayload }) {
+export function ResultView({ data, onBack }: { data: AssessmentPayload; onBack: () => void }) {
   const [tab, setTab] = useState<TabId>("overview");
 
   const failed = data.status !== "SUCCESS";
@@ -36,6 +31,12 @@ export function ResultView({ data }: { data: AssessmentPayload }) {
 
   return (
     <div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+        <h2 style={{ margin: 0 }}>Assessment Insights</h2>
+        <button className="btn" type="button" onClick={onBack}>
+          New assessment
+        </button>
+      </div>
       {warnings.length > 0 && (
         <div
           className="card"
@@ -70,29 +71,22 @@ export function ResultView({ data }: { data: AssessmentPayload }) {
         <>
           <LocationStrip data={data} />
           <SummaryHero data={data} />
+          <CropCyclesSection data={data} />
         </>
       )}
 
-      {tab === "scores" && <ComponentScores credit={data.credit_assessment} />}
-
-      {tab === "crops" && <CroppingSection data={data} />}
-
-      {tab === "performance" && <PerformanceSection data={data} />}
+      {tab === "cropPerf" && (
+        <>
+          <CroppingSection data={data} />
+          <PerformanceSection data={data} />
+        </>
+      )}
 
       {tab === "weather" && <WeatherSection data={data} />}
 
       {tab === "cycles" && <CropCyclesSection data={data} />}
 
       {tab === "ai" && <AIEnrichmentSection data={data} />}
-
-      {tab === "raw" && <JsonInspector data={data} />}
-
-      {tab !== "raw" && (
-        <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "1rem" }}>
-          Tip: use the <strong>Raw JSON</strong> tab to copy the full API response for MongoDB-aligned
-          ETL or audit.
-        </p>
-      )}
     </div>
   );
 }

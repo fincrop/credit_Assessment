@@ -3,15 +3,9 @@ import { formatNumber, riskBadgeClass } from "../utils/format";
 
 export function SummaryHero({ data }: { data: AssessmentPayload }) {
   const ca = data.credit_assessment;
-  const cr = data.credit_recommendations;
   const score = ca?.credit_score ?? data.summary?.credit_score;
   const risk = ca?.risk_category ?? data.summary?.risk_category;
   const pct = typeof score === "number" ? Math.min(100, Math.max(0, score)) : 0;
-
-  const limit =
-    cr?.recommended_limit ??
-    cr?.recommended_credit_limit ??
-    (data.summary?.credit_limit as number | undefined);
 
   const method =
     ca?.method ?? (typeof data.summary?.scoring_method === "string" ? data.summary.scoring_method : undefined);
@@ -52,22 +46,8 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
             )}
           </div>
           <p style={{ margin: 0, fontSize: "0.95rem" }}>
-            <strong>Recommended limit:</strong>{" "}
-            {limit != null ? <>₹{formatNumber(limit, 0)}</> : "—"}
-            {cr?.limit_per_hectare != null && (
-              <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
-                {" "}
-                (~₹{formatNumber(cr.limit_per_hectare, 0)} / ha)
-              </span>
-            )}
+            <strong>Assessment quality:</strong> {score != null ? formatNumber(score, 1) : "—"} / 100
           </p>
-          {cr?.interest_rate != null && (
-            <p style={{ margin: "0.35rem 0 0", fontSize: "0.85rem", color: "var(--text-muted)" }}>
-              Interest ~{formatNumber(cr.interest_rate, 2)}% ·{" "}
-              {cr.repayment_period_months ?? cr.repayment_months ?? "—"} months · Collateral:{" "}
-              {cr.collateral_required ? "Yes" : "No"}
-            </p>
-          )}
           {data.processing_time_seconds != null && (
             <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "var(--text-muted)" }}>
               Processing {formatNumber(data.processing_time_seconds, 1)}s · Pipeline stages:{" "}
@@ -76,6 +56,21 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
           )}
         </div>
       </div>
+      {ca?.component_scores && (
+        <div className="grid-2" style={{ marginTop: "1rem" }}>
+          {Object.entries(ca.component_scores).map(([k, v]) => (
+            <div key={k} className="bar-row">
+              <div className="bar-label">
+                <span>{k.replaceAll("_", " ")}</span>
+                <span>{formatNumber(v, 1)}</span>
+              </div>
+              <div className="bar-track">
+                <div className="bar-fill" style={{ width: `${Math.max(0, Math.min(100, v ?? 0))}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {narrative && (
         <p
           style={{
@@ -88,13 +83,6 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
         >
           {narrative}
         </p>
-      )}
-      {Array.isArray(cr?.conditions) && cr!.conditions!.length > 0 && (
-        <ul style={{ margin: "0.75rem 0 0", paddingLeft: "1.15rem", fontSize: "0.85rem" }}>
-          {cr!.conditions!.map((c, i) => (
-            <li key={i}>{c}</li>
-          ))}
-        </ul>
       )}
     </div>
   );

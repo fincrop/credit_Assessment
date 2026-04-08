@@ -108,6 +108,38 @@ def _f(v, d: int = 4) -> Optional[float]:
         return None
 
 
+def _clean_obj(value):
+    """
+    Recursively remove None, empty strings, empty lists/dicts.
+    Keep False/0 values as they are semantically meaningful.
+    """
+    if isinstance(value, dict):
+        out = {}
+        for k, v in value.items():
+            cv = _clean_obj(v)
+            if cv is None:
+                continue
+            if isinstance(cv, str) and cv.strip() == "":
+                continue
+            if isinstance(cv, (list, dict)) and len(cv) == 0:
+                continue
+            out[k] = cv
+        return out or None
+    if isinstance(value, list):
+        out = []
+        for item in value:
+            cv = _clean_obj(item)
+            if cv is None:
+                continue
+            if isinstance(cv, str) and cv.strip() == "":
+                continue
+            if isinstance(cv, (list, dict)) and len(cv) == 0:
+                continue
+            out.append(cv)
+        return out or None
+    return value
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Schema builder
 # ─────────────────────────────────────────────────────────────────────────────
@@ -161,8 +193,6 @@ class AssessmentSchema:
         doc['pipeline_version']  = _PIPELINE_VERSION
         doc['status']            = raw.get('status', 'UNKNOWN')
         doc['processing_time_s'] = _f(raw.get('processing_time_seconds', 0.0), 1)
-        doc['warnings']          = raw.get('warnings', [])
-        doc['errors']            = raw.get('errors',   [])
         doc['pipeline_stages']   = raw.get('pipeline_stages', [])
 
         raw_date = raw.get('assessment_date')
@@ -183,26 +213,14 @@ class AssessmentSchema:
             'latitude':     _f(loc.get('latitude')),
             'longitude':    _f(loc.get('longitude')),
             'region':       ca.get('region', raw.get('region', 'UNKNOWN')),
-            'field_area_ha': _f(raw.get('field_area_ha')),
         }
+        doc['field_area_ha'] = _f(raw.get('field_area_ha'))
 
         # ── Credit result (denormalised to top-level) ─────────────────────
         credit = raw.get('credit_assessment', {})
-        rec    = raw.get('credit_recommendations', {})
         doc['credit_score']             = _f(credit.get('credit_score'))
         doc['risk_category']            = credit.get('risk_category', 'UNKNOWN')
         doc['credit_method']            = credit.get('method', 'rule_based_v4')
-        doc['ml_components_silenced']   = bool(credit.get('ml_components_silenced', False))
-        doc['ml_requested_mode']        = credit.get('ml_requested_mode')
-        lim = rec.get('recommended_credit_limit')
-        if lim is None:
-            lim = rec.get('recommended_limit')
-        doc['recommended_credit_limit'] = _f(lim)
-        doc['limit_per_hectare']        = _f(rec.get('limit_per_hectare'))
-        doc['interest_rate']            = _f(rec.get('interest_rate'))
-        doc['repayment_months']         = rec.get('repayment_period_months')
-        doc['collateral_required']      = bool(rec.get('collateral_required', False))
-        doc['conditions']               = rec.get('conditions', [])
 
         # ── Component scores ──────────────────────────────────────────────
         comp = credit.get('component_scores', {})
@@ -220,6 +238,7 @@ class AssessmentSchema:
             'ndvi_threshold_used':    _f(ca.get('ndvi_threshold_used')),
             'region':                 ca.get('region', 'UNKNOWN'),
         }
+        doc['crops_detected'] = ca.get('crops_detected', {})
 
         # ── Per-season NDVI time-series ───────────────────────────────────
         pa = raw.get('performance_analysis', {})
@@ -231,9 +250,9 @@ class AssessmentSchema:
         # ── Weather ───────────────────────────────────────────────────────
         wa = raw.get('weather_analysis', {})
         doc['weather_summary'] = AssessmentSchema._build_weather_summary(wa)
-        doc['cycle_weather_risks'] = wa.get('cycle_risk_scores', [])
-        doc['extreme_events']  = AssessmentSchema._build_extreme_events(
-            wa.get('extreme_events', [])
+        doc['weather_intervals'] = AssessmentSchema._build_weather_intervals(
+            wa.get('seasonal_weather', []),
+            wa.get('cycle_risk_scores', []),
         )
 
         # ── Performance summary ───────────────────────────────────────────
@@ -242,39 +261,33 @@ class AssessmentSchema:
             'avg_yield_score':       _f(pa.get('average_yield_score')),
             'avg_performance_score': _f(pa.get('average_performance_score')),
             'n_seasons_scored':      pa.get('n_seasons_analyzed', 0),
+            'n_complete_cycles':     pa.get('n_complete_cycles', 0),
+            'n_active_cycles':       pa.get('n_active_cycles', 0),
+            'summary_note': (
+                "Scores are averaged across detected crop intervals; "
+                "active cycles are included with partial-season confidence."
+            ),
         }
 
         # ── Govt benefits ─────────────────────────────────────────────────
-        benefits = raw.get('farmer_benefits')
-        doc['govt_benefits'] = (
-            {
-                'pm_kisan_enrolled':  bool(benefits.get('pm_kisan_enrolled', False)),
-                'has_crop_insurance': bool(benefits.get('has_crop_insurance', False)),
-            }
-            if benefits else None
-        )
+        benefits = raw.get('farmer_benefits') or {}
+        doc['govt_benefits'] = {
+            'pm_kisan_enrolled':  bool(benefits.get('pm_kisan_enrolled', False)),
+            'has_crop_insurance': bool(benefits.get('has_crop_insurance', False)),
+        }
 
         # Stage 12 — structured previews (full dict on API response / raw JSON)
         ai = raw.get('ai_enrichment')
         if isinstance(ai, dict):
-            def _clip(s: str, n: int = 2000) -> str:
-                s = (s or "").strip()
-                return s if len(s) <= n else s[: n - 3] + "..."
-
-            doc['ai_enrichment'] = {
-                'groq_used': bool(ai.get('groq_used')),
-                'groq_skipped_reason': ai.get('groq_skipped_reason'),
-                'english_preview': _clip(str(ai.get('english_narrative', ''))),
-                'translated_preview': _clip(str(ai.get('translated_narrative', ''))),
-                'translation_language': ai.get('translation_language'),
-                'explainability': ai.get('explainability_mongo')
-                or AssessmentSchema._shap_mongo_fallback(ai.get('explainability')),
-                'counterfactuals': ai.get('counterfactuals_mongo')
-                or AssessmentSchema._cf_mongo_fallback(ai.get('counterfactuals')),
-            }
+            explainability = ai.get('explainability_mongo') or ai.get('explainability')
+            counterfactuals = ai.get('counterfactuals_mongo') or ai.get('counterfactuals')
+            doc['ai_enrichment'] = AssessmentSchema._build_ai_enrichment(
+                explainability, counterfactuals
+            )
 
         doc['saved_at'] = datetime.utcnow()
-        return doc
+        cleaned = _clean_obj(doc)
+        return cleaned or doc
 
     # ── Sub-builders ─────────────────────────────────────────────────────
 
@@ -298,7 +311,11 @@ class AssessmentSchema:
                 'end_date':          r.get('end_date'),
                 'crop_detected':     bool(r.get('crop_detected', False)),
                 'predicted_crop':    r.get('predicted_crop'),
-                'confidence':        _f(r.get('confidence')),
+                'confidence':        _f(
+                    r.get('confidence')
+                    if r.get('confidence') is not None
+                    else r.get('crop_confidence')
+                ),
                 'is_cross_season':   bool(r.get('is_cross_season', False)),
                 'avg_ndvi':          _f(r.get('avg_ndvi')),
                 'peak_ndvi':         _f(r.get('peak_ndvi')),
@@ -308,6 +325,9 @@ class AssessmentSchema:
                 'health_score':      _f(perf.get('health_score')),
                 'yield_score':       _f(perf.get('yield_potential_score')),
                 'n_scenes':          r.get('n_scenes', 0),
+                'interval_indices': AssessmentSchema._extract_interval_indices(
+                    r.get('scenes', [])
+                ),
             })
         rows.sort(key=lambda x: (
             x.get('year', 0),
@@ -380,6 +400,101 @@ class AssessmentSchema:
                 'crop_stage_critical': bool(e.get('crop_stage_critical', False)),
             })
         return compact
+
+    @staticmethod
+    def _extract_interval_indices(scenes: List[Dict]) -> List[Dict]:
+        rows: List[Dict] = []
+        for s in scenes or []:
+            date = s.get('date')
+            idx = s.get('indices') or {}
+            if not date or not isinstance(idx, dict):
+                continue
+            rows.append(
+                {
+                    'date': str(date)[:10],
+                    'ndvi': _f(idx.get('NDVI_mean')),
+                    'evi': _f(idx.get('EVI_mean')),
+                    'ndmi': _f(idx.get('NDMI_mean')),
+                    'savi': _f(idx.get('SAVI_mean')),
+                    'gci': _f(idx.get('GCI_mean')),
+                }
+            )
+        return rows
+
+    @staticmethod
+    def _build_weather_intervals(
+        seasonal_weather: List[Dict],
+        cycle_risk_scores: List[Dict],
+    ) -> List[Dict]:
+        risk_map = {
+            (r.get('cycle_id') or ""): {
+                'risk_score': _f(r.get('risk_score')),
+                'n_events': r.get('n_events', 0),
+            }
+            for r in (cycle_risk_scores or [])
+            if isinstance(r, dict)
+        }
+        out: List[Dict] = []
+        for cycle in seasonal_weather or []:
+            if not isinstance(cycle, dict):
+                continue
+            cid = cycle.get('cycle_id') or cycle.get('season')
+            events = AssessmentSchema._build_extreme_events(cycle.get('extreme_events', []))
+            # enrich events with stage and cycle timing fields when available
+            full_events = []
+            for e in cycle.get('extreme_events', []) or []:
+                if not isinstance(e, dict):
+                    continue
+                compact = AssessmentSchema._build_extreme_events([e])[0]
+                compact['stage_name'] = e.get('stage_name')
+                compact['days_since_sowing'] = e.get('days_since_sowing')
+                compact['impact_severity'] = e.get('impact_severity')
+                compact['crop_impact_narrative'] = e.get('crop_impact_narrative')
+                full_events.append(compact)
+            out.append(
+                {
+                    'cycle_id': cid,
+                    'crop': cycle.get('crop'),
+                    'start_date': cycle.get('start_date'),
+                    'end_date': cycle.get('end_date'),
+                    'duration_days': cycle.get('duration_days'),
+                    'rainfall_total_mm': _f(cycle.get('total_rainfall_mm')),
+                    'avg_temp_c': _f(cycle.get('avg_temp_c')),
+                    'max_temp_c': _f(cycle.get('max_temp_c')),
+                    'min_temp_c': _f(cycle.get('min_temp_c')),
+                    'weather_risk': risk_map.get(cid, {}).get('risk_score'),
+                    'event_count': len(events),
+                    'events': full_events or events,
+                }
+            )
+        return out
+
+    @staticmethod
+    def _build_ai_enrichment(
+        explainability: Optional[Dict],
+        counterfactuals: Optional[Dict],
+    ) -> Dict:
+        out: Dict = {}
+        if isinstance(explainability, dict):
+            out['explainability'] = {
+                'method': explainability.get('method'),
+                'shap_available': explainability.get('shap_available'),
+                'base_value': _f(explainability.get('base_value')),
+                'credit_summary': explainability.get('credit_summary'),
+                'top_positive_drivers': (explainability.get('top_positive_drivers') or [])[:6],
+                'top_negative_drivers': (explainability.get('top_negative_drivers') or [])[:6],
+            }
+        if isinstance(counterfactuals, dict):
+            out['counterfactuals'] = {
+                'current_score': _f(counterfactuals.get('current_score')),
+                'current_risk_category': counterfactuals.get('current_risk_category'),
+                'projected_score_all_improvements': _f(
+                    counterfactuals.get('projected_score_all_improvements')
+                ),
+                'scenarios': (counterfactuals.get('scenarios') or [])[:6],
+                'improvement_roadmap': counterfactuals.get('improvement_roadmap'),
+            }
+        return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
