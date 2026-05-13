@@ -116,17 +116,17 @@ export async function POST(req: NextRequest) {
               field_area_ha = legacyHa;
             }
 
-            const gForCe = geom as {
-              type?: string;
-              coordinates?: unknown;
-              length?: unknown;
-            } | null;
+            type GeoJsonLike = { type?: string; coordinates?: unknown } | null;
+            const gForCe = geom as GeoJsonLike;
+            const gCoords = gForCe?.coordinates;
+            const hasCoordArray =
+              Array.isArray(gCoords) && gCoords.length > 0;
 
-            if (gForCe?.coordinates?.length && (latitude == null || longitude == null)) {
+            if (gForCe && hasCoordArray && (latitude == null || longitude == null)) {
               if (gForCe.type === 'Polygon' || gForCe.type === 'MultiPolygon') {
                 const cg = centroidFromPlotGeometry({
                   type: gForCe.type,
-                  coordinates: gForCe.coordinates,
+                  coordinates: gCoords,
                 });
                 if (cg) {
                   latitude = cg.lat;
@@ -135,8 +135,8 @@ export async function POST(req: NextRequest) {
                 try {
                   const coords =
                     gForCe.type === 'Polygon'
-                      ? (gForCe.coordinates as number[][][])[0]
-                      : (gForCe.coordinates as number[][][][])[0]?.[0];
+                      ? (gCoords as number[][][])[0]
+                      : (gCoords as number[][][][])[0]?.[0];
                   if (
                     coords?.length &&
                     (latitude == null || longitude == null)
@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
                   /* ignore */
                 }
               } else if (gForCe.type === 'Point') {
-                const pts = gForCe.coordinates as number[];
+                const pts = gCoords as number[];
                 longitude = Number(pts[0]);
                 latitude = Number(pts[1]);
               }
@@ -207,7 +207,11 @@ export async function POST(req: NextRequest) {
             (primaryFarm?.plot_area ? Number(primaryFarm.plot_area) / 10000 : null);
 
           const geom = primaryFarm?.farm_geometry || primaryFarm?.geometry || primaryFarm?.parcel_geometry || null;
-          if (geom?.coordinates?.length) {
+          const geomCoords =
+            geom && typeof geom === 'object' && 'coordinates' in geom
+              ? (geom as { coordinates?: unknown }).coordinates
+              : undefined;
+          if (Array.isArray(geomCoords) && geomCoords.length > 0) {
             if (geom.type === 'Polygon' || geom.type === 'MultiPolygon') {
               try {
                 const coords = geom.type === 'Polygon' ? geom.coordinates[0] : geom.coordinates[0][0];

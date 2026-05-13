@@ -168,6 +168,7 @@ class CropCycleDetector:
     # PUBLIC API
     # ─────────────────────────────────────────────────────
 
+
     def detect_cycles(
         self,
         dates:        List,

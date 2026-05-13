@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import { Suspense, useState, useEffect, FormEvent } from 'react';
 import { useSearchParams } from 'next/navigation';
 import type { AssessmentPayload, AssessmentJob } from '../types/assessment';
 import { runAssessmentJob, pollJobStatus } from '../lib/assessmentClient';
@@ -14,6 +14,20 @@ import { AIEnrichmentSection } from './components/AIEnrichmentSection';
 import Link from 'next/link';
 
 export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#0d1117] flex items-center justify-center text-gray-400 text-sm">
+          Loading dashboard…
+        </div>
+      }
+    >
+      <DashboardPageContent />
+    </Suspense>
+  );
+}
+
+function DashboardPageContent() {
   const searchParams = useSearchParams();
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<'IDLE' | 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED'>('IDLE');

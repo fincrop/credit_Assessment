@@ -35,17 +35,27 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 
-1. FastAPI backend (port 8000)
+1. **FastAPI backend** (port 8000)
+
+```bash
 cd c:\Users\gopik\Downloads\agri_credit_pipeline
 uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
+```
 
-2. Pipeline worker (MongoDB jobs)
-cd c:\Users\gopik\Downloads\agri_credit_pipeline
-python worker.py
+2. **Assessment jobs (pick one)**
 
-3. Next.js frontend (port 3000)
+- **Inbuilt (no worker process):** In `frontend/.env.local` set `PIPELINE_API_URL=http://127.0.0.1:8000` and, if the API uses `API_SERVICE_KEY`, set `PIPELINE_API_SERVICE_KEY` to the same value. The dashboard enqueue route calls `POST /v1/jobs/assess`, which inserts a MongoDB job and runs the pipeline inside uvicorn after the response returns.
+- **Separate worker:** Leave `PIPELINE_API_URL` unset and run `python worker.py` in another terminal; it polls the `jobs` collection for `QUEUED` rows.
+
+3. **Next.js frontend** (port 3000)
+
+```bash
 cd c:\Users\gopik\Downloads\agri_credit_pipeline\frontend
 npm run dev
+```
 
-4. Public tunnel for webhooks (→ localhost:3000)
+4. **Public tunnel for webhooks** (→ localhost:3000)
+
+```bash
 npx cloudflared tunnel --url http://localhost:3000
+```

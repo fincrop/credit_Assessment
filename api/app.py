@@ -15,8 +15,13 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from bson.objectid import ObjectId
+from pymongo import MongoClient, ReturnDocument
 
 # Load .env from repo root before pipeline / config import
 def _load_dotenv() -> None:
@@ -31,16 +36,20 @@ def _load_dotenv() -> None:
 
 _load_dotenv()
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from api.job_runner import process_assessment_job, utc_now
 from api.serialization import slim_assessment_for_api
 from main import SatelliteBasedCreditPipeline
 
 logger = logging.getLogger(__name__)
 
 _pipeline: Optional[SatelliteBasedCreditPipeline] = None
+_mongo_for_jobs: Optional[MongoClient] = None
+_jobs_col: Any = None
+_pipeline_job_lock: Optional[asyncio.Lock] = None
 
 
 def _cors_origins() -> List[str]:
@@ -57,7 +66,8 @@ def _optional_api_key() -> Optional[str]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _pipeline
+    global _pipeline, _mongo_for_jobs, _jobs_col, _pipeline_job_lock
+    _pipeline_job_lock = asyncio.Lock()
     model_path = os.environ.get("CROP_MODEL_PATH", "models/crop_classifier_model.joblib")
     ml_mode = os.environ.get("ML_MODE", "rule_based")
     use_mdb = os.environ.get("USE_MONGODB", "true").strip().lower() in (
@@ -73,8 +83,33 @@ async def lifespan(app: FastAPI):
         use_mongodb=use_mdb,
     )
     logger.info("Pipeline ready (ml_mode=%s, mongodb=%s)", ml_mode, use_mdb)
+
+    uri = os.environ.get("MONGODB_URI", "").strip()
+    if uri:
+        try:
+            _mongo_for_jobs = MongoClient(uri, serverSelectionTimeoutMS=8000)
+            _mongo_for_jobs.admin.command("ping")
+            dbn = (
+                os.environ.get("MONGODB_DATABASE")
+                or os.environ.get("MONGODB_DB")
+                or "agristack"
+            )
+            _jobs_col = _mongo_for_jobs[dbn]["jobs"]
+            logger.info("Mongo job queue ready (%s.jobs)", dbn)
+        except Exception as exc:
+            logger.warning("Mongo job queue unavailable: %s", exc)
+            _jobs_col = None
+            _mongo_for_jobs = None
+    else:
+        _jobs_col = None
+
     yield
+
     _pipeline = None
+    _jobs_col = None
+    if _mongo_for_jobs is not None:
+        _mongo_for_jobs.close()
+        _mongo_for_jobs = None
 
 
 app = FastAPI(
@@ -91,6 +126,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class JobAssessRequest(BaseModel):
+    """Dashboard job enqueue body (matches Next.js `/api/assess/enqueue`)."""
+
+    farmer_id: str = Field(..., min_length=1)
+    pm_kisan_enrolled: bool = False
+    has_crop_insurance: bool = False
 
 
 class AssessRequest(BaseModel):
@@ -123,6 +166,7 @@ async def health() -> Dict[str, Any]:
         "status": "ok",
         "pipeline_loaded": _pipeline is not None,
         "mongodb": bool(_pipeline and getattr(_pipeline, "use_mongodb", False)),
+        "jobs_collection": _jobs_col is not None,
     }
 
 
@@ -149,6 +193,105 @@ async def _run_assessment(body: AssessRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e)) from e
 
     return slim_assessment_for_api(result, include_heavy=body.include_heavy)
+
+
+async def _claim_and_run_job(job_id: str) -> None:
+    """
+    After HTTP returns, claim the QUEUED job and run the pipeline in a thread pool.
+    Serialized with _pipeline_job_lock so only one heavy run uses the pipeline at a time.
+    """
+    global _pipeline, _jobs_col, _pipeline_job_lock
+    if _pipeline is None or _jobs_col is None or _pipeline_job_lock is None:
+        logger.error("Inline job %s skipped: pipeline or Mongo jobs not ready", job_id)
+        return
+
+    try:
+        job = _jobs_col.find_one_and_update(
+            {"_id": ObjectId(job_id), "status": "QUEUED"},
+            {
+                "$set": {
+                    "status": "RUNNING",
+                    "started_at": utc_now(),
+                    "updated_at": utc_now(),
+                }
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+    except Exception:
+        logger.exception("Failed to claim job %s", job_id)
+        return
+
+    if not job:
+        logger.info("Job %s not in QUEUED state (already processed or claimed)", job_id)
+        return
+
+    _env_classify = os.environ.get("ENABLE_CROP_CLASSIFICATION", "false").strip().lower()
+    env_classification_enabled = _env_classify in ("1", "true", "yes")
+
+    loop = asyncio.get_event_loop()
+    async with _pipeline_job_lock:
+        try:
+            await loop.run_in_executor(
+                None,
+                partial(
+                    process_assessment_job,
+                    _jobs_col,
+                    _pipeline,
+                    job,
+                    env_classification_enabled,
+                ),
+            )
+        except Exception as exc:
+            logger.exception("Job %s executor failure: %s", job_id, exc)
+            try:
+                _jobs_col.update_one(
+                    {"_id": ObjectId(job_id)},
+                    {
+                        "$set": {
+                            "status": "FAILED",
+                            "error": str(exc),
+                            "completed_at": utc_now(),
+                            "updated_at": utc_now(),
+                        }
+                    },
+                )
+            except Exception:
+                logger.exception("Could not persist FAILED for job %s", job_id)
+
+
+@app.post("/v1/jobs/assess")
+async def enqueue_assess_job(
+    body: JobAssessRequest,
+    background_tasks: BackgroundTasks,
+    _: None = Depends(verify_service_key),
+) -> Dict[str, Any]:
+    """
+    Enqueue a dashboard assessment job and process it inside this API process
+    (no separate `worker.py`). Inserts `QUEUED` then runs the same pipeline as the worker.
+
+    The Next.js server can call this when `PIPELINE_API_URL` is set instead of relying on
+    a dedicated worker service.
+    """
+    if _jobs_col is None:
+        raise HTTPException(
+            status_code=503,
+            detail="MongoDB jobs collection not available (set MONGODB_URI)",
+        )
+    now = datetime.now(timezone.utc)
+    job_doc: Dict[str, Any] = {
+        "farmer_id": body.farmer_id.strip(),
+        "pm_kisan_enrolled": body.pm_kisan_enrolled,
+        "has_crop_insurance": body.has_crop_insurance,
+        "status": "QUEUED",
+        "created_at": now,
+        "updated_at": now,
+        "result": None,
+        "error": None,
+    }
+    result = _jobs_col.insert_one(job_doc)
+    job_id = str(result.inserted_id)
+    background_tasks.add_task(_claim_and_run_job, job_id)
+    return {"success": True, "job_id": job_id, "status": "QUEUED"}
 
 
 @app.post("/v1/assess")
