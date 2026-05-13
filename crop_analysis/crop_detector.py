@@ -39,6 +39,8 @@ import logging
 
 from config import PipelineConfig
 
+from utils.india_geo_context import detector_ndvi_threshold, infer_agro_ecoregion
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,9 +56,11 @@ class CropDetector:
     def __init__(
         self,
         crop_model_path: str,
-        latitude:  Optional[float] = None,
+        latitude: Optional[float] = None,
         longitude: Optional[float] = None,
-        verbose:   bool = True,
+        verbose: bool = True,
+        state_lgd_code: Optional[str] = None,
+        district_lgd_code: Optional[str] = None,
     ):
         self.verbose   = verbose
         self.latitude  = latitude
@@ -69,14 +73,28 @@ class CropDetector:
         self.feature_names  = model_data['feature_names']
         self.crop_names     = model_data['crop_names']
 
-        self.regional_thresholds = None
-        self.ndvi_threshold      = PipelineConfig.CROP_DETECTION_NDVI_THRESHOLD
-        self.region              = 'DEFAULT'
+        base_ndvi_thr = PipelineConfig.CROP_DETECTION_NDVI_THRESHOLD
+        self.agro_ecoregion, self.agro_geo_profile = infer_agro_ecoregion(
+            latitude,
+            longitude,
+            state_lgd_code=state_lgd_code,
+        )
+        self.ndvi_threshold = detector_ndvi_threshold(base_ndvi_thr, latitude, longitude)
+        self.regional_thresholds = self.agro_geo_profile.copy()
+        if district_lgd_code:
+            self.regional_thresholds["district_lgd_code"] = district_lgd_code
 
-        logger.info(f"✔ CropDetector v4.1 initialized  (Region: {self.region})")
-        logger.info(f"  NDVI threshold: {self.ndvi_threshold:.2f}  |  "
-                    f"ML feature scenes: {PipelineConfig.ML_FEATURE_SCENES}  |  "
-                    f"Crops: {len(self.crop_names)}")
+        self.region = self.agro_ecoregion
+
+        logger.info(
+            "✔ CropDetector v4.1 initialized (Agro-region: %s | NDVI thr: %.2f)",
+            self.region,
+            self.ndvi_threshold,
+        )
+        logger.info(
+            f"  ML feature scenes: {PipelineConfig.ML_FEATURE_SCENES}  |  "
+            f"Crops: {len(self.crop_names)}",
+        )
 
     # =========================================================================
     # PUBLIC API
@@ -175,7 +193,7 @@ class CropDetector:
                     'reason': pattern_info.get('rejection_reason', 'No crop pattern'),
                 })
                 logger.info(
-                    f"  {label}: ✗ No crop  "
+                    f"  {label}: [FAIL] No crop  "
                     f"[peak={pattern_info['peak_ndvi']:.3f}  "
                     f"rise={pattern_info['ndvi_rise']:.3f}  "
                     f"cv={pattern_info['ndvi_cv']:.3f}]  "
@@ -456,7 +474,7 @@ class CropDetector:
                     'reason': pattern_info.get('rejection_reason', 'No crop pattern'),
                     **{k: v for k, v in s4.items() if v is not None and k != 'cycle_index'},
                 })
-                logger.info(f"    ✗ No crop [{pattern_info.get('rejection_reason','')}]")
+                logger.info(f"    [FAIL] No crop [{pattern_info.get('rejection_reason','')}]")
 
         dominant_crop = (
             max(crops_detected.items(), key=lambda x: x[1])[0]

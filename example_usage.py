@@ -178,7 +178,7 @@ def example_4_unsupervised_segmentation():
         print(f"\nSegment {profile['segment_id']}: {profile['name']}")
         print(f"  Count: {profile['count']} farmers")
         print(f"  Avg Intensity: {profile['average_features']['cropping_intensity']:.2f}")
-        print(f"  Avg Performance: {profile['average_features']['performance_score']:.1f}")
+        print(f"  Avg Performance: {profile['average_features']['avg_performance_score']:.1f}")
     
     return segments, profiles
 
@@ -200,9 +200,9 @@ def example_5_advanced_credit_scorer():
         print(f"\nTesting {mode.upper()} mode:")
         try:
             scorer = AdvancedCreditScorer(mode=mode, verbose=False)
-            print(f"  ✓ {mode} scorer initialized successfully")
+            print(f"  [OK] {mode} scorer initialized successfully")
         except Exception as e:
-            print(f"  ✗ Failed: {e}")
+            print(f"  [FAIL] Failed: {e}")
     
     return True
 
@@ -235,10 +235,10 @@ def example_6_module_imports():
         try:
             module = __import__(module_path, fromlist=[class_name])
             getattr(module, class_name)
-            print(f"  ✓ {module_path}.{class_name}")
+            print(f"  [OK] {module_path}.{class_name}")
             success_count += 1
         except Exception as e:
-            print(f"  ✗ {module_path}.{class_name} - {e}")
+            print(f"  [FAIL] {module_path}.{class_name} - {e}")
     
     print(f"\nImport test: {success_count}/{len(modules_to_test)} successful")
     return success_count == len(modules_to_test)

@@ -976,7 +976,7 @@ class WeatherAnalyzer:
         """
         events = stats.get('extreme_events') or []
         if not events:
-            return 22.0
+            return 8.0
         sev_w = {'medium': 1.0, 'high': 2.0, 'extreme': 3.5}
         wsum = 0.0
         for e in events:

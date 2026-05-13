@@ -12,7 +12,7 @@ Supports:
 
 import numpy as np
 from typing import List, Tuple, Optional, Union
-from shapely.geometry import Point, Polygon, box
+from shapely.geometry import MultiPolygon, Point, Polygon, box
 from shapely.ops import transform
 import logging
 
@@ -129,10 +129,54 @@ class GeometryUtils:
         
         return latitude, longitude
     
+    @staticmethod
+    def _ring_area_deg2(ring_coords: List[Tuple[float, float]]) -> float:
+        """Shoelace area in degrees² for one closed ring."""
+        coords = list(ring_coords)
+        if len(coords) < 3:
+            return 0.0
+        area_deg2 = 0.0
+        for i in range(len(coords) - 1):
+            x1, y1 = coords[i]
+            x2, y2 = coords[i + 1]
+            area_deg2 += (x1 * y2 - x2 * y1)
+        return abs(area_deg2) / 2.0
+
+    @classmethod
+    def _polygon_area_deg2(cls, polygon: Polygon) -> float:
+        """Area in degrees² for one polygon (outer ring minus holes)."""
+        if polygon.is_empty:
+            return 0.0
+        outer = cls._ring_area_deg2(polygon.exterior.coords)
+        inner = sum(cls._ring_area_deg2(ring.coords) for ring in polygon.interiors)
+        return max(0.0, outer - inner)
+
+    @classmethod
+    def _polygonal_geoms_deg2(cls, geometry) -> float:
+        """
+        Sum planar area (degrees²) for Polygon / MultiPolygon / collections of polygons.
+        """
+        from shapely.geometry import GeometryCollection
+
+        if isinstance(geometry, Polygon):
+            return cls._polygon_area_deg2(geometry)
+        if isinstance(geometry, MultiPolygon):
+            return sum(cls._polygon_area_deg2(p) for p in geometry.geoms if isinstance(p, Polygon))
+        if isinstance(geometry, GeometryCollection):
+            return sum(cls._polygonal_geoms_deg2(g) for g in geometry.geoms)
+
+        geom_type = getattr(geometry, "geom_type", None)
+        if geom_type == "Polygon":
+            return cls._polygon_area_deg2(geometry)
+        if geom_type == "MultiPolygon":
+            return sum(cls._polygon_area_deg2(p) for p in geometry.geoms if isinstance(p, Polygon))
+        logger.warning(f"calculate_area_from_geometry: unsupported geom_type={geom_type!r}")
+        return 0.0
+
     @classmethod
     def calculate_area_from_geometry(
         cls,
-        geometry: Union[Polygon, dict]
+        geometry: Union[Polygon, MultiPolygon, dict]
     ) -> float:
         """
         Calculate approximate area of a geometry in hectares.
@@ -141,7 +185,7 @@ class GeometryUtils:
         For precise area, use projected coordinates.
         
         Args:
-            geometry: Shapely Polygon or GeoJSON dict
+            geometry: Shapely Polygon/MultiPolygon or GeoJSON dict
         
         Returns:
             Area in hectares
@@ -151,30 +195,15 @@ class GeometryUtils:
             from shapely.geometry import shape
             geometry = shape(geometry)
         
-        # Get centroid for latitude
         centroid_lat = geometry.centroid.y
         
-        # Calculate meters per degree at this latitude
         lat_rad = np.radians(centroid_lat)
         m_per_deg_lat = cls.KM_PER_DEGREE_LAT * 1000
         m_per_deg_lon = cls.KM_PER_DEGREE_LAT * 1000 * np.cos(lat_rad)
         
-        # Calculate area in square meters
-        # Get coordinates
-        coords = list(geometry.exterior.coords)
+        area_deg2 = cls._polygonal_geoms_deg2(geometry)
         
-        # Shoelace formula for area (in degrees²)
-        area_deg2 = 0.0
-        for i in range(len(coords) - 1):
-            x1, y1 = coords[i]
-            x2, y2 = coords[i + 1]
-            area_deg2 += (x1 * y2 - x2 * y1)
-        area_deg2 = abs(area_deg2) / 2.0
-        
-        # Convert to square meters (approximate)
         area_m2 = area_deg2 * m_per_deg_lon * m_per_deg_lat
-        
-        # Convert to hectares (1 ha = 10,000 m²)
         area_ha = area_m2 / 10000.0
         
         logger.debug(f"Calculated area: {area_ha:.2f} hectares")

@@ -88,9 +88,10 @@ from pymongo.errors import ConnectionFailure, DuplicateKeyError, OperationFailur
 logger = logging.getLogger(__name__)
 
 # Secrets: set MONGODB_URI in the environment (see .env). Never commit credentials.
-_DB_NAME = os.environ.get("MONGODB_DATABASE", "agricultural_credit_db")
+_DB_NAME = os.environ.get("MONGODB_DATABASE") or os.environ.get("MONGODB_DB") or "agristack"
 _FARM_COLLECTION       = "farm_info"
 _ASSESSMENT_COLLECTION = "credit_assessments"
+_SAT_CACHE_COLLECTION  = "satellite_stats_cache"
 _PIPELINE_VERSION      = "3.0"
 
 
@@ -526,6 +527,7 @@ class MongoDBHelper:
         self.db          = None
         self.farms       = None
         self.assessments = None
+        self.satellite_cache = None
         self._connect()
 
     # ── Connection ────────────────────────────────────────────────────────
@@ -537,6 +539,7 @@ class MongoDBHelper:
             self.db          = self.client[_DB_NAME]
             self.farms       = self.db[_FARM_COLLECTION]
             self.assessments = self.db[_ASSESSMENT_COLLECTION]
+            self.satellite_cache = self.db[_SAT_CACHE_COLLECTION]
             self._ensure_indexes()
             logger.info("✅ MongoDB connected  (pipeline v3.0 schema)")
         except ConnectionFailure as e:
@@ -603,9 +606,69 @@ class MongoDBHelper:
                 [('location.region', ASCENDING), ('risk_category', ASCENDING)],
                 name='region_risk_idx',
             )
+            # satellite_stats_cache
+            self._create_index_safe(
+                self.satellite_cache,
+                [('cache_key', ASCENDING)],
+                unique=True,
+                name='sat_cache_key_unique',
+            )
+            self._create_index_safe(
+                self.satellite_cache,
+                [('expires_at', ASCENDING)],
+                expireAfterSeconds=0,
+                name='sat_cache_ttl',
+            )
             logger.debug("MongoDB indexes verified")
         except Exception as e:
             logger.warning("Index creation note: %s", e)
+
+    # ── Satellite stats cache ──────────────────────────────────────────────
+
+    def get_satellite_stats_cache(self, cache_key: str) -> Optional[Dict]:
+        try:
+            doc = self.satellite_cache.find_one({'cache_key': cache_key})
+            if not doc:
+                return None
+            self.satellite_cache.update_one(
+                {'_id': doc['_id']},
+                {'$set': {'last_accessed_at': datetime.utcnow()}}
+            )
+            return doc.get('satellite_data')
+        except Exception as e:
+            logger.warning("satellite cache read failed: %s", e)
+            return None
+
+    def upsert_satellite_stats_cache(
+        self,
+        cache_key: str,
+        satellite_data: Dict,
+        metadata: Optional[Dict] = None,
+        ttl_days: int = 30,
+    ) -> bool:
+        try:
+            now = datetime.utcnow()
+            expires_at = now if ttl_days <= 0 else datetime.fromtimestamp(
+                now.timestamp() + (ttl_days * 24 * 60 * 60)
+            )
+            doc = {
+                'cache_key': cache_key,
+                'satellite_data': satellite_data,
+                'updated_at': now,
+                'last_accessed_at': now,
+                'expires_at': expires_at,
+            }
+            if metadata:
+                doc['metadata'] = metadata
+            self.satellite_cache.update_one(
+                {'cache_key': cache_key},
+                {'$set': doc, '$setOnInsert': {'created_at': now}},
+                upsert=True,
+            )
+            return True
+        except Exception as e:
+            logger.warning("satellite cache write failed: %s", e)
+            return False
 
     def is_connected(self) -> bool:
         if not self.client:

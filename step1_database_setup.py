@@ -46,7 +46,7 @@
 #         from pymongo import MongoClient
 #         from pymongo.errors import ConnectionFailure
         
-#         print("✓ pymongo library imported successfully")
+#         print("[OK] pymongo library imported successfully")
         
 #         # Your connection string
 #         connection_string = (
@@ -449,14 +449,14 @@ Requires: pip install pymongo certifi
 """
 
 from datetime import datetime
+import os
 import certifi
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
-CONNECTION_STRING = (
-    "mongodb+srv://gopik0586_db_read-write_user:clientRW123456@"
-    "creditriskassessment.lysxpkf.mongodb.net/?appName=CreditRiskAssessment"
-)
+CONNECTION_STRING = os.getenv("MONGODB_URI", "").strip()
+if not CONNECTION_STRING:
+    raise ValueError("MONGODB_URI is not set. Please configure it in your environment.")
 DATABASE_NAME   = "agricultural_credit_db"
 COLLECTION_NAME = "farm_info"
 

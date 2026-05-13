@@ -19,11 +19,13 @@ geopandas==0.14.4
 pystac-client==0.7.5
 planetary-computer==1.0.0
 sentinelsat==1.2.1
+earthengine-api==0.1.419
 
 # ========================================
 # MACHINE LEARNING
 # ========================================
-scikit-learn==1.4.2
+# Pin to the series used to train/export models/crop_classifier_model.joblib (avoids unpickle warnings)
+scikit-learn==1.6.1
 xgboost==2.0.3
 joblib==1.4.2
 # Explainability (Stage 12 — SHAP lib for Tree/Kernel explainers when a model is wired)

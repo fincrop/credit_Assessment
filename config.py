@@ -215,8 +215,31 @@ class PipelineConfig:
     CROP_CYCLE_SUSTAINED_GROWTH_FRAC = 0.55
     # Merge two cycles only if overlap is large vs calendar AND vs shorter duration
     # (duplicate detections), not adjacent crops with fuzzy boundaries.
-    CROP_CYCLE_MERGE_OVERLAP_MIN_DAYS = 55
-    CROP_CYCLE_MERGE_OVERLAP_RATIO = 0.42
+    # Higher ratio / min days = harder to merge adjacent candidates (keeps more
+    # distinct rotations when harvest/sowing boundaries are fuzzy).
+    CROP_CYCLE_MERGE_OVERLAP_MIN_DAYS = 60
+    CROP_CYCLE_MERGE_OVERLAP_RATIO = 0.52
+
+    # When strict CVI-greenup tracing yields zero cycles despite ≥~100 valid bins:
+    # 1) adaptive second pass lowers gates using parcel-specific CVI percentiles +
+    #    optional India eco-region priors from `utils.india_geo_context`.
+    # 2) peak-anchored fallback places greenups near NDVI prominence peaks when
+    #    monsoon/smoothing suppresses textbook greenups (common in Indo-Gangetic).
+    CROP_CYCLE_ADAPTIVE_SECOND_PASS = True
+    CROP_CYCLE_PEAK_ANCHORED_FALLBACK = True
+    CROP_CYCLE_PERM_CONF_FLOOR = 10.0
+    CROP_CYCLE_PERMISSIVE_DURATION_PAD = 52
+    # Union CVI-greenup scans at multiple window sizes (captures sharper rises).
+    CROP_CYCLE_MULTI_WINDOW_GREENUP = True
+    # If validated cycles < ceil(years * EXPECTED_CYCLES_PER_YEAR), run one more
+    # ultra-relaxed threshold + second peak scan (prominence scaled down).
+    CROP_CYCLE_DENSITY_PASS = True
+    CROP_CYCLE_EXPECTED_CYCLES_PER_YEAR = 1.15
+    CROP_CYCLE_DENSITY_PEAK_PROMINENCE_SCALE = 0.58
+    # CVI windows (grid bins) combined for greenup union when multi-window is on.
+    CROP_CYCLE_GREENUP_WINDOWS = (5, 4, 3)
+    # Min NDVI prominence (peak minus left trough) required for fallback peaks
+    CROP_CYCLE_FALLBACK_PROMINENCE_FLOOR = 0.032
     # DB sowing_date: repeat anchor along rotation (~3 crops / yr), not crop-specific typical+30.
     CROP_CYCLE_HINT_STEP_DAYS = 118
     CROP_CYCLE_MAX_HINT_ANCHORS = 40

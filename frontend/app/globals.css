@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+/* =========================================================
+   Design tokens — used by both Agristack (light) and
+   Dashboard (dark). Dashboard components use Tailwind
+   utility classes directly; these vars are fallbacks.
+   ========================================================= */
+:root {
+  --bg: #0d1117;
+  --bg-elevated: #161b22;
+  --bg-card: #21262d;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --accent: #22c55e;
+  --accent-gold: #e8b84b;
+  --warn: #f0a029;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* =========================================================
+   Base resets
+   ========================================================= */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+/* =========================================================
+   Smooth scrollbars (dark)
+   ========================================================= */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #444d56; }
+
+/* =========================================================
+   Tailwind animation extensions
+   ========================================================= */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-spin { animation: spin 0.9s linear infinite; }
+.animate-pulse { animation: pulse-glow 2s ease-in-out infinite; }
+.animate-slide-in { animation: slide-in 0.3s ease-out both; }
+
+/* =========================================================
+   Agristack sandbox (light theme) — legacy component support
+   ========================================================= */
+.agristack-root {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}

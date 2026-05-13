@@ -14,16 +14,19 @@ Scoring component map (rule_based):
   crop_detection   35%  — cycle count, cultivation_signal, consistency
   crop_performance 25%  — avg_performance_score (Stage 5)
   yield_potential  15%  — avg_yield_score (Stage 5)
-  weather_safety    8%  — cycle_weather_risk (Stage 4), extreme event count
-  anomaly_penalty   7%  — n_high_impact_anomalies (Stage 5)
+  weather_safety    8%  — 100 minus blended cycle + seasonal weather risk (no double-count vs extremes)
+  anomaly_penalty   7%  — vegetation stress flags (100 = none observed); capped when only cycle-level proxies exist
   cropping_intensity 5% — cycles/year
   govt_benefits     5%  — PM-KISAN, crop insurance
 """
 
+import math
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional
 from datetime import datetime
+
+from utils.farmer_benefits import normalize_farmer_benefits, truthy_benefit_flag
 import logging
 
 try:
@@ -117,7 +120,7 @@ class AdvancedCreditScorer:
             'cropping_analysis':  cropping_analysis,
             'performance_analysis': performance_analysis,
             'weather_analysis':   weather_analysis,
-            'farmer_benefits':    farmer_benefits or {},
+            'farmer_benefits':    farmer_benefits,
             'crop_cycles':        crop_cycles or {},
         }
 
@@ -179,11 +182,16 @@ class AdvancedCreditScorer:
         dominant = cropping_analysis.get('dominant_crop', '')
         crop_mult = 1.15 if dominant in HIGH_VALUE else 1.00
 
-        # Benefits multiplier
-        fb = farmer_benefits or {}
+        # Benefits multiplier (None = assume no validated enrollment data)
+        if farmer_benefits is None:
+            fb = {'pm_kisan_enrolled': False, 'has_crop_insurance': False}
+        else:
+            fb = normalize_farmer_benefits(farmer_benefits)
         ben_mult = 1.00
-        if fb.get('pm_kisan_enrolled'): ben_mult += 0.05
-        if fb.get('has_crop_insurance'): ben_mult += 0.05
+        if fb.get('pm_kisan_enrolled'):
+            ben_mult += 0.05
+        if fb.get('has_crop_insurance'):
+            ben_mult += 0.05
 
         # Active cycle adjustment — note it but don't reduce limit
         pa = performance_analysis or {}
@@ -196,8 +204,15 @@ class AdvancedCreditScorer:
             )
 
         total_mult  = intensity_mult * area_mult * crop_mult * ben_mult
-        base_total  = base_per_ha * max(field_area_ha, 0.1)
-        final_limit = round((base_total * total_mult) / 1000) * 1000
+        effective_ha = max(float(field_area_ha or 0.0), 0.1)
+        base_total  = base_per_ha * effective_ha
+        raw_total = float(base_total * total_mult)
+        # Bank-style rounding was producing INR 0 for small parcels (round to nearest 1000)
+        if raw_total <= 0:
+            final_limit = 0
+        else:
+            rounded = math.ceil(raw_total / 1000.0) * 1000.0
+            final_limit = int(max(1000.0, rounded))
 
         return {
             'recommended_limit': final_limit,
@@ -241,7 +256,6 @@ class AdvancedCreditScorer:
         ca = assessment.get('cropping_analysis', {})
         pa = assessment.get('performance_analysis', {})
         wa = assessment.get('weather_analysis', {})
-        fb = assessment.get('farmer_benefits', {})
 
         # ── 1. Crop Detection (35%) ──────────────────────────────────────────
         scores['crop_detection'] = self._score_crop_detection_v4(ca, pa)
@@ -262,7 +276,13 @@ class AdvancedCreditScorer:
         scores['cropping_intensity'] = self._score_cropping_intensity_v4(ca)
 
         # ── 7. Govt Benefits (5%) ────────────────────────────────────────────
-        scores['govt_benefits'] = self._score_govt_benefits(fb)
+        raw_fb = assessment.get('farmer_benefits')
+        if raw_fb is None:
+            scores['govt_benefits'] = 50.0
+        else:
+            scores['govt_benefits'] = self._score_govt_benefits(
+                normalize_farmer_benefits(raw_fb)
+            )
 
         # ── Weighted total ────────────────────────────────────────────────────
         total = sum(scores[k] * (_WEIGHTS[k] / 100) for k in scores)
@@ -276,11 +296,11 @@ class AdvancedCreditScorer:
         logger.info(f"{'='*60}")
         for k, v in scores.items():
             wt = _WEIGHTS[k]
-            logger.info(f"  {k:22s}: {v:5.1f}/100  ×{wt}% = {v*wt/100:.1f}")
-        logger.info(f"\n  ► Total Credit Score: {total}/100")
-        logger.info(f"  ► Risk Category:      {risk_category}")
+            logger.info(f"  {k:22s}: {v:5.1f}/100  @ {wt}% = {v*wt/100:.1f}")
+        logger.info(f"\n  >> Total Credit Score: {total}/100")
+        logger.info(f"  >> Risk Category:      {risk_category}")
         if weak_components:
-            logger.info(f"  ► Weak components:    {', '.join(weak_components)}")
+            logger.info(f"  >> Weak components:    {', '.join(weak_components)}")
 
         narrative = self._build_score_narrative(
             total, risk_category, scores, weak_components, pa
@@ -468,36 +488,34 @@ class AdvancedCreditScorer:
         """
         Weather safety score (0–100).
         Stage-4 enrichment: uses cycle_risk_scores (list of per-cycle risks).
-        If available, weight cycle-aligned risk more heavily than seasonal.
+        When cycle scores exist they already encode that cycle's extremes, so we
+        do not subtract the flat ``extreme_events`` list again (avoids double-count).
         """
         cycle_risks = wa.get('cycle_risk_scores', [])
         if cycle_risks:
-            # Average of cycle-aligned risk scores (0-100 risk scale)
-            avg_cycle_risk = float(np.mean([cr.get('risk_score', 50) for cr in cycle_risks]))
-            # Include seasonal as secondary signal
-            seasonal_risk  = float(wa.get('weather_risk_score', 50.0))
-            combined_risk  = 0.70 * avg_cycle_risk + 0.30 * seasonal_risk
+            avg_cycle_risk = float(np.mean([float(cr.get('risk_score', 45)) for cr in cycle_risks]))
+            seasonal_risk = float(wa.get('weather_risk_score', 50.0))
+            combined_risk = 0.78 * avg_cycle_risk + 0.22 * seasonal_risk
+            event_penalty = 0.0
         else:
             combined_risk = float(wa.get('weather_risk_score', 50.0))
-
-        # Penalty for extreme events — dedupe by (cycle, type, date) to limit double-counting
-        raw_ev = wa.get('extreme_events', []) or []
-        seen: set = set()
-        dedup_ct = 0
-        for e in raw_ev:
-            k = (
-                e.get('cycle_id'),
-                e.get('type'),
-                e.get('date') or e.get('start_date'),
-                e.get('end_date'),
-            )
-            if k in seen:
-                continue
-            seen.add(k)
-            dedup_ct += 1
-        unit = float(getattr(PipelineConfig, 'CREDIT_WEATHER_EXTREME_EVENT_UNIT', 1.0))
-        cap = float(getattr(PipelineConfig, 'CREDIT_WEATHER_EXTREME_EVENT_MAX_PENALTY', 10.0))
-        event_penalty = min(cap, dedup_ct * unit)
+            raw_ev = wa.get('extreme_events', []) or []
+            seen: set = set()
+            dedup_ct = 0
+            for e in raw_ev:
+                k = (
+                    e.get('cycle_id'),
+                    e.get('type'),
+                    e.get('date') or e.get('start_date'),
+                    e.get('end_date'),
+                )
+                if k in seen:
+                    continue
+                seen.add(k)
+                dedup_ct += 1
+            unit = float(getattr(PipelineConfig, 'CREDIT_WEATHER_EXTREME_EVENT_UNIT', 1.0))
+            cap = float(getattr(PipelineConfig, 'CREDIT_WEATHER_EXTREME_EVENT_MAX_PENALTY', 10.0))
+            event_penalty = min(cap, dedup_ct * unit)
 
         safety_score = max(0.0, 100.0 - combined_risk - event_penalty)
         return round(min(100.0, safety_score), 1)
@@ -505,8 +523,10 @@ class AdvancedCreditScorer:
     @staticmethod
     def _score_anomaly_penalty(pa: Dict) -> float:
         """
-        Anomaly penalty score (0–100 where 100 = no anomalies).
-        Stage-5 enrichment: uses per-cycle anomaly_events with impact ratings.
+        Anomaly penalty score (0–100).
+        Higher = fewer high-impact vegetation stress flags in the NDVI time series.
+        When classification is off we only have cycle-level proxies — scores are
+        capped so "no pixel scan" is not reported as a perfect 100.
         """
         sp = pa.get('seasonal_performance', [])
         if not sp:
@@ -542,7 +562,19 @@ class AdvancedCreditScorer:
         n_seasons = max(1, len(sp))
         raw_penalty = n_high * ph + n_medium * pm + n_low * pl
         penalty = min(pcap, raw_penalty / np.sqrt(n_seasons))
-        return round(max(0.0, 100.0 - penalty), 1)
+        base = max(0.0, 100.0 - penalty)
+
+        # Pixel trajectory stress was never scanned (signal_only, n_scenes=0).
+        # A literal 100 would imply "confirmed clean canopy" — instead blend with
+        # coarse cycle health so the component is honest for lenders.
+        no_events = n_high + n_medium + n_low == 0
+        all_signal = all((p.get('scoring_method') or '') == 'signal_only' for p in sp)
+        if no_events and all_signal:
+            avg_h = float(np.mean([float(p.get('health_score', 52)) for p in sp]))
+            blended = 56.0 + 0.32 * avg_h
+            return round(float(np.clip(min(base, blended), 54.0, 90.0)), 1)
+
+        return round(float(base), 1)
 
     @staticmethod
     def _score_cropping_intensity_v4(ca: Dict) -> float:
@@ -561,8 +593,10 @@ class AdvancedCreditScorer:
         if not fb:
             return 50.0
         score = 0.0
-        if fb.get('pm_kisan_enrolled'):  score += 50.0
-        if fb.get('has_crop_insurance'): score += 50.0
+        if truthy_benefit_flag(fb.get('pm_kisan_enrolled')):
+            score += 50.0
+        if truthy_benefit_flag(fb.get('has_crop_insurance')):
+            score += 50.0
         return round(score, 1)
 
     @staticmethod
@@ -666,7 +700,12 @@ class AdvancedCreditScorer:
         ca = assessment.get('cropping_analysis', {})
         pa = assessment.get('performance_analysis', {})
         wa = assessment.get('weather_analysis', {})
-        fb = assessment.get('farmer_benefits', {}) or {}
+        raw_fb = assessment.get('farmer_benefits')
+        fb = (
+            normalize_farmer_benefits(raw_fb)
+            if raw_fb is not None
+            else {'pm_kisan_enrolled': False, 'has_crop_insurance': False}
+        )
         cc = assessment.get('crop_cycles', {}) or {}
 
         sp = pa.get('seasonal_performance', [])

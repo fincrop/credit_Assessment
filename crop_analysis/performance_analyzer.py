@@ -132,10 +132,19 @@ class CropPerformanceAnalyzer:
 
             # â”€â”€ PATH SELECTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             if not scenes:
-                # No scene data â€” use signal only
+                # No per-cycle scene list — use detector metrics (peak NDVI, duration,
+                # cycle confidence) blended with cultivation_signal. Avoids treating
+                # peak-only proxies as full trajectory scores.
                 if cultivation_signal is not None:
-                    h_score, h_detail = self._signal_based_health(cultivation_signal, crop)
-                    y_score, y_detail = self._signal_based_yield(cultivation_signal, crop)
+                    peak_ndvi = float(result.get('peak_ndvi') or 0.0)
+                    cconf = float(result.get('cycle_confidence') or 0.0)
+                    h_score, h_detail, y_score, y_detail = self._cycle_detector_proxy_scores(
+                        peak_ndvi=peak_ndvi,
+                        cycle_confidence=cconf,
+                        duration_days=duration_days,
+                        cultivation_signal=float(cultivation_signal),
+                        crop=crop,
+                    )
                     narrative = self._build_narrative(
                         crop, 'signal_only', h_score, y_score, [], is_active_cycle
                     )
@@ -146,6 +155,8 @@ class CropPerformanceAnalyzer:
                         'end_date':             end_date_str,
                         'crop':                 crop,
                         'cultivation_signal':   cultivation_signal,
+                        'cycle_confidence':     cconf,
+                        'peak_ndvi':            peak_ndvi,
                         'is_crop_name_reliable': False,
                         'is_active_cycle':      is_active_cycle,
                         'is_cross_season':      result.get('is_cross_season', False),
@@ -753,7 +764,9 @@ class CropPerformanceAnalyzer:
         """
         Builds a 2â€“4 sentence plain-English performance summary.
         """
-        crop_label = crop if crop and crop != 'Unknown' else 'the crop'
+        # Treat 'Unknown' and 'Unclassified' (classification disabled) identically
+        _unlabelled = ('Unknown', 'Unclassified', None, '')
+        crop_label = crop if crop and crop not in _unlabelled else 'the crop'
 
         # Overall condition description
         if   health_score >= 80: condition = "excellent"
@@ -1091,6 +1104,66 @@ class CropPerformanceAnalyzer:
             'senescence_score': 0.0, 'cv': 0.0, 'n_scenes': 0,
             'note': 'No NDVI data available',
         }
+
+    # =========================================================================
+    # CYCLE-DETECTOR PROXY  (no scenes — use Stage-4 cycle metrics)
+    # =========================================================================
+
+    @staticmethod
+    def _cycle_detector_proxy_scores(
+        peak_ndvi: float,
+        cycle_confidence: float,
+        duration_days: int,
+        cultivation_signal: float,
+        crop: str,
+    ) -> Tuple[float, Dict, float, Dict]:
+        """
+        Health / yield when we have no sub-cycle scene list (classification off or
+        scenes not wired), but CropCycleDetector did supply peak NDVI, duration, and
+        a detector confidence. Blends with the legacy cultivation_signal curve so
+        scores stay comparable year-to-year.
+        """
+        pq = float(np.clip((peak_ndvi - 0.20) / 0.42, 0.0, 1.0))
+        dur = max(0, int(duration_days or 0))
+        if dur < 42:
+            dq = float(np.clip(dur / 42.0, 0.15, 1.0))
+        elif dur <= 185:
+            dq = 1.0
+        else:
+            dq = float(np.clip(1.0 - (dur - 185) / 200.0, 0.55, 1.0))
+
+        conf = float(np.clip(cycle_confidence / 100.0, 0.0, 1.0))
+        struct = 38.0 + 34.0 * pq + 16.0 * dq
+        struct *= 0.68 + 0.32 * conf
+
+        legacy_h, _ = CropPerformanceAnalyzer._signal_based_health(cultivation_signal, crop)
+        legacy_y, _ = CropPerformanceAnalyzer._signal_based_yield(cultivation_signal, crop)
+
+        health = round(float(np.clip(0.58 * struct + 0.42 * legacy_h, 34.0, 94.0)), 1)
+        yield_s = round(float(np.clip(0.55 * (struct + 4.0) + 0.45 * legacy_y, 32.0, 93.0)), 1)
+
+        h_detail = {
+            'scoring_type':       'signal_only',
+            'peak_ndvi':          round(peak_ndvi, 4),
+            'cycle_confidence':   round(cycle_confidence, 1),
+            'duration_days':      dur,
+            'structure_score':      round(struct, 1),
+            'legacy_blend':       0.42,
+            'n_scenes':           0,
+            'note':               'Cycle-detector metrics (peak, duration, confidence) — no per-bin scene trajectory',
+        }
+        y_detail = {
+            'scoring_type':        'signal_only',
+            'yield_potential_pct': f"{yield_s:.0f}%",
+            'peak_ndvi':           round(peak_ndvi, 4),
+            'duration_days':       dur,
+            'structure_score':     round(struct + 4.0, 1),
+            'legacy_blend':        0.45,
+            'n_scenes':            0,
+            'estimation_method':   'cycle_proxy',
+            'note':                'Yield potential from cycle length + peak vigor (scenes not attached)',
+        }
+        return health, h_detail, yield_s, y_detail
 
     # =========================================================================
     # SIGNAL-BASED FALLBACK  (no scene data at all)

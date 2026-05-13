@@ -170,7 +170,7 @@
 #                 )
 #                 seasonal_data.append(result)
 #             except Exception as e:
-#                 logger.error(f"  ✗ Failed: {str(e)[:80]}")
+#                 logger.error(f"  [FAIL] Failed: {str(e)[:80]}")
 #                 seasonal_data.append({
 #                     'season':     win['season'],
 #                     'year':       win['year'],
@@ -515,7 +515,7 @@
 #                     logger.warning(f"       ⚠ Insufficient bands ({len(band_data)}), skipped")
 
 #             except Exception as e:
-#                 logger.warning(f"       ✗ Scene failed: {str(e)[:60]}")
+#                 logger.warning(f"       [FAIL] Scene failed: {str(e)[:60]}")
 #                 continue
 
 #         # Log temporal gap diagnostics
@@ -909,7 +909,7 @@
             
 #             logger.debug(f"    ✔ NDVI={indices.get('NDVI_mean', 0):.3f}")
         
-#         logger.info(f"✓ Continuous collection complete: {len(scenes_data)} scenes")
+#         logger.info(f"[OK] Continuous collection complete: {len(scenes_data)} scenes")
         
 #         return {
 #             'scenes': scenes_data,
@@ -1224,6 +1224,10 @@ from typing import Any, Dict, List, Tuple, Optional
 import logging
 import gc
 import time
+import os
+import json
+import base64
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
@@ -1239,7 +1243,16 @@ except ImportError:
     print("WARNING: Satellite libraries not available")
 
 try:
-        REGIONAL_CONFIG_AVAILABLE = True
+    import ee
+    GEE_AVAILABLE = True
+except ImportError:
+    ee = None
+    GEE_AVAILABLE = False
+
+# Fixed: Proper indentation and added placeholder import
+try:
+    from config import REGIONAL_CONFIG
+    REGIONAL_CONFIG_AVAILABLE = True
 except ImportError:
     REGIONAL_CONFIG_AVAILABLE = False
 
@@ -1257,13 +1270,21 @@ class SatelliteDataCollector:
     """
 
     def __init__(self, verbose: bool = True):
-        if not SATELLITE_AVAILABLE:
+        if not SATELLITE_AVAILABLE and not GEE_AVAILABLE:
             raise ImportError(
-                "Install: pip install pystac-client planetary-computer rasterio shapely"
+                "Install either STAC deps (pystac-client planetary-computer rasterio) "
+                "or GEE deps (earthengine-api)."
             )
 
+        self.provider = os.environ.get("SATELLITE_PROVIDER", "gee").strip().lower()
+        self.use_gee = self.provider == "gee" and GEE_AVAILABLE
+        self.gee_ready = False
+
         self.stac_url = PipelineConfig.STAC_API_URL
-        self.catalog = pystac_client.Client.open(self.stac_url)
+        self.catalog = None
+        if not self.use_gee and SATELLITE_AVAILABLE:
+            self.catalog = pystac_client.Client.open(self.stac_url)
+
         self.verbose = verbose
         self.band_info = {
             band: info['resolution']
@@ -1278,16 +1299,65 @@ class SatelliteDataCollector:
         logging.getLogger("rasterio._env").setLevel(logging.WARNING)
         logging.getLogger("rasterio").setLevel(logging.WARNING)
 
-        logger.info("SatelliteDataCollector initialized (3-year continuous, season anchors)")
-        logger.info(
-            "  STAC cloud filter: Kharif months -> <%s%%  |  other -> <%s%%",
-            self.max_cloud_kharif,
-            self.max_cloud_rabi,
-        )
+        if self.use_gee:
+            self.gee_ready = self._initialize_gee()
+            if not self.gee_ready:
+                logger.warning("GEE requested but initialization failed; falling back to STAC.")
+                self.use_gee = False
+
+        if not self.use_gee and self.catalog is None:
+            raise ImportError("No satellite backend available. Install STAC or GEE dependencies.")
+
+        logger.info("SatelliteDataCollector initialized (provider=%s)", "gee" if self.use_gee else "stac")
 
     # =========================================================================
     # NEW DEFAULT METHOD: Continuous 3-Year Collection
     # =========================================================================
+
+    def _initialize_gee(self) -> bool:
+        if not GEE_AVAILABLE:
+            logger.error("earthengine-api is not installed.")
+            return False
+        try:
+            project = os.environ.get("GEE_PROJECT", "").strip() or None
+            key_path = os.environ.get("GEE_SA_KEY_PATH", "").strip()
+            key_payload: Optional[Dict[str, Any]] = None
+
+            b64 = os.environ.get("GEE_SERVICE_ACCOUNT_B64", "").strip()
+            raw_json = os.environ.get("GEE_SERVICE_ACCOUNT_JSON", "").strip()
+            if b64:
+                raw_json = base64.b64decode(b64).decode("utf-8")
+            if raw_json:
+                try:
+                    key_payload = json.loads(raw_json)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        "GEE_SERVICE_ACCOUNT_JSON (or GEE_SERVICE_ACCOUNT_B64 decoded) is not valid JSON"
+                    ) from exc
+                fd, tmp_path = tempfile.mkstemp(prefix="gee_sa_", suffix=".json", text=True)
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    json.dump(key_payload, fh)
+                key_path = tmp_path
+                logger.info("GEE: using credentials from GEE_SERVICE_ACCOUNT_JSON / GEE_SERVICE_ACCOUNT_B64")
+
+            if key_path:
+                service_account = os.environ.get("GEE_SERVICE_ACCOUNT", "").strip() or None
+                if not service_account:
+                    if key_payload is None:
+                        with open(key_path, "r", encoding="utf-8") as fh:
+                            key_payload = json.load(fh)
+                    service_account = (key_payload.get("client_email") or "").strip()
+                if not service_account:
+                    raise ValueError("GEE service account email missing. Set GEE_SERVICE_ACCOUNT.")
+                credentials = ee.ServiceAccountCredentials(service_account, key_path)
+                ee.Initialize(credentials=credentials, project=project)
+            else:
+                ee.Initialize(project=project)
+            logger.info("GEE initialized successfully.")
+            return True
+        except Exception as e:
+            logger.error("Failed to initialize GEE: %s", e)
+            return False
 
     def collect_historical_data(
         self,
@@ -1352,6 +1422,18 @@ class SatelliteDataCollector:
             start_date,
         )
         logger.info("BBox: %s", [round(v, 5) for v in bbox])
+
+        if self.use_gee and self.gee_ready:
+            return self._collect_continuous_gee(
+                bbox=bbox,
+                centroid_lat=centroid_lat,
+                centroid_lon=centroid_lon,
+                field_area=field_area,
+                snapped_start=snapped_start,
+                today=today,
+                start_date=start_date,
+                end_date=end_date,
+            )
 
         # ── Search for all scenes in 3-year period ─────────────────────────
         split_years = bool(getattr(PipelineConfig, "SATELLITE_STAC_SPLIT_BY_YEAR", True))
@@ -1518,6 +1600,316 @@ class SatelliteDataCollector:
 
         # Ultimate fallback: plain arithmetic
         return cutoff
+
+    # =========================================================================
+    # GEE continuous collection
+    # =========================================================================
+
+    def _collect_continuous_gee(
+        self,
+        bbox: List[float],
+        centroid_lat: float,
+        centroid_lon: float,
+        field_area: float,
+        snapped_start: date,
+        today: date,
+        start_date: str,
+        end_date: str,
+    ) -> Dict:
+        interval = max(1, int(getattr(PipelineConfig, "CONTINUOUS_SCENE_INTERVAL_DAYS", 10)))
+        aoi = ee.Geometry.Rectangle(bbox, proj="EPSG:4326", geodesic=False)
+        logger.info("Searching for satellite scenes from GEE...")
+        scenes_by_day = self._fetch_gee_scene_stats(aoi, start_date, end_date)
+
+        if not scenes_by_day:
+            logger.warning("No GEE scenes available for the period")
+            return self._empty_continuous_result(centroid_lat, centroid_lon, field_area)
+
+        slots = self._build_date_slots_with_stats(scenes_by_day, snapped_start, today, interval)
+        processed_scenes: List[Dict] = []
+        for b0, stats in slots:
+            if stats is None:
+                processed_scenes.append(self._missing_scene_placeholder(b0))
+                continue
+            ndvi_m = stats.get("NDVI_mean", np.nan)
+            if not np.isfinite(self._safe_float(ndvi_m)):
+                processed_scenes.append(self._missing_scene_placeholder(b0))
+                continue
+            processed_scenes.append(
+                {
+                    "date": b0.strftime("%Y-%m-%d"),
+                    "missing": False,
+                    "cloud_cover": stats.get("cloud_cover"),
+                    "indices": {
+                        "NDVI_mean": stats.get("NDVI_mean", np.nan),
+                        "NDVI_std": stats.get("NDVI_std", np.nan),
+                        "NDVI_p90": stats.get("NDVI_p90", np.nan),
+                        "EVI_mean": stats.get("EVI_mean", np.nan),
+                        "NDMI_mean": stats.get("NDMI_mean", np.nan),
+                        "PSRI_mean": stats.get("PSRI_mean", np.nan),
+                        "NDRE_mean": stats.get("NDRE_mean", np.nan),
+                        "NDWI_mean": stats.get("NDWI_mean", np.nan),
+                    },
+                    "bands_available": ["B02", "B03", "B04", "B05", "B06", "B08", "B11"],
+                    "acquisition_date": stats.get("date"),
+                }
+            )
+
+        n_ok = sum(1 for s in processed_scenes if not s.get("missing"))
+        if n_ok == 0:
+            return self._empty_continuous_result(centroid_lat, centroid_lon, field_area)
+
+        dates = [s["date"] for s in processed_scenes]
+        ndvi_values = [s["indices"].get("NDVI_mean", np.nan) for s in processed_scenes]
+        evi_values = [s["indices"].get("EVI_mean", np.nan) for s in processed_scenes]
+        ndmi_values = [s["indices"].get("NDMI_mean", np.nan) for s in processed_scenes]
+        psri_values = [s["indices"].get("PSRI_mean", np.nan) for s in processed_scenes]
+        ndre_values = [s["indices"].get("NDRE_mean", np.nan) for s in processed_scenes]
+        ndwi_values = [s["indices"].get("NDWI_mean", np.nan) for s in processed_scenes]
+        valid_ndvi = [v for v in ndvi_values if not np.isnan(v)]
+        total_days = (today - snapped_start).days
+
+        return {
+            "mode": "continuous",
+            "location": {"latitude": centroid_lat, "longitude": centroid_lon},
+            "bbox": bbox,
+            "field_area_ha": field_area,
+            "continuous_data": {
+                "scenes": processed_scenes,
+                "dates": dates,
+                "ndvi_values": ndvi_values,
+                "evi_values": evi_values,
+                "ndmi_values": ndmi_values,
+                "psri_values": psri_values,
+                "ndre_values": ndre_values,
+                "ndwi_values": ndwi_values,
+                "start_date": start_date,
+                "end_date": end_date,
+                "total_days": total_days,
+                "interval_days": interval,
+                "scene_count": len(processed_scenes),
+                "valid_observations": n_ok,
+                "missing_observations": len(processed_scenes) - n_ok,
+            },
+            "collection_date": datetime.now().isoformat(),
+            "summary": {
+                "total_scenes": len(processed_scenes),
+                "valid_ndvi_scenes": len(valid_ndvi),
+                "missing_slots": len(processed_scenes) - n_ok,
+                "interval_days": interval,
+                "date_range": f"{dates[0]} to {dates[-1]}",
+                "collection_mode": "continuous_3year_grid_gee",
+            },
+        }
+
+    @staticmethod
+    def _safe_float(v: Any) -> float:
+        try:
+            if v is None:
+                return np.nan
+            return float(v)
+        except (TypeError, ValueError):
+            return np.nan
+
+    def _gee_scene_preferred(self, prev: Dict[str, Any], new: Dict[str, Any]) -> bool:
+        """Same calendar day: keep usable spectra over masked; then lower cloud %."""
+        pn = np.isfinite(self._safe_float(prev.get("NDVI_mean")))
+        nn = np.isfinite(self._safe_float(new.get("NDVI_mean")))
+        if nn and not pn:
+            return True
+        if pn and not nn:
+            return False
+        pc, nc = self._safe_float(prev.get("cloud_cover")), self._safe_float(new.get("cloud_cover"))
+        if np.isfinite(nc) and np.isfinite(pc):
+            return nc < pc
+        return bool(np.isfinite(nc))
+
+    def _build_date_slots_with_stats(
+        self,
+        scenes_by_day: Dict[str, Dict[str, Any]],
+        range_start: date,
+        range_end: date,
+        interval_days: int,
+    ) -> List[Tuple[date, Optional[Dict[str, Any]]]]:
+        slots: List[Tuple[date, Optional[Dict[str, Any]]]] = []
+        cur = range_start
+        while cur <= range_end:
+            bin_end = cur + timedelta(days=interval_days)
+            candidates: List[Tuple[str, Dict[str, Any]]] = []
+            for ds, s in scenes_by_day.items():
+                d = datetime.strptime(ds, "%Y-%m-%d").date()
+                if cur <= d <= range_end and d < bin_end:
+                    candidates.append((ds, s))
+            if candidates:
+                def _usable_ndvi(s: Dict[str, Any]) -> bool:
+                    return np.isfinite(self._safe_float(s.get("NDVI_mean")))
+
+                usable = [c for c in candidates if _usable_ndvi(c[1])]
+                pool = usable if usable else candidates
+                best = min(pool, key=lambda x: self._safe_float(x[1].get("cloud_cover")))
+                slots.append((cur, best[1]))
+            else:
+                slots.append((cur, None))
+            cur = bin_end
+        return slots
+
+    def _fetch_gee_scene_stats(
+        self,
+        aoi,
+        start_date: str,
+        end_date: str,
+    ) -> Dict[str, Dict[str, Any]]:
+        if not self.gee_ready:
+            return {}
+
+        cloud_cap = float(self.max_cloud_continuous)
+
+        def _scene_to_feature(img):
+            # Simplified processing to avoid concurrent aggregations
+            qa = img.select("QA60")
+            cloud_mask = qa.bitwiseAnd(1 << 10).eq(0).And(qa.bitwiseAnd(1 << 11).eq(0))
+            scl = img.select("SCL")
+            scl_mask = scl.neq(3).And(scl.neq(8)).And(scl.neq(9)).And(scl.neq(10))
+            masked = img.updateMask(cloud_mask).updateMask(scl_mask).divide(10000)
+
+            # Only compute essential indices to reduce aggregations
+            ndvi = masked.normalizedDifference(["B8", "B4"]).rename("NDVI")
+            evi = masked.expression(
+                "2.5 * ((NIR - RED) / (NIR + 6 * RED - 7.5 * BLUE + 1))",
+                {"NIR": masked.select("B8"), "RED": masked.select("B4"), "BLUE": masked.select("B2")},
+            ).rename("EVI")
+            ndmi = masked.normalizedDifference(["B8", "B11"]).rename("NDMI")
+
+            # Simplified: only mean values, no complex aggregations
+            indices = ee.Image.cat([ndvi, evi, ndmi])
+            
+            # Use single reduceRegion call to minimize concurrent operations
+            stats = indices.reduceRegion(
+                reducer=ee.Reducer.mean().combine(
+                    ee.Reducer.stdDev(), None, True
+                ).combine(
+                    ee.Reducer.percentile([90]), None, True
+                ),
+                geometry=aoi,
+                scale=10,
+                maxPixels=1e8,
+                bestEffort=True
+            )
+
+            props = ee.Dictionary(stats).combine(
+                ee.Dictionary({
+                    "date": img.date().format("YYYY-MM-dd"),
+                    "cloud_cover": img.get("CLOUDY_PIXEL_PERCENTAGE"),
+                })
+            )
+            return ee.Feature(None, props)
+
+        try:
+            features = []
+            d0 = datetime.strptime(start_date, "%Y-%m-%d").date()
+            d1 = datetime.strptime(end_date, "%Y-%m-%d").date()
+            
+            # Sequential year-by-year processing to avoid GEE rate limits
+            years_to_process = list(range(d0.year, d1.year + 1))
+            logger.info(f"Processing years sequentially: {years_to_process}")
+            
+            for year in years_to_process:
+                year_start = max(d0, date(year, 1, 1))
+                year_end = min(d1, date(year, 12, 31))
+                
+                logger.info(f"Processing year {year}: {year_start} to {year_end}")
+                
+                # Retry logic for each year's data with much longer delays
+                max_retries = 2  # Reduce retries to avoid overwhelming GEE
+                for attempt in range(max_retries):
+                    try:
+                        # Add substantial delay between years to avoid rate limiting
+                        if year > d0.year and attempt == 0:
+                            inter_year_delay = 10.0  # Much longer delay between years
+                            logger.info(f"Waiting {inter_year_delay}s between year {year-1} and {year}")
+                            time.sleep(inter_year_delay)
+                        
+                        if attempt > 0:
+                            delay = 15.0 * (2 ** attempt)  # Much longer delays for retries
+                            logger.warning(f"Year {year} GEE retry {attempt + 1}/{max_retries}, waiting {delay:.1f}s")
+                            time.sleep(delay)
+                        
+                        # Simplify: limit collection to fewer scenes to reduce aggregations
+                        year_coll = (
+                            ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+                            .filterBounds(aoi)
+                            .filterDate(year_start.strftime("%Y-%m-%d"), year_end.strftime("%Y-%m-%d"))
+                            .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", cloud_cap))
+                            .limit(50)  # Limit scenes to reduce processing load
+                        )
+                        
+                        year_features = year_coll.map(_scene_to_feature).getInfo().get("features", [])
+                        features.extend(year_features)
+                        logger.info(f"Year {year}: extracted {len(year_features)} scenes")
+                        break  # Success, move to next year
+                        
+                    except Exception as e:
+                        error_msg = str(e).lower()
+                        if "concurrent aggregations" in error_msg or "too many concurrent" in error_msg:
+                            if attempt < max_retries - 1:
+                                logger.warning(f"Year {year} concurrent aggregation error (attempt {attempt + 1}/{max_retries}): {e}")
+                                continue
+                            else:
+                                logger.error(f"Year {year} failed after {max_retries} attempts: {e}")
+                                raise e
+                        elif "rate limit" in error_msg or "quota" in error_msg:
+                            if attempt < max_retries - 1:
+                                delay = 10.0 * (2 ** attempt)  # Aggressive delay for rate limits
+                                logger.warning(f"Year {year} rate limit (attempt {attempt + 1}/{max_retries}), waiting {delay:.1f}s")
+                                time.sleep(delay)
+                                continue
+                            else:
+                                logger.error(f"Year {year} rate limit exceeded after {max_retries} attempts: {e}")
+                                raise e
+                        else:
+                            # Non-rate-limit error, re-raise immediately
+                            logger.error(f"Year {year} scene extraction failed: {e}")
+                            raise e
+                
+        except Exception as e:
+            logger.error("GEE scene extraction failed: %s", e)
+            return {}
+
+        by_day: Dict[str, Dict[str, Any]] = {}
+        logger.info("GEE: merged %d raw features into daily stats", len(features))
+
+        for f in features:
+            p = f.get("properties", {})
+            ds = p.get("date")
+            if not ds:
+                continue
+            
+            ndvi = self._safe_float(p.get("NDVI_mean"))
+            evi = self._safe_float(p.get("EVI_mean"))
+            ndmi = self._safe_float(p.get("NDMI_mean"))
+            # Fully masked / invalid reduceRegion — do not store as a real observation.
+            if not (np.isfinite(ndvi) or np.isfinite(evi)):
+                continue
+            
+            if len(by_day) < 5 and self.verbose:
+                logger.debug("GEE scene %s: NDVI=%s EVI=%s NDMI=%s", ds, ndvi, evi, ndmi)
+            
+            scene_stats = {
+                "date": ds,
+                "cloud_cover": self._safe_float(p.get("cloud_cover")),
+                "NDVI_mean": ndvi,
+                "NDVI_std": self._safe_float(p.get("NDVI_stdDev")),
+                "NDVI_p90": self._safe_float(p.get("NDVI_p90")),
+                "EVI_mean": evi,
+                "NDMI_mean": ndmi,
+                "PSRI_mean": self._safe_float(p.get("PSRI_mean")),
+                "NDRE_mean": self._safe_float(p.get("NDRE_mean")),
+                "NDWI_mean": self._safe_float(p.get("NDWI_mean")),
+            }
+            prev = by_day.get(ds)
+            if prev is None or self._gee_scene_preferred(prev, scene_stats):
+                by_day[ds] = scene_stats
+        return by_day
 
     # =========================================================================
     # STAC search (year-split) + per-anchor downloads: _download_anchor_scene_pairs

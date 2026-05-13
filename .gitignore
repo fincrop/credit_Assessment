@@ -1,39 +1,66 @@
-# Local Conda / venv (never commit — breaks GitHub size limits, e.g. llvmlite.dll > 100MB)
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies (any folder named node_modules — not only repo root)
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js (build output in any app folder, e.g. frontend/.next)
+.next/
+out/
+.turbo/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# --- Conda / local Python environments (do not commit) ---
 .conda/
+env/
 venv/
 .venv/
-env/
-
-# Python
+ENV/
+env.bak/
+.python-version
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
 *.egg-info/
 .eggs/
 dist/
 build/
-
-# IDE / OS
-.idea/
-.vscode/
-*.swp
-.DS_Store
-Thumbs.db
-
-# Secrets & local config
-.env
-.env.local
-*.pem
-
-# Jupyter
-.ipynb_checkpoints/
-
-# Test / coverage
+*.so
 .pytest_cache/
-.coverage
+.mypy_cache/
+.ruff_cache/
 htmlcov/
 
-# Optional local models cache (uncomment if large artifacts live here)
-# models/*.bin
+# --- Google Earth Engine / GCP service account (secrets) ---
+api/gee_service_account.json
+**/gee_service_account.json
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

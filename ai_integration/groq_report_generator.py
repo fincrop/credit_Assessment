@@ -26,9 +26,10 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_MODEL   = "llama-3.3-70b-versatile"   # latest Groq free model
+_DEFAULT_MODEL   = "llama-3.3-70b-versatile"
 _GROQ_API_URL    = "https://api.groq.com/openai/v1/chat/completions"
 _REQUEST_TIMEOUT = 30
+_MAX_RETRIES     = 2   # retry on transient 429/5xx before falling back
 
 
 class GroqReportGenerator:
@@ -69,6 +70,7 @@ class GroqReportGenerator:
 
         try:
             import urllib.request
+            import time
 
             payload = json.dumps({
                 "model":    self.model,
@@ -76,28 +78,38 @@ class GroqReportGenerator:
                     {"role": "system", "content": _SYSTEM_PROMPT},
                     {"role": "user",   "content": prompt},
                 ],
-                "max_tokens":  600,
+                "max_tokens":  650,
                 "temperature": 0.3,
             }).encode("utf-8")
 
-            req = urllib.request.Request(
-                _GROQ_API_URL,
-                data=payload,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type":  "application/json",
-                },
-                method="POST",
-            )
+            last_exc = None
+            for attempt in range(1, _MAX_RETRIES + 2):  # 1, 2, 3
+                try:
+                    req = urllib.request.Request(
+                        _GROQ_API_URL,
+                        data=payload,
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type":  "application/json",
+                        },
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT) as resp:
+                        result = json.loads(resp.read().decode("utf-8"))
+                        report = result["choices"][0]["message"]["content"].strip()
+                        logger.info("Groq report generated (attempt %d)", attempt)
+                        return report
+                except Exception as exc:
+                    last_exc = exc
+                    status = getattr(getattr(exc, 'code', None), '__str__', lambda: str(exc))()
+                    logger.warning("Groq attempt %d failed: %s", attempt, exc)
+                    if attempt <= _MAX_RETRIES:
+                        time.sleep(1.5 * attempt)  # 1.5s, 3s backoff
 
-            with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-                report = result["choices"][0]["message"]["content"].strip()
-                logger.info("✔ Groq English report generated successfully")
-                return report
+            raise last_exc
 
         except Exception as exc:
-            logger.error(f"Groq API call failed: {exc} — rule-based fallback")
+            logger.error("Groq API failed after retries: %s — rule-based fallback", exc)
             return self._rule_based_report(assessment)
 
     # =========================================================================
@@ -154,6 +166,26 @@ class GroqReportGenerator:
                     })
         top_events = top_events[:5]
 
+        # v4.0: agronomic cycle metadata
+        agro_meta = []
+        crop_cycles_raw = assessment.get('crop_cycles', {}) or {}
+        for cyc in (crop_cycles_raw.get('cycles') or []):
+            agro_meta.append({
+                'activity':         cyc.get('activity_number', '?'),
+                'season_type':      cyc.get('season_type', ''),
+                'season_label':     cyc.get('season_label', ''),
+                'sowing_date':      cyc.get('sowing_date', '')[:10],
+                'harvest_date':     cyc.get('harvest_date', '')[:10],
+                'harvest_method':   cyc.get('harvest_method', ''),
+                'transplant':       cyc.get('transplant_flag', False),
+                'sow_confidence':   cyc.get('sowing_confidence', ''),
+                'duration_days':    cyc.get('duration_days', 0),
+            })
+        # classification mode
+        crop_intel = assessment.get('crop_intelligence_source', {})
+        classification_enabled = crop_intel.get('classification_enabled', True)
+        detection_meta = assessment.get('cycle_detection_diag', {})
+
         summary = {
             "farmer_id":              assessment.get("farmer_id"),
             "analysis_date":          assessment.get("analysis_date", ""),
@@ -163,14 +195,15 @@ class GroqReportGenerator:
             "interest_rate_pct":      crr.get("recommendations", {}).get("interest_rate"),
             "scoring_method":         cr.get("method"),
             "scoring_narrative":      cr.get("scoring_narrative", ""),
-            # Component breakdown
             "component_scores":       cr.get("component_scores", {}),
             "weak_components":        cr.get("weak_components", []),
-            # Stage 2
+            # Cropping analysis
             "cropping_intensity_per_year": ca.get("cropping_intensity"),
             "cultivation_signal":     ca.get("cultivation_signal"),
             "n_complete_cycles":      pa.get("n_complete_cycles", 0),
             "n_active_cycles":        pa.get("n_active_cycles", 0),
+            "classification_enabled": classification_enabled,
+            "dominant_crop":          ca.get("dominant_crop") or "Unclassified",
             # Stage 5 per-cycle
             "cycle_performance":      cycle_summaries,
             # Stage 4 weather
@@ -178,8 +211,15 @@ class GroqReportGenerator:
             "total_extreme_events":   wa.get("total_extreme_events"),
             "cycle_weather_risks":    cycle_risk_summary,
             "crop_impact_narrative":  wa.get("crop_impact_narrative", ""),
-            # High-impact anomaly events
             "high_impact_events":     top_events,
+            # v4.0 agronomic enrichment
+            "agronomic_cycles":       agro_meta,
+            "n_kharif":               detection_meta.get("n_kharif", 0),
+            "n_rabi":                 detection_meta.get("n_rabi", 0),
+            "n_zaid":                 detection_meta.get("n_zaid", 0),
+            "avg_fallow_days":        detection_meta.get("avg_fallow_days", 0),
+            "transplant_cycles":      detection_meta.get("transplant_cycles", 0),
+            "harvest_methods":        detection_meta.get("harvest_methods", {}),
         }
         return (
             "Generate a credit assessment report for the following farmer data:\n\n"
@@ -241,16 +281,24 @@ class GroqReportGenerator:
                 "harvest income expected. Final repayment capacity may be higher."
             )
 
+        # Crop label (handle Unclassified mode)
+        dominant_crop = ca.get('dominant_crop')
+        crop_label = dominant_crop if dominant_crop and dominant_crop not in ('Unclassified', None, '') \
+            else None
+        crop_line = f"Dominant Crop:       {crop_label}\n" if crop_label else \
+            "Crop Classification: Disabled (activity-count mode — season types used instead)\n"
+
         return (
             f"CREDIT ASSESSMENT REPORT\n"
             f"{'='*40}\n"
             f"Farmer ID:        {assessment.get('farmer_id','N/A')}\n"
             f"Analysis Date:    {assessment.get('analysis_date','')}\n\n"
             f"Credit Score:     {score}/100  |  Risk: {risk}\n"
-            f"Credit Limit:     ₹{limit:,.0f}  |  Interest Rate: {rate}%\n\n"
+            f"Credit Limit:     \u20b9{limit:,.0f}  |  Interest Rate: {rate}%\n\n"
             f"FIELD PERFORMANCE\n"
             f"-----------------\n"
-            f"Cropping Intensity:  {ci:.1f} cycles/year\n"
+            f"{crop_line}"
+            f"Cropping Intensity:  {ci:.2f} cycles/year\n"
             f"Cultivation Signal:  {signal:.0f}/100\n"
             f"Complete Cycles:     {n_comp}  |  Active: {n_active}\n"
             f"Avg Health Score:    {perf:.1f}/100\n"
@@ -273,20 +321,26 @@ class GroqReportGenerator:
 _SYSTEM_PROMPT = """You are an expert agricultural credit analyst in India, working with a \
 satellite-based crop monitoring pipeline (v4.0).
 
-The pipeline uses dynamic crop cycle detection (not fixed calendar seasons) to assess:
-1. Cultivation signal strength (how consistently and intensely the farmer cultivates)
-2. Crop health trajectories across NDVI/EVI/NDMI indices
-3. Anomaly events at specific crop growth stages (vegetative, flowering, grain-fill)
-4. Cycle-aligned weather risk (not generic seasonal averages)
+The pipeline detects crop cultivation activities (sowing, peak, harvest) from satellite \
+NDVI/EVI/NDMI signals. Crop classification (naming the exact crop) may be disabled — in \
+that case, use 'agricultural activities' or 'cultivation cycles' instead of crop names.
+
+Key agronomic context you will see:
+- season_type: kharif (monsoon Jun-Sep) | rabi (winter Oct-Jan) | zaid (summer Feb-May)
+- harvest_method: rapid_mechanical | senescence | irrigation_cutoff | low_plateau
+- transplant_flag: True for paddy/sugarcane transplanted crops
+- sow_confidence: HIGH/MEDIUM/LOW — quality of sowing date detection
+- avg_fallow_days: idle days between crop cycles (lower = more intensive farming)
 
 Your job: Write a concise professional credit assessment report for a loan officer in India.
 
 Structure your report as:
 1. CREDIT SUMMARY (2 lines): score, risk category, recommended limit
-2. STRENGTHS (2-3 bullet points): what the farmer is doing well
-3. RISK FACTORS (2-3 bullet points): specific weaknesses, anomaly events, weather risks
-4. ACTIVE CYCLES (1 line if applicable): note any in-progress crops and expected harvest
-5. RECOMMENDATION (1 specific sentence): approval decision and key condition
+2. STRENGTHS (2-3 bullets): what the farmer is doing well (use season and cycle data)
+3. RISK FACTORS (2-3 bullets): weaknesses, anomaly events, weather risk, fallow gaps
+4. ACTIVE CYCLES (1 line if any): in-progress crops and expected harvest timing
+5. RECOMMENDATION (1 sentence): approval decision and key condition
 
-Keep it under 280 words. Be specific — mention actual scores and cycle data.
-Avoid generic statements. Focus on actionable insights for the loan officer."""
+Keep under 300 words. Mention actual scores, season types, and cycle counts.
+Avoid generic statements. When crop names are Unclassified, focus on activity count,
+season types, cultivation signal, and fallow efficiency instead."""

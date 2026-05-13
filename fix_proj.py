@@ -21,7 +21,7 @@ def configure_proj():
         if proj_db_path.exists():
             os.environ['PROJ_LIB'] = str(proj_data_dir)
             os.environ['PROJ_DATA'] = str(proj_data_dir)  # Also set PROJ_DATA
-            print(f"✓ PROJ configured: {proj_data_dir}")
+            print(f"[OK] PROJ configured: {proj_data_dir}")
             return True
         else:
             print(f"⚠️  proj.db not found at: {proj_db_path}")
@@ -41,7 +41,7 @@ def configure_proj():
         if proj_db.exists():
             os.environ['PROJ_LIB'] = str(proj_path)
             os.environ['PROJ_DATA'] = str(proj_path)
-            print(f"✓ PROJ configured (fallback): {proj_path}")
+            print(f"[OK] PROJ configured (fallback): {proj_path}")
             return True
     
     print("❌ Could not find proj.db - reinstallation needed")
@@ -68,7 +68,7 @@ def setup_environment():
     warnings.filterwarnings('ignore', category=RuntimeWarning, module='rasterio')
     
     if proj_ok:
-        print("✓ Environment ready\n")
+        print("[OK] Environment ready\n")
     else:
         print("⚠️  Environment configured with warnings\n")
     

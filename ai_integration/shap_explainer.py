@@ -128,7 +128,21 @@ class SHAPExplainer:
 
         util = cc.get('utilization_metrics', {}) or {}
 
-        ci = float(ca.get('cropping_intensity', 0.0))
+        # v4.0: agronomic cycle-level metadata from crop_cycles dict
+        cycles_data = assessment.get('crop_cycles', {}) or {}
+        raw_cycles  = cycles_data.get('cycles') or []
+        det_meta    = assessment.get('cycle_detection_diag', {}) or {}
+        transplant_n = int(det_meta.get('transplant_cycles', 0))
+        harv_methods = det_meta.get('harvest_methods', {}) or {}
+        mech_n   = int(harv_methods.get('rapid_mechanical', 0))
+        irrig_n  = int(harv_methods.get('irrigation_cutoff', 0))
+
+        # Distinct named crops — Unclassified / None count as 0
+        _unlabelled = {'Unclassified', 'Unknown', None, ''}
+        named_crops = {
+            v for v in ca.get('crops_detected', {}).keys()
+            if v not in _unlabelled
+        }
 
         return {
             'cropping_intensity_pct':    min(100.0, ci * 50.0),
@@ -146,9 +160,14 @@ class SHAPExplainer:
             'seasons_with_crops_pct':    min(100.0,
                 float(ca.get('seasons_with_crops', 0))
                 / max(float(ca.get('total_seasons_analyzed', 1)), 1) * 100),
-            'unique_crops':              min(100.0, float(len(ca.get('crops_detected', {}))) * 25),
+            # Only count genuinely classified crops (not Unclassified)
+            'unique_crops':              min(100.0, float(len(named_crops)) * 25),
             'pm_kisan':                  100.0 if fb.get('pm_kisan_enrolled') else 0.0,
             'has_crop_insurance':        100.0 if fb.get('has_crop_insurance') else 0.0,
+            # v4.0 agronomic features
+            'transplant_cycles_pct':     min(100.0, float(transplant_n) * 25),
+            'mechanical_harvest_pct':    min(100.0, float(mech_n) * 33),
+            'irrigation_cutoff_pct':     min(100.0, float(irrig_n) * 33),
         }
 
     # =========================================================================
@@ -317,24 +336,41 @@ class SHAPExplainer:
     @staticmethod
     def _build_cycle_summary(assessment: Dict) -> List[Dict]:
         """
-        Return a compact per-cycle summary for AI report generation.
-        Includes scoring_method, health, yield_pct, anomaly count.
+        Compact per-cycle summary for AI report generation.
+        Includes v4.0 agronomic enrichment fields.
         """
         pa = assessment.get('performance_analysis', {})
         sp = pa.get('seasonal_performance', [])
+
+        # Build a lookup from season label → agronomic CropCycle data
+        cycles_raw = (assessment.get('crop_cycles', {}) or {}).get('cycles') or []
+        agro_by_label: Dict = {}
+        for c in cycles_raw:
+            lbl = c.get('season_label', '')
+            if lbl:
+                agro_by_label[lbl] = c
+
         summary = []
         for p in sp:
+            label = f"{p.get('season','?').upper()} {p.get('year','?')}"
+            agro  = agro_by_label.get(p.get('season_label', ''), {})
             summary.append({
-                'label':          f"{p.get('season','?').upper()} {p.get('year','?')}",
-                'crop':           p.get('crop', 'Unknown'),
-                'is_active':      p.get('is_active_cycle', False),
-                'health_score':   p.get('health_score',   0),
-                'yield_pct':      p.get('yield_potential_pct', '?'),
-                'scoring_method': p.get('scoring_method', '?'),
-                'n_anomalies':    len(p.get('anomaly_events', [])),
-                'n_high':         sum(1 for e in p.get('anomaly_events', [])
-                                     if e.get('impact') == 'HIGH'),
-                'narrative':      p.get('performance_narrative', ''),
+                'label':            label,
+                'crop':             p.get('crop', 'Unknown'),
+                'is_active':        p.get('is_active_cycle', False),
+                'health_score':     p.get('health_score',   0),
+                'yield_pct':        p.get('yield_potential_pct', '?'),
+                'scoring_method':   p.get('scoring_method', '?'),
+                'n_anomalies':      len(p.get('anomaly_events', [])),
+                'n_high':           sum(1 for e in p.get('anomaly_events', [])
+                                        if e.get('impact') == 'HIGH'),
+                'narrative':        p.get('performance_narrative', ''),
+                # v4.0 agronomic enrichment (from CropCycle.to_dict)
+                'season_type':      agro.get('season_type', ''),
+                'transplant_flag':  agro.get('transplant_flag', False),
+                'harvest_method':   agro.get('harvest_method', ''),
+                'sowing_confidence': agro.get('sowing_confidence', ''),
+                'activity_number':  agro.get('activity_number', 0),
             })
         return summary
 
@@ -342,8 +378,12 @@ class SHAPExplainer:
     def _active_cycle_note(assessment: Dict) -> str:
         pa = assessment.get('performance_analysis', {})
         n  = pa.get('n_active_cycles', 0)
+        # Check if classification was disabled
+        crop_intel = assessment.get('crop_intelligence_source', {})
+        classified = crop_intel.get('classification_enabled', True)
+        crop_word  = 'crop' if classified else 'agricultural'
         return (
-            f"{n} crop cycle(s) currently active — yield income expected at harvest. "
+            f"{n} {crop_word} cycle(s) currently active — yield income expected at harvest. "
             "Current scores reflect in-progress growth; final performance will be higher."
         ) if n else ""
 

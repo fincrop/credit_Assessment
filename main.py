@@ -12,6 +12,7 @@ from __future__ import annotations
 # ============================================================================
 import os
 import sys
+from pathlib import Path
 
 
 # Set PROJ_LIB and GDAL_DATA to conda environment paths
@@ -34,6 +35,12 @@ warnings.filterwarnings('ignore', message='.*EPSG.*')
 if sys.platform == 'win32':
     os.environ.setdefault('OMP_NUM_THREADS', '1')
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except Exception:
+    pass
+
 # ============================================================================
 # Continue with normal imports
 # ============================================================================
@@ -42,6 +49,8 @@ import gc
 import json
 import logging
 import traceback
+import hashlib
+import inspect
 from datetime import datetime, timedelta, date
 from typing import Dict, List, Optional
 
@@ -50,6 +59,11 @@ from typing import Dict, List, Optional
 warnings.filterwarnings(
     "ignore",
     message=r"Trying to unpersist estimator\b.*",
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r".*[Uu]npickle estimator.*",
+    category=UserWarning,
 )
 
 # Import existing components
@@ -61,6 +75,8 @@ from crop_analysis.land_utilization_analyzer import LandUtilizationAnalyzer
 from crop_analysis.performance_analyzer import CropPerformanceAnalyzer
 from assessment.advanced_credit_scorer import AdvancedCreditScorer
 from config import PipelineConfig
+from utils.farmer_benefits import merge_farmer_benefits, normalize_farmer_benefits
+from utils.india_geo_context import infer_agro_ecoregion
 
 try:
     from mongodb_helper import MongoDBHelper
@@ -149,6 +165,154 @@ class SatelliteBasedCreditPipeline:
             'errors': [error],
         }
 
+    @staticmethod
+    def _build_satellite_cache_key(
+        farmer_id: str,
+        latitude: Optional[float],
+        longitude: Optional[float],
+        field_area_ha: Optional[float],
+        geometry: Optional[object],
+        interval_days: int,
+        start_date: str,
+        end_date: str,
+    ) -> str:
+        raw = {
+            'farmer_id': farmer_id,
+            'latitude': latitude,
+            'longitude': longitude,
+            'field_area_ha': field_area_ha,
+            'geometry': geometry,
+            'interval_days': interval_days,
+            'start_date': start_date,
+            'end_date': end_date,
+            'provider': os.environ.get('SATELLITE_PROVIDER', 'gee').strip().lower() or 'gee',
+            'pipeline_version': _VERSION,
+        }
+        raw_json = json.dumps(raw, sort_keys=True, default=str)
+        return hashlib.sha256(raw_json.encode('utf-8')).hexdigest()
+
+    # ------------------------------------------------------------------
+    # Helper: build mock cropping_analysis when classification is off
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _scenes_for_cycle_window(
+        all_scenes: List[Dict],
+        start: str,
+        end: str,
+    ) -> List[Dict]:
+        """Bins from the continuous grid whose ``date`` falls in [start, end] (inclusive)."""
+        if not all_scenes or not start or not end:
+            return []
+        out: List[Dict] = []
+        for s in all_scenes:
+            if s.get('missing'):
+                continue
+            d = (s.get('date') or '')[:10]
+            if len(d) < 10:
+                continue
+            if start <= d <= end:
+                out.append(s)
+        return sorted(out, key=lambda x: x.get('date', ''))
+
+    @staticmethod
+    def _build_unclassified_analysis(crop_cycles, continuous_data: Dict) -> Dict:
+        """
+        Build a mock ``cropping_analysis`` dict that mimics the schema returned by
+        ``CropDetector.analyze_cycles()`` without running the ML classifier.
+
+        - Every cycle detected by CropCycleDetector is represented.
+        - ``predicted_crop`` is ``None`` → downstream uses crop-agnostic PATH B.
+        - ``start_date`` / ``end_date`` / ``duration_days`` are copied verbatim.
+        - ``cultivation_signal`` is derived from ``peak_ndvi`` as a proxy.
+        """
+
+        def _get(cyc, key: str):
+            """Reads a field from a CropCycle object or its to_dict() representation."""
+            if isinstance(cyc, dict):
+                return cyc.get(key)
+            if key == 'start_date':
+                v = getattr(cyc, 'start_date', None) or getattr(cyc, 'sowing_date', None)
+                return v.strftime('%Y-%m-%d') if hasattr(v, 'strftime') else v
+            if key == 'end_date':
+                v = getattr(cyc, 'end_date', None) or getattr(cyc, 'harvest_date', None)
+                return v.strftime('%Y-%m-%d') if hasattr(v, 'strftime') else v
+            return getattr(cyc, key, None)
+
+        season_results: List[Dict] = []
+        n_cycles = len(crop_cycles)
+
+        for i, cycle in enumerate(crop_cycles, 1):
+            start_str  = _get(cycle, 'start_date')
+            end_str    = _get(cycle, 'end_date')
+            dur_days   = int(_get(cycle, 'duration_days') or 0)
+            peak_ndvi  = float(_get(cycle, 'peak_ndvi') or 0.0)
+            confidence = float(_get(cycle, 'confidence') or 0.0)
+
+            if not start_str or not end_str:
+                continue
+
+            # Proxy cultivation_signal from peak_ndvi (0–100 scale)
+            cultivation_signal = round(min(100.0, max(0.0, peak_ndvi * 120.0)), 1)
+
+            cycle_scenes = SatelliteBasedCreditPipeline._scenes_for_cycle_window(
+                continuous_data.get('scenes') or [], start_str, end_str
+            )
+
+            season_results.append({
+                'season':               f'cycle_{i}',
+                'year':                 int(start_str[:4]),
+                'start_date':           start_str,
+                'end_date':             end_str,
+                'crop_detected':        True,
+                'cultivation_signal':   cultivation_signal,
+                # Classification skipped — performance analyzer will use PATH B
+                'predicted_crop':       None,
+                'crop_confidence':      0.0,
+                'classification_note':  'classification_skipped_by_feature_flag',
+                'all_probabilities':    {},
+                'cycle_confidence':     confidence,
+                'duration_days':        dur_days,
+                'is_cycle_based':       True,
+                'scenes':               cycle_scenes,
+                'peak_ndvi':            round(peak_ndvi, 4),
+                'n_scenes':             len(cycle_scenes),
+            })
+
+        # ``cropping_intensity`` for credit/limit must be **cycles per year** (0–3.5),
+        # not cultivated-days / calendar-days (that fraction is land-use cover).
+        try:
+            s_dt = datetime.strptime(continuous_data['start_date'], '%Y-%m-%d')
+            e_dt = datetime.strptime(continuous_data['end_date'],   '%Y-%m-%d')
+            total_days = max((e_dt - s_dt).days, 1)
+            cultivated = sum(int(_get(c, 'duration_days') or 0) for c in crop_cycles)
+            years_span = max(total_days / 365.25, 0.25)
+            cropping_intensity = round(min(3.5, n_cycles / years_span), 3)
+            cultivated_day_fraction = round(min(1.0, cultivated / float(total_days)), 4)
+        except Exception:
+            years_span = 3.0
+            cropping_intensity = round(min(3.5, n_cycles / years_span), 3)
+            cultivated_day_fraction = 0.0
+
+        sig_vals   = [r['cultivation_signal'] for r in season_results]
+        avg_signal = round(float(sum(sig_vals) / max(len(sig_vals), 1)), 1) if sig_vals else 0.0
+
+        return {
+            'season_results':           season_results,
+            'crops_detected':           {'Unclassified': n_cycles} if n_cycles else {},
+            'dominant_crop':            None,            # no crop known; credit scorer crop_mult = 1.00
+            'cropping_intensity':       cropping_intensity,
+            'cultivated_day_fraction':  cultivated_day_fraction,
+            'cultivation_signal':       avg_signal,
+            'avg_cultivation_signal':   avg_signal,
+            'seasons_with_crops':       len(season_results),
+            'total_seasons_analyzed':   n_cycles,
+            'region':                   'UNCLASSIFIED',
+            'ndvi_threshold_used':      0.0,
+            'detection_mode':           'cycle_based_unclassified',
+            'classification_enabled':   False,
+        }
+
     # ------------------------------------------------------------------
     # Public: database mode
     # ------------------------------------------------------------------
@@ -157,6 +321,7 @@ class SatelliteBasedCreditPipeline:
         self,
         farmer_id: str,
         farmer_benefits_override: Optional[Dict] = None,
+        enable_crop_classification: bool = False,
     ) -> Dict:
         """Fetch farm from MongoDB, run full assessment, save result."""
         farmer_id = (farmer_id or "").strip()
@@ -188,22 +353,8 @@ class SatelliteBasedCreditPipeline:
 
         geometry = self._convert_geometry_from_db(farm.get("geometry"))
 
-        db_benefits = farm.get('farmer_benefits') or {}
-        merged_benefits = {
-            'pm_kisan_enrolled': bool(db_benefits.get('pm_kisan_enrolled', False)),
-            'has_crop_insurance': bool(db_benefits.get('has_crop_insurance', False)),
-        }
-        if isinstance(farmer_benefits_override, dict):
-            merged_benefits['pm_kisan_enrolled'] = bool(
-                farmer_benefits_override.get(
-                    'pm_kisan_enrolled', merged_benefits['pm_kisan_enrolled']
-                )
-            )
-            merged_benefits['has_crop_insurance'] = bool(
-                farmer_benefits_override.get(
-                    'has_crop_insurance', merged_benefits['has_crop_insurance']
-                )
-            )
+        db_benefits = farm.get('farmer_benefits') if isinstance(farm.get('farmer_benefits'), dict) else {}
+        merged_benefits = merge_farmer_benefits(db_benefits, farmer_benefits_override)
 
         return self.assess_farmer(
             farmer_id=farmer_id,
@@ -214,7 +365,12 @@ class SatelliteBasedCreditPipeline:
             farmer_benefits=merged_benefits,
             crop_hint=crop_hint,
             sowing_date=sowing_date,
+            farm_metadata={
+                'state_lgd_code': farm.get('state_lgd_code'),
+                'district_lgd_code': farm.get('district_lgd_code'),
+            },
             save_to_db=True,
+            enable_crop_classification=enable_crop_classification,
         )
  
     # ------------------------------------------------------------------
@@ -231,7 +387,9 @@ class SatelliteBasedCreditPipeline:
         farmer_benefits: Optional[Dict] = None,
         crop_hint: Optional[str] = None,
         sowing_date: Optional[str] = None,
+        farm_metadata: Optional[Dict] = None,
         save_to_db: bool = True,
+        enable_crop_classification: bool = False,
     ) -> Dict:
         """
         Run the complete assessment pipeline
@@ -245,7 +403,11 @@ class SatelliteBasedCreditPipeline:
             farmer_benefits: Government benefits info
             crop_hint: Crop type from database (optional)
             sowing_date: Sowing date from database (optional)
+            farm_metadata: Optional keys state_lgd_code, district_lgd_code (Agristack ingest)
             save_to_db: Save results to MongoDB
+            enable_crop_classification: When False (default), bypasses the ML crop
+                classifier entirely. Cycle dates are preserved; crop names are set to
+                Unclassified and downstream scoring uses crop-agnostic PATH B.
             
         Returns:
             Complete assessment dictionary with all analysis results
@@ -255,10 +417,24 @@ class SatelliteBasedCreditPipeline:
         if not farmer_id:
             return self._failed_assessment_shell('', 'farmer_id is required')
 
+        farm_md_raw = farm_metadata if isinstance(farm_metadata, dict) else {}
+        farm_md = {
+            k: farm_md_raw.get(k)
+            for k in ('state_lgd_code', 'district_lgd_code')
+            if farm_md_raw.get(k) not in (None, '')
+        }
+
         if isinstance(crop_hint, str):
             crop_hint = crop_hint.strip() or None
         if isinstance(sowing_date, str):
             sowing_date = sowing_date.strip() or None
+
+        if farmer_benefits is None:
+            pass  # scorer treats missing benefits as neutral (unknown)
+        elif isinstance(farmer_benefits, dict):
+            farmer_benefits = normalize_farmer_benefits(farmer_benefits)
+        else:
+            farmer_benefits = {}
 
         logger.info(f"\n{'='*70}\nFARMER ASSESSMENT: {farmer_id}\n{'='*70}\n")
         start_time = datetime.now()
@@ -282,18 +458,88 @@ class SatelliteBasedCreditPipeline:
             # STEP 1: SATELLITE DATA COLLECTION (Continuous, season-aligned)
             # ============================================================
             logger.info("STEP 1: Collecting continuous satellite data...")
-            satellite_data = self.satellite_collector.collect_historical_data(
+            today = date.today()
+            snapped_start = self.satellite_collector._snap_to_season_start(today, lookback_years=3)
+            interval_days = max(
+                1,
+                int(getattr(PipelineConfig, "CONTINUOUS_SCENE_INTERVAL_DAYS", 10)),
+            )
+            cache_key = self._build_satellite_cache_key(
+                farmer_id=farmer_id,
                 latitude=latitude,
                 longitude=longitude,
                 field_area_ha=field_area_ha,
                 geometry=geometry,
+                interval_days=interval_days,
+                start_date=snapped_start.strftime('%Y-%m-%d'),
+                end_date=today.strftime('%Y-%m-%d'),
             )
+
+            satellite_data = None
+            # Temporarily bypass cache to test improved year-by-year download
+            force_fresh_download = True  # Set to False after testing
+            if not force_fresh_download and self.use_mongodb and self.db:
+                satellite_data = self.db.get_satellite_stats_cache(cache_key)
+                if satellite_data:
+                    logger.info("STEP 1: Loaded satellite stats from cache")
+
+            if not satellite_data:
+                satellite_data = self.satellite_collector.collect_historical_data(
+                    latitude=latitude,
+                    longitude=longitude,
+                    field_area_ha=field_area_ha,
+                    geometry=geometry,
+                )
+                if self.use_mongodb and self.db:
+                    self.db.upsert_satellite_stats_cache(
+                        cache_key=cache_key,
+                        satellite_data=satellite_data,
+                        metadata={
+                            'farmer_id': farmer_id,
+                            'provider': os.environ.get('SATELLITE_PROVIDER', 'gee').strip().lower() or 'gee',
+                        },
+                        ttl_days=int(os.environ.get('SATELLITE_CACHE_TTL_DAYS', '30')),
+                    )
+
             assessment['satellite_data'] = satellite_data
             assessment['location'] = satellite_data['location']
-            assessment['field_area_ha'] = satellite_data['field_area_ha']
+
+            geometry_derived_ha = satellite_data.get('field_area_ha')
+            assessment['field_area_ha_geometry'] = geometry_derived_ha
+            registered_ha = None
+            if field_area_ha is not None:
+                try:
+                    registered_ha = float(field_area_ha)
+                    if registered_ha <= 0:
+                        registered_ha = None
+                except (TypeError, ValueError):
+                    registered_ha = None
+
+            if registered_ha is not None:
+                assessment['field_area_ha_registered'] = registered_ha
+                assessment['field_area_ha'] = registered_ha
+                logger.info(
+                    "Field area: using registered %.4f ha (geometry-derived %.4f ha for reference)",
+                    registered_ha,
+                    float(geometry_derived_ha or 0.0),
+                )
+            else:
+                assessment['field_area_ha_registered'] = None
+                assessment['field_area_ha'] = geometry_derived_ha
 
             clat = satellite_data['location']['latitude']
             clon = satellite_data['location']['longitude']
+
+            eco_key, eco_profile = infer_agro_ecoregion(
+                clat,
+                clon,
+                farm_md.get('state_lgd_code'),
+            )
+            assessment['agro_geo_context'] = {
+                'ecoregion': eco_key,
+                **{k: v for k, v in eco_profile.items() if k != 'narrative'},
+                'narrative': eco_profile.get('narrative', ''),
+            }
 
             continuous_data = satellite_data.get('continuous_data') or {}
             scenes_list = continuous_data.get('scenes') or []
@@ -313,10 +559,20 @@ class SatelliteBasedCreditPipeline:
                 verbose=False,
                 interval_days=continuous_data.get("interval_days"),
             )
-            self.crop_detector = CropDetector(
-                crop_model_path=self.crop_model_path,
-                latitude=clat, longitude=clon, verbose=False
-            )
+            if enable_crop_classification:
+                self.crop_detector = CropDetector(
+                    crop_model_path=self.crop_model_path,
+                    latitude=clat,
+                    longitude=clon,
+                    verbose=False,
+                    state_lgd_code=farm_md.get('state_lgd_code'),
+                    district_lgd_code=farm_md.get('district_lgd_code'),
+                )
+            else:
+                logger.info(
+                    "Crop classification DISABLED — CropDetector model load skipped."
+                )
+                self.crop_detector = None
 
             # Add continuous data stats
             assessment['continuous_data_stats'] = {
@@ -351,19 +607,32 @@ class SatelliteBasedCreditPipeline:
                     grid_step = getattr(
                         PipelineConfig, 'CONTINUOUS_SCENE_INTERVAL_DAYS', 10
                     )
-                crop_cycles = self.crop_cycle_detector.detect_cycles(
-                    dates=continuous_data['dates'],
-                    ndvi_values=continuous_data['ndvi_values'],
-                    evi_values=continuous_data.get('evi_values'),
-                    ndmi_values=continuous_data.get('ndmi_values'),
-                    scenes=continuous_data.get('scenes'),
-                    sowing_date_hint=sowing_date,
-                    crop_hint=crop_hint,
-                    grid_step_days=float(grid_step),
-                )
+                _detect = self.crop_cycle_detector.detect_cycles
+                _cycle_kwargs = {
+                    'dates': continuous_data['dates'],
+                    'ndvi_values': continuous_data['ndvi_values'],
+                    'evi_values': continuous_data.get('evi_values'),
+                    'ndmi_values': continuous_data.get('ndmi_values'),
+                    'scenes': continuous_data.get('scenes'),
+                    'grid_step_days': float(grid_step),
+                    'sowing_date_hint': sowing_date,
+                    'crop_hint': crop_hint,
+                    'agro_profile': eco_profile,
+                }
+                _sig = inspect.signature(_detect)
+                _params = _sig.parameters
+                if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in _params.values()):
+                    crop_cycles = _detect(**_cycle_kwargs)
+                else:
+                    _allowed = {name for name in _params if name != 'self'}
+                    crop_cycles = _detect(
+                        **{k: v for k, v in _cycle_kwargs.items() if k in _allowed}
+                    )
+                _meta = getattr(self.crop_cycle_detector, 'last_detection_meta', None)
+                assessment['cycle_detection_diag'] = dict(_meta or {})
 
                 if crop_cycles:
-                    logger.info(f"  ✓ Detected {len(crop_cycles)} crop cycles")
+                    logger.info(f"  [OK] Detected {len(crop_cycles)} crop cycles")
 
                     start_dt = datetime.strptime(
                         continuous_data['start_date'], '%Y-%m-%d'
@@ -378,7 +647,7 @@ class SatelliteBasedCreditPipeline:
                     )
                     if utilization_metrics:
                         logger.info(
-                            "  ✓ Land utilization: %.1f%%",
+                            "  [OK] Land utilization: %.1f%%",
                             100.0 * float(utilization_metrics.get('land_utilization_index', 0) or 0),
                         )
 
@@ -390,15 +659,56 @@ class SatelliteBasedCreditPipeline:
                 )
 
             # ============================================================
-            # STEP 3: Dynamic Crop Classification (cycle-based)
+            # STEP 3: Crop Classification (optional, controlled by flag)
             # ============================================================
-            logger.info("\nSTEP 3: Classifying cycles...")
-            cropping_analysis = self.crop_detector.analyze_cycles(
-                crop_cycles=crop_cycles,
-                all_continuous_scenes=continuous_data.get('scenes', []),
-            )
+            if enable_crop_classification:
+                logger.info("\nSTEP 3: Classifying cycles via ML model...")
+                cropping_analysis = self.crop_detector.analyze_cycles(
+                    crop_cycles=crop_cycles,
+                    all_continuous_scenes=continuous_data.get('scenes', []),
+                )
+                classification_mode = 'satellite_ndvi_ml_classifier'
+                classification_note = (
+                    'Crop type inferred from satellite NDVI time-series classifier. '
+                    'Discrepancies vs registry sowing records are expected unless a '
+                    'crop hint was stored on the farmer record.'
+                )
+                logger.info(
+                    "  \u2713 Classification complete (%d cycles)", len(crop_cycles)
+                )
+            else:
+                # Classification is OFF — build a structurally identical dict from raw
+                # CropCycle objects. Exact sowing/harvest dates are preserved.
+                # Downstream steps (weather, performance, credit) are fully unaffected.
+                logger.info(
+                    "\nSTEP 3: Crop classification SKIPPED (enable_crop_classification=False)."
+                    " Building generic cycle analysis from %d detected cycle(s)...",
+                    len(crop_cycles),
+                )
+                cropping_analysis = self._build_unclassified_analysis(
+                    crop_cycles, continuous_data
+                )
+                classification_mode = 'cycle_dates_only_no_classification'
+                classification_note = (
+                    'Crop classification was disabled. Activity count and dates are '
+                    'derived from CropCycleDetector; crop names are Unclassified. '
+                    'Credit scoring uses crop-agnostic signal-based metrics.'
+                )
+                logger.info(
+                    "  \u2713 Generic analysis built — %d cycle(s) preserved with exact dates, "
+                    "crop_name=Unclassified.",
+                    len(crop_cycles),
+                )
+
             assessment['cropping_analysis'] = cropping_analysis
             assessment['pipeline_stages'].append('5_crops')
+            assessment['crop_intelligence_source'] = {
+                'dominant_crop_and_cycles':  classification_mode,
+                'classification_enabled':    enable_crop_classification,
+                'registry_crop_hint':        crop_hint,
+                'registry_sowing_hint':      sowing_date,
+                'note':                      classification_note,
+            }
 
             # ============================================================
             # STEP 4: Context-Aware Weather Analysis (cycle-aligned)
@@ -458,7 +768,7 @@ class SatelliteBasedCreditPipeline:
 
             credit_recommendations = self.credit_scorer.calculate_credit_limit(
                 credit_score=credit_assessment['credit_score'],
-                field_area_ha=satellite_data['field_area_ha'],
+                field_area_ha=assessment['field_area_ha'],
                 cropping_analysis=cropping_analysis,
                 performance_analysis=performance_analysis,
                 farmer_benefits=farmer_benefits,
@@ -489,7 +799,7 @@ class SatelliteBasedCreditPipeline:
                 logger.info("\nSTEP 9: AI enrichment (explainability)...")
                 if enrich_assessment_with_ai(assessment):
                     assessment['pipeline_stages'].append('12_ai')
-                    logger.info("  ✓ AI enrichment attached (see assessment['ai_enrichment'])")
+                    logger.info("  [OK] AI enrichment attached (see assessment['ai_enrichment'])")
             except ImportError:
                 pass
 
@@ -519,7 +829,7 @@ class SatelliteBasedCreditPipeline:
                     logger.info("\nSTEP 10: Saving to MongoDB...")
                     self.db.save_assessment(assessment)
                     assessment['pipeline_stages'].append('11_persist')
-                    logger.info("  ✓ Saved successfully")
+                    logger.info("  [OK] Saved successfully")
                 except Exception as e:
                     logger.error(f"MongoDB save failed: {e}")
                     assessment['errors'].append(f"MongoDB save failed: {e}")

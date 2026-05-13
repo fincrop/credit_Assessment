@@ -64,13 +64,16 @@ class LandUtilizationAnalyzer:
         fallow_analysis = self._analyze_fallow_periods(cycles, start_date, end_date)
         crop_diversity = self._analyze_crop_diversity(cycles)
         
+        window_years = total_days / 365.0
         result = {
             'crop_intensity': round(crop_intensity, 2),
             # Backward/compat alias used by main + task descriptions
             'crops_per_year': round(crop_intensity, 2),
+            'analysis_window_years': round(window_years, 3),
             'land_utilization_index': round(utilization_index, 3),
             'cycle_duration_breakdown': cycle_duration_breakdown,
             'cropping_pattern': cropping_pattern,
+            'cycles_in_analysis_window': len(cycles),
             'fallow_analysis': fallow_analysis,
             'crop_diversity': crop_diversity,
             'total_cycles': len(cycles),
@@ -172,7 +175,9 @@ class LandUtilizationAnalyzer:
         - INTENSIVE_MULTIPLE (3+ crops/year)
         - DOUBLE_CROPPING (2-3 crops/year)
         - LONG_DURATION_DOMINANT (mostly long cycles)
-        - SINGLE_SEASON (≤1.5 crops/year)
+        - MULTI_YEAR_SINGLE_CROP (several cycles, but spread over multi-year window
+          so annualized intensity is low — avoids confusion with SINGLE_SEASON)
+        - SINGLE_SEASON (few cycles relative to span)
         """
         years = total_days / 365.0
         crops_per_year = len(cycles) / years if years > 0 else 0
@@ -190,6 +195,9 @@ class LandUtilizationAnalyzer:
                 return "DOUBLE_CROPPING"
         elif long_fraction > 0.5:
             return "LONG_DURATION_DOMINANT"
+        elif len(cycles) >= 2 and crops_per_year < 2.0:
+            # e.g. 2 cycles across ~3.6 years ⇒ ~0.56 crops/year: not "single season" in plain language
+            return "MULTI_YEAR_SINGLE_CROP"
         else:
             return "SINGLE_SEASON"
     
@@ -271,6 +279,8 @@ class LandUtilizationAnalyzer:
         """Return empty result structure"""
         return {
             'crop_intensity': 0.0,
+            'crops_per_year': 0.0,
+            'analysis_window_years': 0.0,
             'land_utilization_index': 0.0,
             'cycle_duration_breakdown': {
                 'short_duration_count': 0,
@@ -293,6 +303,7 @@ class LandUtilizationAnalyzer:
                 'crop_type_distribution': {},
                 'shannon_index': 0.0
             },
+            'cycles_in_analysis_window': 0,
             'total_cycles': 0,
             'analysis_period_days': 0
         }
