@@ -1305,6 +1305,10 @@ class SatelliteDataCollector:
                 logger.warning("GEE requested but initialization failed; falling back to STAC.")
                 self.use_gee = False
 
+        # If we started with GEE, `self.catalog` was never opened; open STAC after GEE fallback.
+        if not self.use_gee and self.catalog is None and SATELLITE_AVAILABLE:
+            self.catalog = pystac_client.Client.open(self.stac_url)
+
         if not self.use_gee and self.catalog is None:
             raise ImportError("No satellite backend available. Install STAC or GEE dependencies.")
 
@@ -1322,6 +1326,25 @@ class SatelliteDataCollector:
             project = os.environ.get("GEE_PROJECT", "").strip() or None
             key_path = os.environ.get("GEE_SA_KEY_PATH", "").strip()
             key_payload: Optional[Dict[str, Any]] = None
+
+            # Render / dashboards often paste the full JSON into GEE_SA_KEY_PATH by mistake.
+            # That is not a filesystem path; open() raises OSError (e.g. Errno 36 name too long).
+            if key_path and key_path.lstrip().startswith("{"):
+                try:
+                    key_payload = json.loads(key_path)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        "GEE_SA_KEY_PATH looks like JSON but is not valid JSON. "
+                        "Use GEE_SERVICE_ACCOUNT_JSON or GEE_SERVICE_ACCOUNT_B64 for inline JSON, "
+                        "or set GEE_SA_KEY_PATH to a real path to a .json key file."
+                    ) from exc
+                _fd, _tmp = tempfile.mkstemp(prefix="gee_sa_", suffix=".json", text=True)
+                with os.fdopen(_fd, "w", encoding="utf-8") as _fh:
+                    json.dump(key_payload, _fh)
+                key_path = _tmp
+                logger.info(
+                    "GEE: GEE_SA_KEY_PATH was inline JSON; using a temporary credentials file"
+                )
 
             b64 = os.environ.get("GEE_SERVICE_ACCOUNT_B64", "").strip()
             raw_json = os.environ.get("GEE_SERVICE_ACCOUNT_JSON", "").strip()
