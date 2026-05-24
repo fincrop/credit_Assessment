@@ -12,9 +12,8 @@ interface ResponseSectionProps {
             message: string;
         };
         statusCode: number;
-    responseTime?: number;
-    via?: string;
-} | null;
+        responseTime?: number;
+    } | null;
     isLoading: boolean;
 }
 
@@ -111,11 +110,6 @@ export default function ResponseSection({ response, isLoading }: ResponseSection
                     {response.responseTime && (
                         <span className="text-sm text-gray-500">
                             {response.responseTime}ms
-                        </span>
-                    )}
-                    {'via' in response && response.via && (
-                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded capitalize">
-                            via {response.via}
                         </span>
                     )}
                     <span className={`px-2 py-1 rounded text-sm font-medium ${response.statusCode >= 200 && response.statusCode < 300

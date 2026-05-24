@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-    blockedErrorPayload,
-    fetchAgriStackUpstream,
-    parseUpstreamJson,
-} from '../../lib/agristackUpstream';
 
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
 
+        // Get custom headers from the X-Custom-Headers header
         const customHeadersStr = request.headers.get('x-custom-headers');
         let customHeaders: Record<string, string> = {};
 
@@ -22,7 +18,7 @@ export async function POST(request: NextRequest) {
 
         const startTime = Date.now();
 
-        const result = await fetchAgriStackUpstream('/agristack/seek', {
+        const response = await fetch('https://sandbox.agristack.gov.in/sandbox-api/agristack/seek', {
             method: 'POST',
             headers: {
                 ...customHeaders,
@@ -31,21 +27,20 @@ export async function POST(request: NextRequest) {
         });
 
         const responseTime = Date.now() - startTime;
-
-        if (result.proxyBlocked) {
-            return NextResponse.json(blockedErrorPayload(result, responseTime), {
-                status: result.status || 403,
-            });
+        
+        const responseText = await response.text();
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch {
+            data = responseText;
         }
 
-        const data = parseUpstreamJson(result.text);
-
         return NextResponse.json({
-            success: result.ok,
-            data,
-            statusCode: result.status,
+            success: response.ok,
+            data: data,
+            statusCode: response.status,
             responseTime,
-            via: result.via,
         });
     } catch (error) {
         console.error('API Error:', error);

@@ -9,16 +9,9 @@ import ApiEndpointDisplay from '../components/sandbox/ApiEndpointDisplay';
 import RequestSection from '../components/sandbox/RequestSection';
 import ResponseSection from '../components/sandbox/ResponseSection';
 import WebhookResponses from '../components/sandbox/WebhookResponses';
-import AgriStackConnectionPanel from '../components/sandbox/AgriStackConnectionPanel';
 import { setToken } from '../store/tokenSlice';
 import { ENDPOINTS, getEndpointConfigs } from '../config/endpoints';
 import { ingestFarmerData } from '../lib/assessmentClient';
-import {
-  fetchAgriStackSmart,
-  fetchTokenSmart,
-  endpointUpstreamUrl,
-  SandboxResponse,
-} from '../lib/agristackClient';
 
 export default function AgristackPage() {
   const router = useRouter();
@@ -30,7 +23,13 @@ export default function AgristackPage() {
   const [headers, setHeaders] = useState('');
   const [requestBody, setRequestBody] = useState('');
   const [bulkFarmerIds, setBulkFarmerIds] = useState('');
-  const [response, setResponse] = useState<SandboxResponse | null>(null);
+  const [response, setResponse] = useState<{
+    success: boolean;
+    data?: unknown;
+    error?: { code: number; message: string };
+    statusCode: number;
+    responseTime?: number;
+  } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [ingestStatus, setIngestStatus] = useState<{ loading: boolean; message: string | null; success: boolean | null }>({
     loading: false, message: null, success: null,
@@ -58,19 +57,6 @@ export default function AgristackPage() {
       setRequestBody(JSON.stringify(config.body, null, 2));
     }
   }, [activeEndpoint, accessToken]);
-
-  const applyTokenFromResponse = (data: SandboxResponse) => {
-    const payload = data.data as { access_token?: string; token_type?: string; expires_in?: number; refresh_token?: string } | undefined;
-    if (payload?.access_token) {
-      isTokenUpdate.current = true;
-      dispatch(setToken({
-        access_token: payload.access_token,
-        token_type: payload.token_type,
-        expires_in: payload.expires_in,
-        refresh_token: payload.refresh_token,
-      }));
-    }
-  };
 
   const handleRun = async () => {
     setIsLoading(true);
@@ -108,15 +94,13 @@ export default function AgristackPage() {
             }
           }
           try {
-            const upstreamUrl = endpointUpstreamUrl(activeEndpoint);
-            const data = await fetchAgriStackSmart(
-              activeEndpoint,
-              currentConfig.apiRoute,
-              upstreamUrl,
-              parsedHeaders,
-              parsedBody,
-            );
-            results.push({ farmer_id: id, status: data.statusCode, response: data });
+            const res = await fetch(currentConfig.apiRoute, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-Custom-Headers': JSON.stringify(parsedHeaders) },
+              body: JSON.stringify(parsedBody),
+            });
+            const data = await res.json();
+            results.push({ farmer_id: id, status: res.status, response: data });
           } catch (err) {
             results.push({ farmer_id: id, status: 500, error: err instanceof Error ? err.message : 'Unknown error' });
           }
@@ -139,21 +123,21 @@ export default function AgristackPage() {
           }
           setRequestBody(JSON.stringify(parsedBody, null, 2));
         }
-        let data: SandboxResponse;
-        if (activeEndpoint === 'token') {
-          data = await fetchTokenSmart(parsedBody as Record<string, unknown>);
-        } else {
-          data = await fetchAgriStackSmart(
-            activeEndpoint,
-            currentConfig.apiRoute,
-            currentEndpoint.url,
-            parsedHeaders,
-            parsedBody,
-          );
-        }
+        const res = await fetch(currentConfig.apiRoute, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Custom-Headers': JSON.stringify(parsedHeaders) },
+          body: JSON.stringify(parsedBody),
+        });
+        const data = await res.json();
         setResponse(data);
-        if (activeEndpoint === 'token') {
-          applyTokenFromResponse(data);
+        if (activeEndpoint === 'token' && data.success && data.data?.access_token) {
+          isTokenUpdate.current = true;
+          dispatch(setToken({
+            access_token: data.data.access_token,
+            token_type: data.data.token_type,
+            expires_in: data.data.expires_in,
+            refresh_token: data.data.refresh_token,
+          }));
         }
       }
     } catch (error) {
@@ -199,8 +183,6 @@ export default function AgristackPage() {
           <div className="max-w-5xl mx-auto space-y-6">
             {activeTab === 'sandbox' ? (
               <>
-                <AgriStackConnectionPanel />
-
                 {accessToken && (
                   <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 flex items-center gap-2">
                     <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
