@@ -42,11 +42,11 @@ from pydantic import BaseModel, Field
 
 from api.job_runner import process_assessment_job, utc_now
 from api.serialization import slim_assessment_for_api
-from main import SatelliteBasedCreditPipeline
 
 logger = logging.getLogger(__name__)
 
-_pipeline: Optional[SatelliteBasedCreditPipeline] = None
+_pipeline: Any = None
+_pipeline_init_lock: Optional[asyncio.Lock] = None
 _mongo_for_jobs: Optional[MongoClient] = None
 _jobs_col: Any = None
 _pipeline_job_lock: Optional[asyncio.Lock] = None
@@ -64,10 +64,10 @@ def _optional_api_key() -> Optional[str]:
     return k or None
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    global _pipeline, _mongo_for_jobs, _jobs_col, _pipeline_job_lock
-    _pipeline_job_lock = asyncio.Lock()
+def _create_pipeline() -> Any:
+    """Load geospatial stack + model in a worker thread (slow on cold start)."""
+    from main import SatelliteBasedCreditPipeline
+
     model_path = os.environ.get("CROP_MODEL_PATH", "models/crop_classifier_model.joblib")
     ml_mode = os.environ.get("ML_MODE", "rule_based")
     use_mdb = os.environ.get("USE_MONGODB", "true").strip().lower() in (
@@ -75,7 +75,7 @@ async def lifespan(app: FastAPI):
         "true",
         "yes",
     )
-    _pipeline = SatelliteBasedCreditPipeline(
+    pipeline = SatelliteBasedCreditPipeline(
         crop_model_path=model_path,
         ml_mode=ml_mode,
         verbose=os.environ.get("PIPELINE_VERBOSE", "").strip().lower()
@@ -83,6 +83,33 @@ async def lifespan(app: FastAPI):
         use_mongodb=use_mdb,
     )
     logger.info("Pipeline ready (ml_mode=%s, mongodb=%s)", ml_mode, use_mdb)
+    return pipeline
+
+
+async def _ensure_pipeline() -> Any:
+    """Lazy-init pipeline so Render can detect an open PORT before heavy imports finish."""
+    global _pipeline
+    if _pipeline is not None:
+        return _pipeline
+    if _pipeline_init_lock is None:
+        raise HTTPException(status_code=503, detail="Pipeline not initialized")
+    async with _pipeline_init_lock:
+        if _pipeline is not None:
+            return _pipeline
+        loop = asyncio.get_event_loop()
+        try:
+            _pipeline = await loop.run_in_executor(None, _create_pipeline)
+        except Exception as exc:
+            logger.exception("Pipeline initialization failed")
+            raise HTTPException(status_code=503, detail=f"Pipeline init failed: {exc}") from exc
+        return _pipeline
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _mongo_for_jobs, _jobs_col, _pipeline_job_lock, _pipeline_init_lock
+    _pipeline_job_lock = asyncio.Lock()
+    _pipeline_init_lock = asyncio.Lock()
 
     uri = os.environ.get("MONGODB_URI", "").strip()
     if uri:
@@ -105,6 +132,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    global _pipeline
     _pipeline = None
     _jobs_col = None
     if _mongo_for_jobs is not None:
@@ -162,23 +190,27 @@ def verify_service_key(x_api_key: Optional[str] = Header(default=None)) -> None:
 
 @app.get("/health")
 async def health() -> Dict[str, Any]:
+    use_mdb = os.environ.get("USE_MONGODB", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
     return {
         "status": "ok",
         "pipeline_loaded": _pipeline is not None,
-        "mongodb": bool(_pipeline and getattr(_pipeline, "use_mongodb", False)),
+        "mongodb": use_mdb and _mongo_for_jobs is not None,
         "jobs_collection": _jobs_col is not None,
     }
 
 
 async def _run_assessment(body: AssessRequest) -> Dict[str, Any]:
-    if _pipeline is None:
-        raise HTTPException(status_code=503, detail="Pipeline not initialized")
+    pipeline = await _ensure_pipeline()
 
     fid = body.farmer_id.strip()
     loop = asyncio.get_event_loop()
 
     def _run() -> Dict[str, Any]:
-        return _pipeline.assess_farmer_from_db(
+        return pipeline.assess_farmer_from_db(
             fid,
             farmer_benefits_override={
                 "pm_kisan_enrolled": body.pm_kisan_enrolled,
@@ -200,9 +232,15 @@ async def _claim_and_run_job(job_id: str) -> None:
     After HTTP returns, claim the QUEUED job and run the pipeline in a thread pool.
     Serialized with _pipeline_job_lock so only one heavy run uses the pipeline at a time.
     """
-    global _pipeline, _jobs_col, _pipeline_job_lock
-    if _pipeline is None or _jobs_col is None or _pipeline_job_lock is None:
-        logger.error("Inline job %s skipped: pipeline or Mongo jobs not ready", job_id)
+    global _jobs_col, _pipeline_job_lock
+    if _jobs_col is None or _pipeline_job_lock is None:
+        logger.error("Inline job %s skipped: Mongo jobs not ready", job_id)
+        return
+
+    try:
+        pipeline = await _ensure_pipeline()
+    except HTTPException:
+        logger.exception("Inline job %s skipped: pipeline init failed", job_id)
         return
 
     try:
@@ -236,7 +274,7 @@ async def _claim_and_run_job(job_id: str) -> None:
                 partial(
                     process_assessment_job,
                     _jobs_col,
-                    _pipeline,
+                    pipeline,
                     job,
                     env_classification_enabled,
                 ),

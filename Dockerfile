@@ -19,6 +19,6 @@ RUN pip install --no-cache-dir --no-compile -r requirements.txt
 # Application code + model artifacts (ensure crop_classifier_model.joblib is in repo or image build context)
 COPY . .
 
-# Render injects PORT; default 8000 for local docker run
-EXPOSE 8000
-CMD ["sh", "-c", "uvicorn api.app:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Render injects PORT (often 10000); bind 0.0.0.0 so the port scan succeeds.
+EXPOSE 10000
+CMD ["sh", "-c", "echo \"Listening on 0.0.0.0:${PORT:-8000}\" && exec uvicorn api.app:app --host 0.0.0.0 --port ${PORT:-8000}"]

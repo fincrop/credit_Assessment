@@ -13,3 +13,5 @@ htmlcov
 terminals
 agent-tools
 *.log
+frontend
+outputs

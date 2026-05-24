@@ -1,5 +1,11 @@
 # Render Blueprint (optional): New → Blueprint → paste this file.
 # Set MONGODB_URI (and optional API_SERVICE_KEY) in the dashboard — do not commit secrets.
+#
+# Two services from one repo:
+#   - agri-credit-pipeline-api  (Docker / FastAPI)
+#   - agri-credit-frontend      (Node / Next.js in frontend/)
+#
+# buildFilter limits redeploys: frontend-only pushes skip the API Docker rebuild (and vice versa).
 
 services:
   - type: web
@@ -8,6 +14,25 @@ services:
     dockerfilePath: ./Dockerfile
     dockerContext: .
     plan: free
+    healthCheckPath: /health
+    buildFilter:
+      paths:
+        - Dockerfile
+        - .dockerignore
+        - environment.yml
+        - requirements.txt
+        - api/**
+        - assessment/**
+        - crop_analysis/**
+        - data_acquisition/**
+        - ai_integration/**
+        - utils/**
+        - models/**
+        - main.py
+        - config.py
+        - mongodb_helper.py
+        - worker.py
+        - render.yaml
     envVars:
       - key: MONGODB_URI
         sync: false
@@ -21,3 +46,29 @@ services:
         value: "*"
       # - key: API_SERVICE_KEY
       #   sync: false
+
+  - type: web
+    name: agri-credit-frontend
+    runtime: node
+    rootDir: frontend
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    buildFilter:
+      paths:
+        - frontend/**
+        - render.yaml
+    envVars:
+      - key: NODE_VERSION
+        value: 20.11.0
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        value: agristack
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: NEXT_PUBLIC_APP_DOMAIN
+        sync: false
+      # Point at the API service URL after both are live, e.g. https://agri-credit-pipeline-api.onrender.com
+      - key: PIPELINE_API_URL
+        sync: false
