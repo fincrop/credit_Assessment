@@ -1,6 +1,8 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
-interface TokenState {
+export const TOKEN_STORAGE_KEY = 'agristack_token';
+
+export interface TokenState {
     accessToken: string | null;
     tokenType: string | null;
     expiresIn: number | null;
