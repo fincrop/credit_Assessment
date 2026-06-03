@@ -58,6 +58,82 @@ export default function AgristackPage() {
     }
   }, [activeEndpoint, accessToken]);
 
+  // Direct browser call to AgriStack (bypasses Render IP block)
+  const callAgriStackDirect = async (endpoint: string, body: any, customHeaders: Record<string, string>) => {
+    const startTime = Date.now();
+    
+    // Update sender_uri to use the deployed frontend URL
+    if (body?.header) {
+      const baseUrl = typeof window !== 'undefined' 
+        ? `${window.location.protocol}//${window.location.host}`
+        : process.env.NEXT_PUBLIC_APP_DOMAIN || 'http://localhost:3000';
+      
+      // Update sender_uri based on endpoint type
+      if (endpoint === 'krishi-dss-seek') {
+        body.header.sender_uri = `${baseUrl}/webhook/kdss/on-seek`;
+      } else if (endpoint === 'farmer-land-id' || endpoint === 'seek') {
+        body.header.sender_uri = `${baseUrl}/webhook/farmers/on-seek`;
+      } else {
+        body.header.sender_uri = `${baseUrl}/webhook/on-seek`;
+      }
+    }
+
+    try {
+      let res: Response;
+      
+      if (activeEndpoint === 'token') {
+        // Token endpoint uses form-urlencoded
+        const formData = new URLSearchParams();
+        Object.entries(body).forEach(([key, value]) => {
+          formData.append(key, String(value));
+        });
+        
+        res = await fetch(currentEndpoint.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: formData,
+        });
+      } else {
+        // All other endpoints use JSON
+        res = await fetch(currentEndpoint.url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...customHeaders,
+          },
+          body: JSON.stringify(body),
+        });
+      }
+
+      const responseTime = Date.now() - startTime;
+      const responseText = await res.text();
+      
+      let data: any;
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        data = responseText;
+      }
+
+      return {
+        success: res.ok,
+        data: data,
+        statusCode: res.status,
+        responseTime,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          code: 0,
+          message: error instanceof Error ? error.message : 'Network error - CORS may be blocking the request',
+        },
+        statusCode: 0,
+        responseTime: Date.now() - startTime,
+      };
+    }
+  };
+
   const handleRun = async () => {
     setIsLoading(true);
     setResponse(null);
@@ -94,13 +170,8 @@ export default function AgristackPage() {
             }
           }
           try {
-            const res = await fetch(currentConfig.apiRoute, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-Custom-Headers': JSON.stringify(parsedHeaders) },
-              body: JSON.stringify(parsedBody),
-            });
-            const data = await res.json();
-            results.push({ farmer_id: id, status: res.status, response: data });
+            const result = await callAgriStackDirect(activeEndpoint, parsedBody, parsedHeaders);
+            results.push({ farmer_id: id, status: result.statusCode, response: result.data, ...result });
           } catch (err) {
             results.push({ farmer_id: id, status: 500, error: err instanceof Error ? err.message : 'Unknown error' });
           }
@@ -123,20 +194,17 @@ export default function AgristackPage() {
           }
           setRequestBody(JSON.stringify(parsedBody, null, 2));
         }
-        const res = await fetch(currentConfig.apiRoute, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Custom-Headers': JSON.stringify(parsedHeaders) },
-          body: JSON.stringify(parsedBody),
-        });
-        const data = await res.json();
-        setResponse(data);
-        if (activeEndpoint === 'token' && data.success && data.data?.access_token) {
+        
+        const result = await callAgriStackDirect(activeEndpoint, parsedBody, parsedHeaders);
+        setResponse(result);
+        
+        if (activeEndpoint === 'token' && result.success && result.data?.access_token) {
           isTokenUpdate.current = true;
           dispatch(setToken({
-            access_token: data.data.access_token,
-            token_type: data.data.token_type,
-            expires_in: data.data.expires_in,
-            refresh_token: data.data.refresh_token,
+            access_token: result.data.access_token,
+            token_type: result.data.token_type,
+            expires_in: result.data.expires_in,
+            refresh_token: result.data.refresh_token,
           }));
         }
       }
@@ -183,6 +251,23 @@ export default function AgristackPage() {
           <div className="max-w-5xl mx-auto space-y-6">
             {activeTab === 'sandbox' ? (
               <>
+                {/* Browser Direct Call Notice */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div>
+                      <p className="text-sm font-medium text-blue-800">Direct Browser Calls Enabled</p>
+                      <p className="text-xs text-blue-600 mt-1">
+                        AgriStack API is now called directly from your browser (not through the server). 
+                        This bypasses cloud IP blocks and uses your residential IP instead. 
+                        If you get CORS errors, the API may require server-side calls only.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 {accessToken && (
                   <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 flex items-center gap-2">
                     <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
