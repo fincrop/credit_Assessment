@@ -3,15 +3,10 @@ Pipeline Configuration
 ======================
 Central configuration for the satellite-based credit assessment pipeline.
 
-VERSION 3.0 — Major Updates:
-- Seasons: Kharif + Rabi only (Summer removed, no overlaps)
-- Rabi extended Dec 1 – May 31 (captures late-harvest crops)
-- Analysis window: previous 10 seasons (not calendar years)
-- Scenes per season: 25 target / 30 max (was 18/24)
-- Cloud cover threshold: 60% (tightened from 80%)
-- Scene ordering: chronological always
-- Long-duration crop detection parameters added
-- Cross-season continuity detection parameters added
+Continuous v4 path (see docs/codebase/backend/):
+- Season windows: Kharif + Rabi (values below match SEASONS month/day fields)
+- Lookback snap anchors for continuous satellite window: 15 Jun / 15 Oct
+- Credit weights/limits below match AdvancedCreditScorer (live path)
 """
 
 
@@ -21,14 +16,11 @@ class PipelineConfig:
     # ========================================================================
     # SEASON DEFINITIONS  (2 seasons only — Kharif & Rabi)
     # ========================================================================
-    # Changes from v2:
-    #   - Summer season REMOVED (was Mar-Jul, heavily overlapped both seasons)
-    #   - Rabi START moved to Dec 1 (was Nov 1) → eliminates Nov overlap
-    #   - Rabi END extended to May 31 (was Apr 30) → captures late harvests
-    #     e.g. Potato sown Jan → harvest May; Onion sown Feb → harvest Jun
-    # Non-overlapping calendar:
-    #   Kharif:  Jun 1  → Nov 30   (183 days)
-    #   Rabi:    Dec 1  → May 31   (182 days)
+    # Calendar windows (used by seasonal helpers / crop lists):
+    #   Kharif:  15 May → 15 Oct
+    #   Rabi:    15 Oct → 15 May
+    # Continuous satellite lookback uses SEASON_SNAP_ANCHORS (15 Jun / 15 Oct),
+    # which are the agricultural sowing anchors — not identical to window starts.
     # ========================================================================
 
     SEASONS = {
@@ -37,7 +29,7 @@ class PipelineConfig:
             'start_day':   15,
             'end_month':   10,
             'end_day':     15,
-            'description': 'Monsoon season — Jun 1 to oct 30',
+            'description': 'Monsoon season — 15 May to 15 Oct',
             'primary_crops': [
                 'Rice', 'Cotton', 'Soyabean', 'Maize', 'Bajra',
                 'Jowar', 'Groundnut', 'Tur', 'Sugarcane', 'Banana',
@@ -49,13 +41,24 @@ class PipelineConfig:
             'start_day':   15,
             'end_month':   5,
             'end_day':     15,
-            'description': 'Winter/Spring season — Nov 1 to May 31',
+            'description': 'Winter/Spring season — 15 Oct to 15 May',
             'primary_crops': [
                 'Wheat', 'Gram', 'Mustard', 'Potato', 'Onion',
                 'Sunflower', 'Tobacco', 'Chilli', 'Cabbage', 'Grapes',
             ],
         },
     }
+
+    # Rolling continuous-window snap anchors (month, day) — Kharif then Rabi.
+    SEASON_SNAP_ANCHORS = (
+        (6, 15),   # Kharif sowing anchor
+        (10, 15),  # Rabi sowing anchor
+    )
+
+    # STAC / continuous cloud caps (%). Prefer these over ad-hoc literals.
+    MAX_CLOUD_COVER_KHARIF = 80.0      # Jun–Oct STAC day filter
+    MAX_CLOUD_COVER_RABI = 60.0        # Nov–May STAC day filter
+    MAX_CLOUD_COVER_CONTINUOUS = 70.0  # GEE continuous collection filter
 
     # ========================================================================
     # ANALYSIS WINDOW — 10 seasons
@@ -106,7 +109,7 @@ class PipelineConfig:
     MIN_SCENES_PER_SEASON       =  5   # minimum for valid analysis
     MIN_OBSERVATIONS_PER_SEASON =  5   # alias used in crop_detector
 
-    MAX_CLOUD_COVER       = 60.0   # % — tightened from 80 for NDVI accuracy
+    MAX_CLOUD_COVER       = 60.0   # legacy alias / docs; live caps: MAX_CLOUD_COVER_* above
     MIN_VALID_PIXEL_RATIO = 0.20   # minimum fraction of valid pixels per scene
 
     IDEAL_GAP_DAYS = 7    # ~1 scene/week
@@ -314,15 +317,17 @@ class PipelineConfig:
 
     # ========================================================================
     # CREDIT SCORING WEIGHTS  (must sum to 100)
+    # Source of truth for AdvancedCreditScorer rule_based path.
     # ========================================================================
 
     CREDIT_WEIGHTS = {
-        'crop_detection':    35,   # temporal pattern presence (was 40)
-        'crop_performance':  30,   # health score from NDVI curves
-        'yield_potential':   15,   # cumulative NDVI yield proxy
-        'cropping_intensity': 12,  # seasons utilised (was 10)
-        'weather_risk':       5,   # inverted risk score (was 3)
-        'govt_benefits':      3,   # PM-KISAN + insurance (was 2)
+        'crop_detection':     35,
+        'crop_performance':   25,
+        'yield_potential':    15,
+        'weather_safety':      8,
+        'anomaly_penalty':     7,
+        'cropping_intensity':  5,
+        'govt_benefits':       5,
     }
     assert sum(CREDIT_WEIGHTS.values()) == 100, "CREDIT_WEIGHTS must sum to 100"
 
@@ -337,16 +342,19 @@ class PipelineConfig:
         'VERY_HIGH': ( 0,  30),
     }
 
+    # Base ₹/ha used by AdvancedCreditScorer.calculate_credit_limit (score bands).
     CREDIT_LIMITS_PER_HA = {
-        'LOW':       80000,
-        'MEDIUM':    50000,
-        'HIGH':      30000,
-        'VERY_HIGH': 15000,
+        'LOW':         15000,  # score >= 80
+        'MEDIUM_LOW':  12000,  # score >= 70
+        'MEDIUM':      10000,  # score >= 60
+        'MEDIUM_HIGH':  7500,  # score >= 50
+        'HIGH':         5000,  # score >= 40
+        'VERY_HIGH':    3000,  # score < 40
     }
 
     INTEREST_RATES = {
-        'LOW':        7.0,
-        'MEDIUM':     9.5,
+        'LOW':        8.5,
+        'MEDIUM':     10.5,
         'HIGH':      12.0,
         'VERY_HIGH': 15.0,
     }
@@ -458,13 +466,13 @@ class PipelineConfig:
             "timeout":         30,
             "enabled":         bool(_os.environ.get("SARVAM_API_KEY")),
         },
-        # SHAP — Feature explainability (runs only with --explain flag)
+        # SHAP — rule-based attribution runs in enrich_assessment_with_ai when enabled
         "shap": {
             "enabled":                True,
             "top_n_features":         5,
-            "use_tree_explainer":     True,   # Fast for RF/XGBoost
+            "use_tree_explainer":     True,   # Used only if a model handle is passed
         },
-        # Counterfactual engine
+        # Counterfactual engine — runs in enrich_assessment_with_ai when enabled
         "counterfactual": {
             "enabled":        True,
             "max_scenarios":  3,

@@ -1,8 +1,24 @@
 import { SignJWT, jwtVerify } from 'jose';
 
-const SECRET = new TextEncoder().encode(
-    process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || 'fallback-secret'
-);
+function resolveAuthSecret(): Uint8Array {
+    const raw = (
+        process.env.AUTH_SECRET ||
+        process.env.NEXTAUTH_SECRET ||
+        ''
+    ).trim();
+    if (raw) {
+        return new TextEncoder().encode(raw);
+    }
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error(
+            'AUTH_SECRET (or NEXTAUTH_SECRET) must be set in production'
+        );
+    }
+    // Local/dev only — never used when NODE_ENV=production
+    return new TextEncoder().encode('dev-only-insecure-auth-secret');
+}
+
+const SECRET = resolveAuthSecret();
 
 export interface JWTPayload {
     id: string;

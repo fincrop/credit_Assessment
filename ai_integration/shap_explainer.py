@@ -21,21 +21,15 @@ import logging
 import numpy as np
 from typing import Dict, List, Optional
 
+from config import PipelineConfig
+
 logger = logging.getLogger(__name__)
 
 # Import check once per process — avoid WARNING spam when rule-based path is intended
 _SHAP_IMPORT_OK: Optional[bool] = None
 
-# Stage 6 component weights (must match AdvancedCreditScorer._WEIGHTS)
-_WEIGHTS = {
-    'crop_detection':    35,
-    'crop_performance':  25,
-    'yield_potential':   15,
-    'weather_safety':     8,
-    'anomaly_penalty':    7,
-    'cropping_intensity': 5,
-    'govt_benefits':      5,
-}
+# Source of truth: PipelineConfig.CREDIT_WEIGHTS (same as AdvancedCreditScorer)
+_WEIGHTS = dict(PipelineConfig.CREDIT_WEIGHTS)
 
 
 class SHAPExplainer:
@@ -143,6 +137,8 @@ class SHAPExplainer:
             v for v in ca.get('crops_detected', {}).keys()
             if v not in _unlabelled
         }
+
+        ci = float(ca.get('cropping_intensity', 0) or 0)
 
         return {
             'cropping_intensity_pct':    min(100.0, ci * 50.0),

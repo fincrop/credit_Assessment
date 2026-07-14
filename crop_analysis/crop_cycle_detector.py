@@ -192,14 +192,25 @@ class CropCycleDetector:
             ndmi_values:    NDMI per observation (optional; zeroed if absent).
             scenes:         Raw scene dicts for EVI/NDMI extraction (optional).
             grid_step_days: Uniform grid bin size in days (default 10).
-            sowing_date_hint, crop_hint, agro_profile: reserved for future anchoring;
-                accepted for API compatibility with the pipeline.
+            sowing_date_hint, crop_hint, agro_profile: accepted for pipeline API
+                compatibility but not yet applied to detection (logged if set).
 
         Returns:
             List[CropCycle] sorted chronologically.
         """
-        _ = (sowing_date_hint, crop_hint, agro_profile, kwargs)
-        self.last_detection_meta = {}
+        if sowing_date_hint or crop_hint or agro_profile:
+            logger.info(
+                "Cycle hints present but not yet applied "
+                "(sowing_date_hint=%r crop_hint=%r agro_profile=%s)",
+                sowing_date_hint,
+                crop_hint,
+                "set" if agro_profile else None,
+            )
+        _ = kwargs
+        self.last_detection_meta = {
+            'hints_received': bool(sowing_date_hint or crop_hint or agro_profile),
+            'hints_applied': False,
+        }
 
         if len(dates) < 10:
             logger.warning("Insufficient data: %d observations (need ≥ 10)", len(dates))

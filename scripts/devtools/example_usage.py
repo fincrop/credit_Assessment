@@ -223,7 +223,6 @@ def example_6_module_imports():
         ('crop_analysis.performance_analyzer', 'CropPerformanceAnalyzer'),
         ('crop_analysis.crop_cycle_detector', 'CropCycleDetector'),
         ('crop_analysis.land_utilization_analyzer', 'LandUtilizationAnalyzer'),
-        ('assessment.credit_scorer', 'CreditScorer'),
         ('assessment.advanced_credit_scorer', 'AdvancedCreditScorer'),
         ('assessment.unsupervised_segmentation', 'UnsupervisedFarmerSegmentation'),
     ]

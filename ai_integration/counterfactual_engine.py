@@ -23,16 +23,8 @@ from config import PipelineConfig
 
 logger = logging.getLogger(__name__)
 
-# Must match AdvancedCreditScorer._WEIGHTS  (Stage 6)
-_WEIGHTS = {
-    'crop_detection':    35,
-    'crop_performance':  25,
-    'yield_potential':   15,
-    'weather_safety':     8,
-    'anomaly_penalty':    7,
-    'cropping_intensity': 5,
-    'govt_benefits':      5,
-}
+# Source of truth: PipelineConfig.CREDIT_WEIGHTS (same as AdvancedCreditScorer)
+_WEIGHTS = dict(PipelineConfig.CREDIT_WEIGHTS)
 
 
 class CounterfactualEngine:

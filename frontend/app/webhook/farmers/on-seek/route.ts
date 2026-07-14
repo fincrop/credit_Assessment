@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../lib/mongodb';
+import { assertWebhookAuthorized } from '../../../lib/webhookAuth';
 
 export async function POST(request: NextRequest) {
     try {
+        const denied = assertWebhookAuthorized(request);
+        if (denied) return denied;
+
         const rawBody = await request.text();
         let parsedBody: Record<string, unknown>;
 
@@ -12,7 +16,6 @@ export async function POST(request: NextRequest) {
             parsedBody = { raw: rawBody };
         }
 
-        // Save to MongoDB
         const { db } = await connectToDatabase();
         const collection = db.collection('webhook_farmers_responses');
 
@@ -46,7 +49,6 @@ export async function POST(request: NextRequest) {
     }
 }
 
-// Also handle GET for health check
 export async function GET() {
     return NextResponse.json({
         status: 'active',

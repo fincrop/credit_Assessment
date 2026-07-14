@@ -476,8 +476,12 @@ class SatelliteBasedCreditPipeline:
             )
 
             satellite_data = None
-            # Temporarily bypass cache to test improved year-by-year download
-            force_fresh_download = True  # Set to False after testing
+            # Opt-in bypass: SATELLITE_FORCE_FRESH=1|true|yes skips cache reads.
+            force_fresh_download = os.environ.get(
+                "SATELLITE_FORCE_FRESH", ""
+            ).strip().lower() in ("1", "true", "yes")
+            if force_fresh_download:
+                logger.info("STEP 1: SATELLITE_FORCE_FRESH set — skipping cache read")
             if not force_fresh_download and self.use_mongodb and self.db:
                 satellite_data = self.db.get_satellite_stats_cache(cache_key)
                 if satellite_data:

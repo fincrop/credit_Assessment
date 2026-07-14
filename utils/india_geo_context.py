@@ -85,20 +85,47 @@ def infer_agro_ecoregion(
 
 
 def _hint_from_state_lgd(code: Optional[str]) -> Dict[str, Any]:
-    """Agristack / LGD hints (string codes as received from APIs)."""
+    """Agristack / LGD state-code hints → preferred eco-region label."""
     if code is None or str(code).strip() == "":
         return {}
 
     sc = str(code).strip()
 
-    if sc == "9":  # commonly Uttar Pradesh in Agristack examples
+    # Official LGD state codes → coarse eco labels used by _PROFILE_ECO.
+    # Bbox inference still wins when lat/lon fall in a more specific rect.
+    _STATE_LGD_TO_ECO: Dict[str, Tuple[str, str]] = {
+        # (preferred_label, district_note)
+        "2":  ("NORTH_WEST_SEMI_ARID", "Himachal Pradesh"),
+        "3":  ("GANGETIC_AND_EASTERN_PLAINS", "Punjab"),
+        "5":  ("GANGETIC_AND_EASTERN_PLAINS", "Uttarakhand"),
+        "6":  ("GANGETIC_AND_EASTERN_PLAINS", "Haryana"),
+        "7":  ("GANGETIC_AND_EASTERN_PLAINS", "Delhi"),
+        "8":  ("NORTH_WEST_SEMI_ARID", "Rajasthan"),
+        "9":  ("GANGETIC_AND_EASTERN_PLAINS", "Uttar Pradesh"),
+        "10": ("GANGETIC_AND_EASTERN_PLAINS", "Bihar"),
+        "18": ("GANGETIC_AND_EASTERN_PLAINS", "Assam"),
+        "19": ("GANGETIC_AND_EASTERN_PLAINS", "West Bengal"),
+        "20": ("GANGETIC_AND_EASTERN_PLAINS", "Jharkhand"),
+        "21": ("GANGETIC_AND_EASTERN_PLAINS", "Odisha"),
+        "22": ("CENTRAL_HIGHLAND_MIXED", "Chhattisgarh"),
+        "23": ("CENTRAL_HIGHLAND_MIXED", "Madhya Pradesh"),
+        "24": ("NORTH_WEST_SEMI_ARID", "Gujarat"),
+        "27": ("DECCAN_PLATEAU", "Maharashtra"),
+        "28": ("SOUTHERN_PENINSULA", "Andhra Pradesh"),
+        "29": ("SOUTHERN_PENINSULA", "Karnataka"),
+        "32": ("SOUTHERN_PENINSULA", "Kerala"),
+        "33": ("SOUTHERN_PENINSULA", "Tamil Nadu"),
+        "36": ("SOUTHERN_PENINSULA", "Telangana"),
+    }
+
+    mapped = _STATE_LGD_TO_ECO.get(sc)
+    if mapped:
+        label, note = mapped
         return {
             "state_code": sc,
-            "district_note": "LGD Uttar Pradesh hint",
-            "preferred_label": "GANGETIC_AND_EASTERN_PLAINS",
+            "district_note": f"LGD {note} hint",
+            "preferred_label": label,
         }
-
-    # Extend with more official LGD mappings as registry stabilises.
 
     return {"state_code": sc}
 

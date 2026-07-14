@@ -51,17 +51,9 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# WEIGHT TABLE  (rule_based scoring)
+# WEIGHT TABLE  (rule_based scoring) — kept in PipelineConfig.CREDIT_WEIGHTS
 # ============================================================================
-_WEIGHTS = {
-    'crop_detection':    35,
-    'crop_performance':  25,
-    'yield_potential':   15,
-    'weather_safety':     8,
-    'anomaly_penalty':    7,
-    'cropping_intensity': 5,
-    'govt_benefits':      5,
-}
+_WEIGHTS = dict(PipelineConfig.CREDIT_WEIGHTS)
 assert sum(_WEIGHTS.values()) == 100, "Weights must sum to 100"
 
 
@@ -156,13 +148,14 @@ class AdvancedCreditScorer:
 
         Integrates Stage 5 data: if active cycle present, flag as pending harvest.
         """
-        # Map score to base limit per hectare
-        if   credit_score >= 80: base_per_ha, risk_level = 15000, 'LOW'
-        elif credit_score >= 70: base_per_ha, risk_level = 12000, 'MEDIUM_LOW'
-        elif credit_score >= 60: base_per_ha, risk_level = 10000, 'MEDIUM'
-        elif credit_score >= 50: base_per_ha, risk_level =  7500, 'MEDIUM_HIGH'
-        elif credit_score >= 40: base_per_ha, risk_level =  5000, 'HIGH'
-        else:                    base_per_ha, risk_level =  3000, 'VERY_HIGH'
+        # Map score to base limit per hectare (PipelineConfig.CREDIT_LIMITS_PER_HA)
+        limits = PipelineConfig.CREDIT_LIMITS_PER_HA
+        if   credit_score >= 80: base_per_ha, risk_level = limits['LOW'], 'LOW'
+        elif credit_score >= 70: base_per_ha, risk_level = limits['MEDIUM_LOW'], 'MEDIUM_LOW'
+        elif credit_score >= 60: base_per_ha, risk_level = limits['MEDIUM'], 'MEDIUM'
+        elif credit_score >= 50: base_per_ha, risk_level = limits['MEDIUM_HIGH'], 'MEDIUM_HIGH'
+        elif credit_score >= 40: base_per_ha, risk_level = limits['HIGH'], 'HIGH'
+        else:                    base_per_ha, risk_level = limits['VERY_HIGH'], 'VERY_HIGH'
 
         # Intensity multiplier (cycles/year scale)
         ci = cropping_analysis.get('cropping_intensity', 1.0)
