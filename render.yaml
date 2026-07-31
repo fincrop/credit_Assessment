@@ -2,7 +2,7 @@
 # Set MONGODB_URI (and optional API_SERVICE_KEY) in the dashboard — do not commit secrets.
 #
 # Two services from one repo:
-#   - agri-credit-pipeline-api  (Docker / FastAPI)
+#   - agri-credit-pipeline-api  (Docker / FastAPI under backend/Credit_assessment)
 #   - agri-credit-frontend      (Node / Next.js in frontend/)
 #
 # buildFilter limits redeploys: frontend-only pushes skip the API Docker rebuild (and vice versa).
@@ -11,27 +11,13 @@ services:
   - type: web
     name: agri-credit-pipeline-api
     runtime: docker
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
+    dockerfilePath: ./backend/Credit_assessment/Dockerfile
+    dockerContext: ./backend/Credit_assessment
     plan: free
     healthCheckPath: /health
     buildFilter:
       paths:
-        - Dockerfile
-        - .dockerignore
-        - environment.yml
-        - requirements.txt
-        - api/**
-        - assessment/**
-        - crop_analysis/**
-        - data_acquisition/**
-        - ai_integration/**
-        - utils/**
-        - models/**
-        - main.py
-        - config.py
-        - mongodb_helper.py
-        - worker.py
+        - backend/Credit_assessment/**
         - render.yaml
     envVars:
       - key: MONGODB_URI

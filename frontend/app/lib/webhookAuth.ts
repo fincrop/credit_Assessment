@@ -1,17 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * Optional shared-secret gate for AgriStack webhook POSTs.
- * When WEBHOOK_SECRET is unset, requests are allowed (local/dev).
- * When set, require header `x-webhook-secret: <secret>` (or Bearer token).
+ * Shared-secret gate for AgriStack webhook POSTs.
+ * - Production: WEBHOOK_SECRET is mandatory; missing secret → 401.
+ * - Non-production: if unset, requests are allowed (local/dev convenience).
+ * On failure returns 401 with an empty body (no leakage).
  */
 export function assertWebhookAuthorized(
   request: NextRequest
 ): NextResponse | null {
   const expected = (process.env.WEBHOOK_SECRET || '').trim();
+  const isProd = process.env.NODE_ENV === 'production';
+
   if (!expected) {
+    if (isProd) {
+      return new NextResponse(null, { status: 401 });
+    }
     return null;
   }
+
   const header =
     request.headers.get('x-webhook-secret') ||
     request.headers.get('X-Webhook-Secret') ||
@@ -21,8 +28,9 @@ export function assertWebhookAuthorized(
     ? auth.slice(7).trim()
     : '';
   const provided = header.trim() || bearer;
+
   if (provided && provided === expected) {
     return null;
   }
-  return NextResponse.json({ error: 'Unauthorized webhook' }, { status: 401 });
+  return new NextResponse(null, { status: 401 });
 }

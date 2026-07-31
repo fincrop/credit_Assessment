@@ -1,0 +1,471 @@
+"""
+Risk Index Engine (Pillar 5)
+============================
+Composes the pipeline's agronomic signals into an explainable, expert-weighted
+AGRONOMIC RISK INDEX (0-100). This REPLACES the loan-amount credit scorer:
+
+  * NO rupee limit / repayment calibration (that is a later phase; hooks reserved).
+  * FIVE decoupled sub-indices (so each can be validated/recalibrated alone):
+        1. Land-Use & Activity     (Capacity)
+        2. Vigor & Yield-Potential (Capacity / Character)
+        3. Stability & Stress      (Character)
+        4. Weather                 (Conditions)
+        5. Data-Confidence         (meta -> multiplicative GATE, not additive)
+  * AHP-style additive weights over sub-indices 1-4; Data-Confidence gates the
+    result in [gate_min, 1.0] so a cloud-blind / thin-history parcel is never
+    silently scored as if it were fully observed.
+  * Tri-state government benefits: a POSITIVE-only bonus. Unknown NEVER penalises
+    (fixes the worker-path unknown->False collapse from a scoring standpoint).
+  * Deterministic reason codes + a calibration/versioning block for the future
+    validation & performance-feedback layer.
+
+Input contract: the accumulated `assessment` dict produced by the pipeline
+(cropping_analysis, performance_analysis, weather_analysis, farmer_benefits,
+field_area_ha, and the Pillar-1 satellite signal-quality summary). All reads are
+defensive with safe defaults, so partial assessments degrade gracefully.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+
+from config import PipelineConfig
+
+try:
+    from utils.farmer_benefits import normalize_farmer_benefits, truthy_benefit_flag
+    _BENEFITS_HELPERS = True
+except Exception:  # pragma: no cover
+    _BENEFITS_HELPERS = False
+
+logger = logging.getLogger(__name__)
+
+INDEX_VERSION = "index_v5"
+
+# Default AHP-style sub-index weights (sum to 100 over the 4 substantive
+# sub-indices; Data-Confidence is a multiplier, not a weight). Overridable via
+# PipelineConfig.SUBINDEX_WEIGHTS after expert AHP elicitation.
+_DEFAULT_WEIGHTS = {"landuse": 30.0, "vigor": 25.0, "stability": 20.0, "weather": 25.0}
+
+
+def _clip(x: float, lo: float = 0.0, hi: float = 100.0) -> float:
+    return float(max(lo, min(hi, x)))
+
+
+class RiskIndexEngine:
+    """Expert-weighted, explainable agronomic risk index."""
+
+    def __init__(
+        self,
+        weights: Optional[Dict[str, float]] = None,
+        peer_benchmark: Any = None,
+        verbose: bool = True,
+    ):
+        cfg_w = getattr(PipelineConfig, "SUBINDEX_WEIGHTS", None)
+        self.weights = dict(weights or cfg_w or _DEFAULT_WEIGHTS)
+        # Renormalise defensively to sum 100.
+        s = sum(self.weights.values()) or 1.0
+        self.weights = {k: round(v * 100.0 / s, 3) for k, v in self.weights.items()}
+        self.peer = peer_benchmark
+        self.verbose = verbose
+
+    # ------------------------------------------------------------------ #
+    # PUBLIC API
+    # ------------------------------------------------------------------ #
+    def score(self, assessment: Dict, cohort_key: Optional[str] = None) -> Dict:
+        ca = assessment.get("cropping_analysis", {}) or {}
+        pa = assessment.get("performance_analysis", {}) or {}
+        wa = assessment.get("weather_analysis", {}) or {}
+
+        lu = self._sub_landuse(ca, pa)
+        vg = self._sub_vigor(pa)
+        st = self._sub_stability(pa)
+        wx = self._sub_weather(wa)
+        dc = self._sub_data_confidence(assessment, ca, pa, wa)
+
+        # Additive weighted composite over the 4 substantive sub-indices.
+        w = self.weights
+        additive = (
+            lu["score"] * w.get("landuse", 0) / 100.0
+            + vg["score"] * w.get("vigor", 0) / 100.0
+            + st["score"] * w.get("stability", 0) / 100.0
+            + wx["score"] * w.get("weather", 0) / 100.0
+        )
+
+        # Tri-state benefits: positive-only bonus (unknown never penalises).
+        benefits = self._benefits_bonus(assessment.get("farmer_benefits"))
+        raw_index = _clip(additive + benefits["bonus"])
+
+        # Data-Confidence GATE (multiplicative).
+        gate = dc["gate"]
+        index_score = round(_clip(raw_index * gate), 1)
+
+        risk_category = self._classify(index_score)
+        sub = {"landuse": lu, "vigor": vg, "stability": st,
+               "weather": wx, "data_confidence": dc}
+        weak = [k for k in ("landuse", "vigor", "stability", "weather")
+                if sub[k]["score"] < 50.0]
+        reason_codes = self._reason_codes(sub, benefits, gate)
+
+        if self.verbose:
+            logger.info("=" * 60)
+            logger.info("AGRONOMIC RISK INDEX (%s)", INDEX_VERSION)
+            for k in ("landuse", "vigor", "stability", "weather"):
+                logger.info("  %-10s %5.1f/100 @ %s%%", k, sub[k]["score"], w.get(k))
+            logger.info("  data_confidence %.1f -> gate x%.3f", dc["score"], gate)
+            logger.info("  benefits bonus +%.1f", benefits["bonus"])
+            logger.info("  >> raw %.1f  x gate %.3f = INDEX %.1f (%s)",
+                        raw_index, gate, index_score, risk_category)
+
+        return {
+            "index_version": INDEX_VERSION,
+            "method": "risk_index_v5_rule_based",
+            "index_score": index_score,          # 0-100 agronomic risk index
+            "raw_index": round(raw_index, 1),     # before confidence gate
+            "risk_category": risk_category,
+            "sub_indices": sub,
+            "weights": w,
+            "confidence_gate": round(gate, 3),
+            "benefits": benefits,
+            "weak_sub_indices": weak,
+            "reason_codes": reason_codes,
+            # Explicitly NOT a loan amount / repayment-calibrated score.
+            "positioning": "agronomic_risk_index",
+            "no_repayment_calibration": True,
+            "calibration": {
+                "index_version": INDEX_VERSION,
+                "weights": w,
+                "confidence_gate": round(gate, 3),
+                "cohort_key": cohort_key,
+                "subindex_inputs": {k: sub[k].get("inputs", {}) for k in sub},
+                # Reserved for the future validation / feedback layer (Phase 2):
+                "outcome_label": None,
+                "pd_estimate": None,
+                "calibration_version": None,
+            },
+            "assessment_date": datetime.now().isoformat(),
+        }
+
+    # ------------------------------------------------------------------ #
+    # SUB-INDEX 1 — LAND-USE & ACTIVITY  (Capacity)
+    # ------------------------------------------------------------------ #
+    def _sub_landuse(self, ca: Dict, pa: Dict) -> Dict:
+        sp = pa.get("seasonal_performance", []) or []
+        n_complete = int(pa.get("n_complete_cycles", 0) or
+                         len([p for p in sp if not p.get("is_active_cycle")]))
+        years = float(ca.get("lookback_years", ca.get("years_analyzed", 3)) or 3)
+        cpi = n_complete / max(years, 1e-6)   # cycles per year
+
+        # Cropping intensity (0-100)
+        if cpi >= 2.0:
+            intensity = 100.0
+        elif cpi >= 1.5:
+            intensity = 80.0 + (cpi - 1.5) / 0.5 * 20.0
+        elif cpi >= 1.0:
+            intensity = 60.0 + (cpi - 1.0) / 0.5 * 20.0
+        elif cpi >= 0.5:
+            intensity = 35.0 + (cpi - 0.5) / 0.5 * 25.0
+        else:
+            intensity = _clip(cpi / 0.5 * 35.0)
+
+        # Season coverage / continuity
+        total_seasons = max(float(ca.get("total_seasons_analyzed", 0) or 0), 0)
+        seasons_with = float(ca.get("seasons_with_crops", 0) or 0)
+        seasons_with = max(seasons_with, float(len(sp)))
+        coverage = _clip((seasons_with / total_seasons) * 100.0) if total_seasons > 0 else _clip(min(1.0, cpi / 1.5) * 100.0)
+
+        # Fallow penalty (explicit if provided by land-utilization)
+        fallow_frac = float(ca.get("fallow_fraction", 0.0) or 0.0)
+        fallow_penalty = _clip(fallow_frac * 100.0, 0, 40)
+
+        score = _clip(0.55 * intensity + 0.30 * coverage + 0.15 * (100.0 - fallow_penalty))
+        return {
+            "score": round(score, 1),
+            "inputs": {"n_complete_cycles": n_complete, "years": years,
+                       "cycles_per_year": round(cpi, 2),
+                       "season_coverage": round(coverage, 1),
+                       "fallow_fraction": round(fallow_frac, 3)},
+            "drivers": {"intensity": round(intensity, 1), "coverage": round(coverage, 1)},
+        }
+
+    # ------------------------------------------------------------------ #
+    # SUB-INDEX 2 — VIGOR & YIELD-POTENTIAL  (Capacity / Character)
+    # ------------------------------------------------------------------ #
+    def _sub_vigor(self, pa: Dict) -> Dict:
+        sp = pa.get("seasonal_performance", []) or []
+        yields = [float(p.get("yield_potential_score")) for p in sp
+                  if p.get("yield_potential_score") is not None]
+        peaks = []
+        for p in sp:
+            yd = p.get("yield_detail", {}) or {}
+            pk = yd.get("peak_cvi")
+            if pk is not None:
+                peaks.append(float(pk))
+        mean_yield = float(np.mean(yields)) if yields else float(pa.get("average_yield_score", 50.0))
+        peak_score = _clip(float(np.mean(peaks)) / 0.75 * 100.0) if peaks else mean_yield
+        score = _clip(0.70 * mean_yield + 0.30 * peak_score)
+        return {
+            "score": round(score, 1),
+            "inputs": {"mean_yield_potential": round(mean_yield, 1),
+                       "mean_peak_cvi": round(float(np.mean(peaks)), 3) if peaks else None,
+                       "n_cycles_scored": len(yields)},
+            "drivers": {"yield_potential": round(mean_yield, 1), "peak_quality": round(peak_score, 1)},
+        }
+
+    # ------------------------------------------------------------------ #
+    # SUB-INDEX 3 — STABILITY & STRESS  (Character)
+    # ------------------------------------------------------------------ #
+    def _sub_stability(self, pa: Dict) -> Dict:
+        sp = pa.get("seasonal_performance", []) or []
+        P = PipelineConfig
+        ph = float(getattr(P, "CREDIT_ANOMALY_PENALTY_HIGH", 1.8))
+        pm = float(getattr(P, "CREDIT_ANOMALY_PENALTY_MEDIUM", 0.55))
+        pl = float(getattr(P, "CREDIT_ANOMALY_PENALTY_LOW", 0.15))
+        pcap = float(getattr(P, "CREDIT_ANOMALY_PENALTY_MAX", 16.0))
+
+        seen = set()
+        n_h = n_m = n_l = 0
+        for p in sp:
+            season = p.get("season", "")
+            n_scenes = int(p.get("n_scenes", 0) or 0)
+            for e in p.get("anomaly_events", []) or []:
+                key = (season, e.get("type"), e.get("date"), e.get("scene_index"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                imp = e.get("impact", "LOW")
+                if n_scenes < 6 and imp == "LOW":
+                    continue
+                if imp == "HIGH":
+                    n_h += 1
+                elif imp == "MEDIUM":
+                    n_m += 1
+                else:
+                    n_l += 1
+        n_seasons = max(1, len(sp))
+        raw_pen = n_h * ph + n_m * pm + n_l * pl
+        penalty = min(pcap, raw_pen / np.sqrt(n_seasons))
+        anomaly_free = _clip(100.0 - penalty)
+
+        # Inter-year variability of vigor (lower CV = more stable).
+        vig = [float(p.get("yield_potential_score")) for p in sp
+               if p.get("yield_potential_score") is not None]
+        if len(vig) >= 2 and np.mean(vig) > 0:
+            cv = float(np.std(vig) / np.mean(vig))
+            stability_cv = _clip(100.0 - cv * 200.0)  # cv 0->100, cv 0.5->0
+        else:
+            stability_cv = 60.0  # neutral when too few cycles
+
+        score = _clip(0.6 * anomaly_free + 0.4 * stability_cv)
+        return {
+            "score": round(score, 1),
+            "inputs": {"anomalies_high": n_h, "anomalies_medium": n_m, "anomalies_low": n_l,
+                       "anomaly_penalty": round(penalty, 2),
+                       "vigor_cv": round(cv, 3) if len(vig) >= 2 and np.mean(vig) > 0 else None},
+            "drivers": {"anomaly_free": round(anomaly_free, 1), "consistency": round(stability_cv, 1)},
+        }
+
+    # ------------------------------------------------------------------ #
+    # SUB-INDEX 4 — WEATHER  (Conditions; two-directional)
+    # ------------------------------------------------------------------ #
+    def _sub_weather(self, wa: Dict) -> Dict:
+        risk = float(wa.get("weather_risk_score", 50.0))
+        risk_safety = _clip(100.0 - risk)
+
+        exp = (wa.get("forward_exposure") or {}).get("exposure_score")
+        exposure_safety = _clip(100.0 - float(exp)) if exp is not None else None
+
+        br = wa.get("backward_resilience") or {}
+        resilience = br.get("mean_resilience_score")
+
+        if resilience is not None and exposure_safety is not None:
+            score = 0.40 * float(resilience) + 0.30 * exposure_safety + 0.30 * risk_safety
+            basis = "resilience+exposure+risk"
+        elif exposure_safety is not None:
+            score = 0.5 * exposure_safety + 0.5 * risk_safety
+            basis = "exposure+risk"
+        else:
+            score = risk_safety
+            basis = "risk_only"
+        return {
+            "score": round(_clip(score), 1),
+            "inputs": {"weather_risk_score": round(risk, 1),
+                       "forward_exposure": exp,
+                       "backward_resilience": resilience,
+                       "basis": basis},
+            "drivers": {"resilience": resilience, "exposure_safety": exposure_safety,
+                        "risk_safety": round(risk_safety, 1)},
+        }
+
+    # ------------------------------------------------------------------ #
+    # SUB-INDEX 5 — DATA-CONFIDENCE  (meta -> multiplicative gate)
+    # ------------------------------------------------------------------ #
+    def _sub_data_confidence(self, assessment: Dict, ca: Dict, pa: Dict, wa: Dict) -> Dict:
+        sq = self._signal_quality(assessment)
+        valid_frac = float(sq.get("valid_fraction", 0.8))
+        mean_q = float(sq.get("mean_bin_quality", valid_frac))
+        sar_fallback = float(sq.get("sar_fallback_fraction", 0.0))
+
+        sp = pa.get("seasonal_performance", []) or []
+        n_cycles = len(sp)
+        history_conf = _clip(min(1.0, n_cycles / 4.0) * 100.0)  # ~4 cycles = full
+
+        weather_ok = 100.0 if wa.get("weather_indicators_present") or wa.get("seasonal_weather") else 60.0
+
+        # SAR fallback is *good* (it filled gaps) up to a point; very heavy
+        # reliance means less optical certainty -> mild discount.
+        sar_discount = _clip(max(0.0, sar_fallback - 0.5) * 60.0, 0, 30)
+
+        obs_conf = _clip(100.0 * (0.6 * valid_frac + 0.4 * mean_q) - sar_discount)
+        score = _clip(0.55 * obs_conf + 0.30 * history_conf + 0.15 * weather_ok)
+
+        gate_min = float(getattr(PipelineConfig, "CONFIDENCE_GATE_MIN", 0.60))
+        gate = round(gate_min + (1.0 - gate_min) * (score / 100.0), 3)
+        return {
+            "score": round(score, 1),
+            "gate": float(max(gate_min, min(1.0, gate))),
+            "inputs": {"valid_fraction": round(valid_frac, 3),
+                       "mean_bin_quality": round(mean_q, 3),
+                       "sar_fallback_fraction": round(sar_fallback, 3),
+                       "n_cycles": n_cycles},
+            "drivers": {"observation": round(obs_conf, 1), "history": round(history_conf, 1)},
+        }
+
+    @staticmethod
+    def _signal_quality(assessment: Dict) -> Dict:
+        """Find the Pillar-1 signal_quality_summary wherever it was stashed."""
+        for path in (
+            ("satellite_data", "continuous_data", "signal_quality_summary"),
+            ("satellite_data", "signal_quality_summary"),
+            ("continuous_data", "signal_quality_summary"),
+            ("signal_quality_summary",),
+        ):
+            node: Any = assessment
+            ok = True
+            for k in path:
+                if isinstance(node, dict) and k in node:
+                    node = node[k]
+                else:
+                    ok = False
+                    break
+            if ok and isinstance(node, dict):
+                return node
+        return {}
+
+    # ------------------------------------------------------------------ #
+    # Tri-state benefits (positive-only bonus)
+    # ------------------------------------------------------------------ #
+    def _benefits_bonus(self, raw_fb: Any) -> Dict:
+        per = float(getattr(PipelineConfig, "BENEFITS_BONUS_PER_FLAG", 2.0))
+        cap = float(getattr(PipelineConfig, "BENEFITS_BONUS_MAX", 4.0))
+        # Read the RAW tri-state directly — do NOT run normalize_farmer_benefits
+        # here, since that coerces unknown (None) -> False and destroys the
+        # tri-state distinction we are preserving.
+        fb = raw_fb if isinstance(raw_fb, dict) else {}
+
+        def _is_true(v) -> bool:
+            if _BENEFITS_HELPERS:
+                try:
+                    return bool(truthy_benefit_flag(v))
+                except Exception:
+                    pass
+            return v is True
+
+        pm = fb.get("pm_kisan_enrolled")
+        ins = fb.get("has_crop_insurance")
+        bonus = 0.0
+        conferred = []
+        if _is_true(pm):
+            bonus += per
+            conferred.append("PM_KISAN")
+        if _is_true(ins):
+            bonus += per
+            conferred.append("CROP_INSURANCE")
+        bonus = min(cap, bonus)
+        return {
+            "bonus": round(bonus, 2),
+            "conferred": conferred,
+            "pm_kisan": pm,            # tri-state preserved (True/False/None)
+            "has_crop_insurance": ins,
+            "note": "positive-only; unknown/absent never penalises the index",
+        }
+
+    # ------------------------------------------------------------------ #
+    # Classification + reason codes
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _classify(score: float) -> str:
+        """
+        Map score -> risk category (higher score = lower risk). Tolerant of
+        config RISK_THRESHOLDS being either scalar cutoffs ({"LOW":70,...}) or
+        range tuples ({"LOW":(70,100),...}); falls back to a fixed ladder.
+        """
+        def _cut(v, default):
+            try:
+                if isinstance(v, (tuple, list)) and v:
+                    return float(min(v))   # lower bound of the band
+                return float(v)
+            except (TypeError, ValueError):
+                return float(default)
+
+        rt = getattr(PipelineConfig, "RISK_THRESHOLDS", None)
+        if isinstance(rt, dict) and rt:
+            low = _cut(rt.get("LOW"), 70)
+            med = _cut(rt.get("MEDIUM"), 50)
+            high = _cut(rt.get("HIGH"), 30)
+        else:
+            low, med, high = 70.0, 50.0, 30.0
+        if score >= low:
+            return "LOW"
+        if score >= med:
+            return "MEDIUM"
+        if score >= high:
+            return "HIGH"
+        return "VERY_HIGH"
+
+    def _reason_codes(self, sub: Dict, benefits: Dict, gate: float) -> List[Dict]:
+        codes: List[Dict] = []
+
+        def add(code: str, msg: str, polarity: str):
+            codes.append({"code": code, "message": msg, "polarity": polarity})
+
+        lu, vg, st, wx, dc = (sub["landuse"], sub["vigor"], sub["stability"],
+                              sub["weather"], sub["data_confidence"])
+
+        cpi = lu["inputs"].get("cycles_per_year", 0)
+        if lu["score"] >= 70:
+            add("LANDUSE_HIGH_INTENSITY", f"Consistent multi-cycle cultivation (~{cpi}/yr).", "positive")
+        elif lu["score"] < 50:
+            add("LANDUSE_LOW_ACTIVITY", f"Sparse/irregular cultivation (~{cpi}/yr).", "negative")
+
+        if vg["score"] >= 70:
+            add("VIGOR_STRONG", "Vegetation vigor / yield-potential above peers.", "positive")
+        elif vg["score"] < 50:
+            add("VIGOR_WEAK", "Below-par vigor / yield-potential.", "negative")
+
+        if st["score"] < 50:
+            add("STABILITY_STRESS", "Elevated stress anomalies / year-to-year variability.", "negative")
+        elif st["score"] >= 75:
+            add("STABILITY_STRONG", "Low stress load and consistent performance.", "positive")
+
+        res = wx["inputs"].get("backward_resilience")
+        if res is not None and res >= 70:
+            add("WEATHER_RESILIENT", "Vegetation held up under past adverse weather.", "positive")
+        if wx["score"] < 50:
+            add("WEATHER_EXPOSED", "High weather risk / exposure for the location.", "negative")
+
+        if gate < 0.85:
+            add("CONFIDENCE_REDUCED",
+                f"Score gated by data confidence (x{gate}) — cloud gaps / short history.",
+                "caveat")
+
+        if benefits["conferred"]:
+            add("BENEFITS_PRESENT", f"Govt-scheme enrolment: {', '.join(benefits['conferred'])}.", "positive")
+
+        return codes
+
+
+__all__ = ["RiskIndexEngine", "INDEX_VERSION"]

@@ -23,13 +23,24 @@ function pipelineApiKey(): string | undefined {
   return k || undefined;
 }
 
+/** Preserve tri-state: true | false | null. Do not coerce with !!. */
+function asTriState(v: unknown): boolean | null {
+  if (v === true || v === false) return v;
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { farmer_id, pm_kisan_enrolled, has_crop_insurance } = body;
+    const { farmer_id } = body;
+    const pm_kisan_enrolled = asTriState(body.pm_kisan_enrolled);
+    const has_crop_insurance = asTriState(body.has_crop_insurance);
 
-    if (!farmer_id) {
-      return NextResponse.json({ error: 'farmer_id is required' }, { status: 400 });
+    if (farmer_id == null || typeof farmer_id !== 'string' || !farmer_id.trim()) {
+      return NextResponse.json(
+        { error: 'farmer_id must be a non-empty string' },
+        { status: 400 }
+      );
     }
 
     const base = pipelineBaseUrl();
@@ -43,8 +54,8 @@ export async function POST(req: NextRequest) {
         headers,
         body: JSON.stringify({
           farmer_id: String(farmer_id).trim(),
-          pm_kisan_enrolled: !!pm_kisan_enrolled,
-          has_crop_insurance: !!has_crop_insurance,
+          pm_kisan_enrolled,
+          has_crop_insurance,
         }),
       });
 
@@ -81,8 +92,8 @@ export async function POST(req: NextRequest) {
 
     const jobDoc = {
       farmer_id,
-      pm_kisan_enrolled: !!pm_kisan_enrolled,
-      has_crop_insurance: !!has_crop_insurance,
+      pm_kisan_enrolled,
+      has_crop_insurance,
       status: 'QUEUED',
       created_at: new Date(),
       updated_at: new Date(),

@@ -63,7 +63,7 @@ export default function JsonEditor({ value, onChange, readOnly = false }: JsonEd
         <div className="bg-[#1e1e1e] rounded-lg overflow-hidden font-mono text-sm">
             <div className="flex">
                 {/* Line Numbers */}
-                <div className="bg-[#252526] text-gray-500 py-4 px-3 text-right select-none min-w-[50px] flex-shrink-0">
+                <div className="bg-[#252526] text-stone-500 py-4 px-3 text-right select-none min-w-[50px] flex-shrink-0">
                     {lines.map((_, index) => (
                         <div key={index} className="leading-6 h-6">
                             {index + 1}

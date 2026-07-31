@@ -9,7 +9,7 @@ This is the BFF (backend-for-frontend) layer keeping AgriStack credentials, Mong
 1. **Auth routes:** `/api/login` (bcrypt against `users`, sets 7-day `auth-token` cookie), `/api/logout`, `/api/me`.
 2. **AgriStack proxies:** `/api/token`, `/api/agristack`, `/api/krishi-dss-seek` — all server-side proxies keeping credentials off the browser for these specific calls.
 3. **Ingest:** `/api/ingest-farmer` parses AgriStack-shaped JSON, clusters parcels via `farmerParcelCluster`, upserts `farm_info`.
-4. **Enqueue dual path:** if `PIPELINE_API_URL`/`ASSESSMENT_API_URL` is set, POST to FastAPI's `/v1/jobs/assess` (optionally with an `X-API-Key`); otherwise insert directly into Mongo `jobs` as QUEUED and log that `worker.py` is required to ever process it.
+4. **Enqueue dual path:** if `PIPELINE_API_URL`/`ASSESSMENT_API_URL` is set, POST to FastAPI's `/v1/jobs/assess` on the Python service under `backend/Credit_assessment` (optionally with an `X-API-Key`); otherwise insert directly into Mongo `jobs` as QUEUED and log that `worker.py` (run from that package) is required to ever process it.
 5. **Status:** `/api/assess/status/[id]` always reads Mongo directly — never calls FastAPI — meaning Mongo is the sole source of truth for job state regardless of which enqueue path was used.
 6. **Cookies:** `httpOnly`, `sameSite: 'lax'`, `secure` only in production.
 

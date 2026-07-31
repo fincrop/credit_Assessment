@@ -3,22 +3,22 @@ import { formatNumber } from '../../lib/format';
 
 function StatCard({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="bg-[#0d1117] rounded-lg border border-[#30363d] p-3">
-      <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest mb-1.5">{label}</p>
-      <p className="font-semibold text-gray-200 text-sm">{value ?? '—'}</p>
+    <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-3">
+      <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-1.5">{label}</p>
+      <p className="font-semibold text-stone-800 text-sm">{value ?? '—'}</p>
     </div>
   );
 }
 
 function CropsList({ ca }: { ca: CroppingAnalysis }) {
   const raw = ca.crops_detected;
-  if (!raw) return <p className="text-sm text-gray-600">No crop list.</p>;
+  if (!raw) return <p className="text-sm text-stone-400">No crop list.</p>;
 
   if (Array.isArray(raw)) {
     return (
       <div className="flex flex-wrap gap-2">
         {(raw as string[]).map((c, i) => (
-          <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
+          <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-700">
             🌾 {c}
           </span>
         ))}
@@ -27,23 +27,23 @@ function CropsList({ ca }: { ca: CroppingAnalysis }) {
   }
 
   const entries = Object.entries(raw as Record<string, unknown>);
-  if (entries.length === 0) return <p className="text-sm text-gray-600">No crops detected.</p>;
+  if (entries.length === 0) return <p className="text-sm text-stone-400">No crops detected.</p>;
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-[#30363d]">
+    <div className="overflow-x-auto rounded-lg border border-[#E4DFD4]">
       <table className="w-full text-sm">
-        <thead className="bg-[#21262d]">
+        <thead className="bg-[#F5F2EB]">
           <tr>
             {['Crop', 'Detail'].map(h => (
-              <th key={h} className="text-left px-4 py-2.5 text-[11px] font-semibold text-gray-500 uppercase tracking-wide">{h}</th>
+              <th key={h} className="text-left px-4 py-2.5 text-[11px] font-semibold text-stone-500 uppercase tracking-wide">{h}</th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#30363d]">
+        <tbody className="divide-y divide-[#E4DFD4]">
           {entries.map(([name, val]) => (
-            <tr key={name} className="hover:bg-white/[0.02]">
-              <td className="px-4 py-3 font-semibold text-emerald-400">{name}</td>
-              <td className="px-4 py-3 font-mono text-[11px] text-gray-500 break-all">
+            <tr key={name} className="hover:bg-[#F5F2EB]/60">
+              <td className="px-4 py-3 font-semibold text-emerald-700">{name}</td>
+              <td className="px-4 py-3 font-mono text-[11px] text-stone-500 break-all">
                 {typeof val === 'object' ? JSON.stringify(val) : String(val)}
               </td>
             </tr>
@@ -67,8 +67,8 @@ function MiniSparkline({ label, values }: { label: string; values: number[] }) {
     .join(' ');
 
   return (
-    <div className="bg-[#0d1117] rounded-lg border border-[#30363d] p-3">
-      <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest mb-2">{label}</p>
+    <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-3">
+      <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-2">{label}</p>
       <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-12" preserveAspectRatio="none">
         <defs>
           <linearGradient id={`grad-${label}`} x1="0" y1="0" x2="0" y2="1">
@@ -91,16 +91,16 @@ export function CroppingSection({ data }: { data: AssessmentPayload }) {
 
   if (!ca && !stats) {
     return (
-      <div className="bg-[#161b22] rounded-xl border border-[#30363d] p-6">
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">Cropping &amp; Satellite Window</h2>
-        <p className="text-sm text-gray-600">No cropping analysis in this payload.</p>
+      <div className="bg-white rounded-xl border border-[#E4DFD4] p-6">
+        <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-2">Cropping &amp; Satellite Window</h2>
+        <p className="text-sm text-stone-400">No cropping analysis in this payload.</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-[#161b22] rounded-xl border border-[#30363d] p-6 space-y-5">
-      <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Cropping &amp; Satellite Window</h2>
+    <div className="bg-white rounded-xl border border-[#E4DFD4] p-6 space-y-5">
+      <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider">Cropping &amp; Satellite Window</h2>
 
       {/* Satellite stats */}
       {stats && (
@@ -131,13 +131,13 @@ export function CroppingSection({ data }: { data: AssessmentPayload }) {
           </div>
 
           <div>
-            <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wider mb-3">Crops Detected</p>
+            <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-3">Crops Detected</p>
             <CropsList ca={ca} />
           </div>
 
           {series.length > 2 && (
             <div>
-              <p className="text-[11px] font-semibold text-gray-600 uppercase tracking-wider mb-3">Vegetation Index Trends</p>
+              <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-3">Vegetation Index Trends</p>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {['ndvi', 'evi', 'ndmi'].map((key) => (
                   <MiniSparkline

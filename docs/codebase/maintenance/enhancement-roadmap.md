@@ -1,6 +1,6 @@
 # Enhancement Roadmap
 
-Aggregated from stage docs. Cleanup pass marked below; remaining items are the restructuring backlog.
+Aggregated from stage docs. Cleanup pass + 2026-07-14 enhancement wave marked below.
 
 ## Quick wins
 
@@ -12,29 +12,29 @@ Aggregated from stage docs. Cleanup pass marked below; remaining items are the r
 | Q4 | Align `PipelineConfig.CREDIT_*` with Advanced scorer | **Done** |
 | Q5 | `SEASON_SNAP_ANCHORS` + corrected season comments | **Done** |
 | Q6 | `.env.example`; prod requires `AUTH_SECRET` | **Done** |
-| Q7 | Rotate GEE key if ever pushed; use B64 env only | **Ops** (file gitignored/untracked) |
-| Q8 | Fix stale AI_CONFIG comments | **Done** (UI “yield proxy” rename still open) |
+| Q7 | Rotate GEE key if ever pushed; use B64 env only | **Ops** |
+| Q8 | Fix stale AI_CONFIG comments | **Done** |
 | Q9 | Rewrite README; point `DEPLOYMENT_AND_FRONTEND.md` at docs | **Done** |
-| Q10 | Job reaper for stuck `RUNNING` | Open |
+| Q10 | Job reaper for stuck `RUNNING` | **Done** |
 | Q11 | Remove sandbox secrets from `endpoints.ts` | **Done** |
-| Q12 | Dashboard: show `pipeline_stages` / elapsed while polling | Open |
+| Q12 | Dashboard: show `pipeline_stages` / elapsed while polling | **Done** |
 | Q13 | Optional `WEBHOOK_SECRET` gate | **Done** |
 
 ## Medium effort
 
 | ID | Item | Status |
 |----|------|--------|
-| M1 | Wire registry sowing/crop hint + `agro_profile` into cycle detector | Open (now logged, not applied) |
-| M2 | Extend LGD → eco-region map beyond UP | **Done** (major states) |
-| M3 | Unify cloud thresholds in `PipelineConfig` | **Done** (`MAX_CLOUD_COVER_*`) |
-| M4 | NASA POWER cache; unit tests for weather/credit math | Open |
+| M1 | Wire registry sowing/crop hint + `agro_profile` into cycle detector | **Done** (soft priors) |
+| M2 | Extend LGD → eco-region map beyond UP | **Done** |
+| M3 | Unify cloud thresholds in `PipelineConfig` | **Done** |
+| M4 | NASA POWER cache; unit tests for weather/credit math | **Done** (POWER cache + credit golden tests) |
 | M5 | Expose `require_classification` in dashboard; sklearn pin | Open |
-| M6 | Full webhook HMAC + auto-ingest + TTL | Partial (`WEBHOOK_SECRET` done) |
+| M6 | Full webhook HMAC + auto-ingest + TTL | Partial |
 | M7 | Farmer picker; job ownership on status GET | Open |
 | M8 | GitHub Actions CI | Open |
-| M9 | Sentry + `/api/health`; progress on jobs | Open |
+| M9 | Sentry + `/api/health`; progress on jobs | **Partial** (`/v1/jobs/health` + progress Done; Sentry open) |
 | M10 | Pin Miniconda; optional worker service | Open |
-| M11 | Snapshot LLM prompt/model ids | Open |
+| M11 | Snapshot LLM prompt/model ids | **Done** |
 | M12 | Tests for parcel cluster + Path B UI | Open |
 
 ## Major rework
@@ -52,6 +52,8 @@ Aggregated from stage docs. Cleanup pass marked below; remaining items are the r
 
 ## Suggested next sequencing
 
-1. **Ops:** Q7 GEE key rotation if needed; set `AUTH_SECRET` / `.env` from `.env.example`.
-2. **Product:** Q12 progress UI → M1 hint wiring → M5 classification toggle.
-3. **Platform:** M8 CI → Q10 job reaper → M9 monitoring.
+1. **Product:** confirm ₹/ha scale (G1 / X1) before changing limit bands.
+2. **Platform:** M8 CI → M5 classification toggle → remaining M9 Sentry.
+3. **Structural:** X2 / X3 / SAR only after product prioritization.
+
+See also: [backend/stage-actions/IMPLEMENTATION-STATUS.md](../backend/stage-actions/IMPLEMENTATION-STATUS.md).

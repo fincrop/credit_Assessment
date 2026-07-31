@@ -2,6 +2,8 @@
 
 Working reference for restructuring and enhancement. Derived from the current source tree (pipeline v4.0), not from the legacy root `codebase.md`.
 
+**Package root:** Python API / pipeline / worker live under `backend/Credit_assessment/`. Frontend is `frontend/`. Run uvicorn and `worker.py` from the package directory (imports are package-relative, not `backend.Credit_assessment.*`).
+
 ## Architecture
 
 ```mermaid
@@ -27,13 +29,13 @@ graph TD
 | Backend | Python 3.11, FastAPI/uvicorn, Conda geospatial (GDAL/rasterio/geopandas), scikit-learn/XGBoost, Earth Engine / Planetary Computer STAC, NASA POWER, Groq/Sarvam (optional) |
 | Frontend | Next.js 16 App Router, React 19, Redux Toolkit, Tailwind CSS v4, MongoDB Node driver, jose/bcryptjs |
 | Data | MongoDB (`agristack` default): `farm_info`, `jobs`, `credit_assessments`, `satellite_stats_cache`, webhook collections |
-| Deploy | Docker (API only) + Render Blueprint (`render.yaml`); frontend as separate Node service |
+| Deploy | Docker context `backend/Credit_assessment` + Render Blueprint (`render.yaml`); frontend as separate Node service |
 
 ## Documentation parts
 
 | Part | Index | One-line role |
 |------|-------|----------------|
-| **Backend** | [backend/00-overview.md](backend/00-overview.md) · [comparison & enhancements](backend/10-comparison-and-enhancements.md) | Continuous Sentinel-2 → cycles → weather/performance → credit → optional AI; working backlog vs live code |
+| **Backend** | [backend/00-overview.md](backend/00-overview.md) · [done vs missing](backend/10-comparison-and-enhancements.md) · [implementation status](backend/stage-actions/IMPLEMENTATION-STATUS.md) | Continuous Sentinel-2 → credit → AI; living enhancement backlog |
 | **Frontend** | [frontend/00-overview.md](frontend/00-overview.md) | AgriStack sandbox, auth, ingest, dashboard job polling |
 | **Deployment** | [deployment/00-overview.md](deployment/00-overview.md) | Local dual-mode jobs, Render/Docker, env/secrets |
 

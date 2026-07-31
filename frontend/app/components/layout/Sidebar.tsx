@@ -52,7 +52,7 @@ export default function Sidebar({ endpoints, activeEndpoint, onSelectEndpoint }:
                         className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
                     />
                     <svg
-                        className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -72,7 +72,7 @@ export default function Sidebar({ endpoints, activeEndpoint, onSelectEndpoint }:
                     >
                         <span className="font-semibold text-gray-700">Seek</span>
                         <svg
-                            className={`w-4 h-4 text-gray-500 transition-transform ${isSeekOpen ? 'rotate-180' : ''}`}
+                            className={`w-4 h-4 text-stone-500 transition-transform ${isSeekOpen ? 'rotate-180' : ''}`}
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
@@ -95,7 +95,7 @@ export default function Sidebar({ endpoints, activeEndpoint, onSelectEndpoint }:
                                     <span className={`${getMethodColor(endpoint.method)} text-white text-xs font-medium px-2 py-0.5 rounded mt-0.5`}>
                                         {endpoint.method}
                                     </span>
-                                    <span className={`text-sm ${activeEndpoint === endpoint.id ? 'text-green-700 font-medium' : 'text-gray-600'}`}>
+                                    <span className={`text-sm ${activeEndpoint === endpoint.id ? 'text-green-700 font-medium' : 'text-stone-400'}`}>
                                         {endpoint.name}
                                     </span>
                                 </button>

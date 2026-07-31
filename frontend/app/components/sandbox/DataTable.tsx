@@ -9,7 +9,7 @@ export default function DataTable({ data, title }: DataTableProps) {
     // Handle empty data
     if (!data || (Array.isArray(data) && data.length === 0)) {
         return (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-stone-500">
                 No data available
             </div>
         );

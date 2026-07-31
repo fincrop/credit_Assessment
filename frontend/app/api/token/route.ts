@@ -1,15 +1,59 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+function pickCredential(fromBody: unknown, ...envKeys: string[]): string {
+    const bodyVal = typeof fromBody === 'string' ? fromBody.trim() : '';
+    if (bodyVal) return bodyVal;
+    for (const key of envKeys) {
+        const v = (process.env[key] || '').trim();
+        if (v) return v;
+    }
+    return '';
+}
+
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json();
-
+        const body = (await request.json()) as Record<string, unknown>;
         const startTime = Date.now();
 
-        // Create URLSearchParams from the body
+        const merged: Record<string, unknown> = {
+            ...body,
+            grant_type: pickCredential(body.grant_type) || 'password',
+            client_id:
+                pickCredential(
+                    body.client_id,
+                    'AGRISTACK_CLIENT_ID',
+                    'NEXT_PUBLIC_AGRISTACK_CLIENT_ID'
+                ) || 'registry_sandbox',
+            username: pickCredential(
+                body.username,
+                'AGRISTACK_USERNAME',
+                'NEXT_PUBLIC_AGRISTACK_USERNAME'
+            ),
+            password: pickCredential(
+                body.password,
+                'AGRISTACK_PASSWORD',
+                'NEXT_PUBLIC_AGRISTACK_PASSWORD'
+            ),
+        };
+
+        if (!merged.username) {
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: {
+                        code: 400,
+                        message:
+                            'username is required — set AGRISTACK_USERNAME in frontend/.env.local and restart Next.js',
+                    },
+                    statusCode: 400,
+                },
+                { status: 400 }
+            );
+        }
+
         const params = new URLSearchParams();
-        for (const [key, value] of Object.entries(body)) {
-            params.append(key, String(value));
+        for (const [key, value] of Object.entries(merged)) {
+            if (value != null && value !== '') params.append(key, String(value));
         }
 
         const response = await fetch('https://sandbox.agristack.gov.in/sandbox-api/nm/token', {
@@ -30,7 +74,8 @@ export async function POST(request: NextRequest) {
             data = JSON.parse(responseText);
         } catch {
             const preview = responseText.slice(0, 300).replace(/\s+/g, ' ').trim();
-            const looksLikeHtml = /^\s*<!doctype/i.test(responseText) || /^\s*<html/i.test(responseText);
+            const looksLikeHtml =
+                /^\s*<!doctype/i.test(responseText) || /^\s*<html/i.test(responseText);
 
             return NextResponse.json(
                 {

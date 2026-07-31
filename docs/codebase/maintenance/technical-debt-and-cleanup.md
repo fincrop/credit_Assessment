@@ -19,7 +19,7 @@ Last cleanup pass applied in-repo. Remaining items are intentional follow-ups (C
 | Public webhooks | Optional `WEBHOOK_SECRET` + `x-webhook-secret` header |
 | LGD map only UP | Extended major state codes → eco labels |
 | Root clutter scripts | Moved to `scripts/devtools/` |
-| Missing `.env.example` | Added at repo root |
+| Missing `.env.example` | Added at repo root (index) + `backend/Credit_assessment/.env.example` |
 | Stale README / `DEPLOYMENT_AND_FRONTEND.md` | Rewritten to point at `docs/codebase/` |
 | Registry hints silently discarded | Now logged; `hints_applied: false` in detection meta |
 

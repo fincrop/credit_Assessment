@@ -1,10 +1,57 @@
 /**
- * Loose types for pipeline / API JSON.
- * Handles both slim API responses and full payloads.
- * Migrated from frontend/src/types/assessment.ts
+ * Assessment / risk-index types for index_v5 + legacy shim.
  */
 
 export type RiskCategory = 'LOW' | 'MEDIUM' | 'HIGH' | 'VERY_HIGH' | string;
+
+export type ReasonPolarity = 'positive' | 'negative' | 'caveat' | string;
+
+export type TriState = boolean | null;
+
+export interface ReasonCode {
+  code?: string;
+  message?: string;
+  polarity?: ReasonPolarity;
+}
+
+export interface RiskSubIndex {
+  score: number;
+  inputs?: Record<string, unknown>;
+  drivers?: Record<string, unknown>;
+  gate?: number;
+}
+
+export interface RiskBenefits {
+  bonus?: number;
+  pm_kisan?: TriState;
+  has_crop_insurance?: TriState;
+}
+
+export interface RiskAssessment {
+  index_score: number;
+  raw_index?: number;
+  risk_category: RiskCategory;
+  sub_indices?: Record<string, RiskSubIndex | number>;
+  weights?: Record<string, number>;
+  confidence_gate?: number;
+  weak_sub_indices?: string[];
+  reason_codes?: ReasonCode[];
+  benefits?: RiskBenefits;
+  index_version?: string;
+  method?: string;
+  positioning?: string;
+  no_repayment_calibration?: boolean;
+  calibration?: Record<string, unknown>;
+}
+
+export interface SignalQualitySummary {
+  valid_fraction?: number;
+  sar_fallback_fraction?: number;
+  mean_bin_quality?: number;
+  n_valid_bins?: number;
+  source_counts?: Record<string, number>;
+  [key: string]: unknown;
+}
 
 export interface CreditAssessment {
   credit_score?: number;
@@ -14,11 +61,16 @@ export interface CreditAssessment {
   weak_components?: string[];
   method?: string;
   confidence?: number;
+  confidence_gate?: number;
   scoring_narrative?: string;
+  reason_codes?: ReasonCode[];
+  index_version?: string;
   ml_components_silenced?: boolean;
   ml_requested_mode?: string;
+  positioning?: string;
 }
 
+/** @deprecated Backend no longer emits ₹ recommendations; kept for old jobs only. */
 export interface CreditRecommendations {
   recommended_limit?: number;
   recommended_credit_limit?: number;
@@ -40,16 +92,34 @@ export interface AnomalyEvent {
   description?: string;
 }
 
+export interface YieldDetail {
+  yield_potential_pct?: number | string;
+  yield_index_basis?:
+    | 'peer_nirv'
+    | 'internal_cvi_auc'
+    | 'crop_curve_ndvi'
+    | 'crop_specific'
+    | 'signal_proxy'
+    | 'signal_only'
+    | 'cycle_proxy'
+    | 'signal_based'
+    | string;
+  peer_n?: number;
+  [key: string]: unknown;
+}
+
 export interface SeasonPerformance {
   season?: string;
   year?: number;
   crop?: string;
   health_score?: number;
   yield_potential_pct?: number | string;
+  yield_potential_score?: number;
   scoring_method?: string;
   is_active_cycle?: boolean;
   performance_narrative?: string;
   anomaly_events?: AnomalyEvent[];
+  yield_detail?: YieldDetail;
 }
 
 export interface PerformanceAnalysis {
@@ -60,6 +130,26 @@ export interface PerformanceAnalysis {
   n_active_cycles?: number;
   n_seasons_analyzed?: number;
   seasonal_performance?: SeasonPerformance[];
+  peer_benchmarking?: { percentile?: number; n?: number; activated?: boolean };
+}
+
+export interface WeatherIndicators {
+  available?: boolean;
+  spi_like?: number;
+  spei_like?: number;
+  /** Backend key from weather_analyzer */
+  max_dry_spell_days?: number;
+  max_wet_spell_days?: number;
+  gdd_total?: number;
+  monsoon_onset_offset_days?: number;
+  /** Legacy / alternate aliases (older docs) */
+  dry_spell_max_days?: number;
+  wet_spell_max_days?: number;
+  gdd?: number;
+  monsoon_onset_anomaly_days?: number;
+  heat_stress_days?: number;
+  cold_stress_days?: number;
+  [key: string]: unknown;
 }
 
 export interface WeatherAnalysis {
@@ -70,7 +160,16 @@ export interface WeatherAnalysis {
   extreme_events?: Record<string, unknown>[];
   kharif_avg_rainfall_mm?: number;
   rabi_avg_rainfall_mm?: number;
-  seasonal_weather?: Record<string, unknown>[];
+  seasonal_weather?: {
+    season?: string;
+    year?: number;
+    weather_indicators?: WeatherIndicators;
+    [key: string]: unknown;
+  }[];
+  forward_exposure?: Record<string, unknown>;
+  backward_resilience?: Record<string, unknown>;
+  weather_sources_used?: string[];
+  weather_indicators_present?: boolean;
 }
 
 export interface WeatherInterval {
@@ -104,6 +203,26 @@ export interface ContinuousDataStats {
   total_days?: number;
 }
 
+export interface CyclePhenology {
+  fit_ok?: boolean;
+  r2?: number;
+  sos?: string;
+  pos?: string;
+  eos?: string;
+  reason?: string;
+  [key: string]: unknown;
+}
+
+export interface CropCycle {
+  season_label?: string;
+  season_type?: string;
+  sowing_date?: string;
+  harvest_date?: string;
+  duration_days?: number;
+  phenology?: CyclePhenology;
+  [key: string]: unknown;
+}
+
 export interface CropCyclesBlock {
   detected?: boolean;
   cycles_count?: number;
@@ -113,19 +232,38 @@ export interface CropCyclesBlock {
     crops_per_year?: number;
     cropping_pattern?: string;
   };
-  cycles?: Record<string, unknown>[];
+  cycles?: CropCycle[];
 }
 
 export interface AiExplainability {
   method?: string;
   shap_available?: boolean;
   credit_summary?: string;
-  top_positive_drivers?: { feature?: string; label?: string; contribution?: number; value?: number }[];
-  top_negative_drivers?: { feature?: string; label?: string; contribution?: number; value?: number }[];
+  top_positive_drivers?: {
+    feature?: string;
+    label?: string;
+    contribution?: number;
+    value?: number;
+  }[];
+  top_negative_drivers?: {
+    feature?: string;
+    label?: string;
+    contribution?: number;
+    value?: number;
+  }[];
+}
+
+export interface RoadmapStep {
+  step?: number;
+  action?: string;
+  timeframe?: string;
+  score_gain?: number;
+  feasibility?: string;
 }
 
 export interface AiCounterfactuals {
   current_score?: number;
+  current_risk_category?: string;
   projected_score_all_improvements?: number;
   scenarios?: {
     id?: string;
@@ -133,21 +271,22 @@ export interface AiCounterfactuals {
     score_gain?: number;
     component?: string;
     feasibility?: string;
+    action?: string;
   }[];
-  improvement_roadmap?: string;
+  /** Backend emits list of steps; slim path may stringify */
+  improvement_roadmap?: RoadmapStep[] | string;
 }
 
 export interface AiEnrichment {
   groq_used?: boolean;
   groq_skipped_reason?: string;
+  narrative_source?: 'groq' | 'deterministic' | 'minimal' | string;
   english_narrative?: string;
   translated_narrative?: string;
-  english_preview?: string;
-  translated_preview?: string;
   translation_language?: string;
   explainability?: AiExplainability;
   explainability_mongo?: AiExplainability;
-  counterfactuals?: Record<string, unknown>;
+  counterfactuals?: AiCounterfactuals | Record<string, unknown>;
   counterfactuals_mongo?: AiCounterfactuals;
 }
 
@@ -172,7 +311,11 @@ export interface AssessmentPayload {
   field_area_ha?: number;
   continuous_data_stats?: ContinuousDataStats;
   satellite_data?: Record<string, unknown>;
+  risk_assessment?: RiskAssessment;
+  signal_quality_summary?: SignalQualitySummary;
+  index_version?: string;
   credit_assessment?: CreditAssessment;
+  /** @deprecated index_v5 no longer emits ₹ recommendations */
   credit_recommendations?: CreditRecommendations;
   cropping_analysis?: CroppingAnalysis;
   performance_analysis?: PerformanceAnalysis;
@@ -180,8 +323,8 @@ export interface AssessmentPayload {
   weather_intervals?: WeatherInterval[];
   crop_cycles?: CropCyclesBlock;
   farmer_benefits?: {
-    pm_kisan_enrolled?: boolean;
-    has_crop_insurance?: boolean;
+    pm_kisan_enrolled?: TriState;
+    has_crop_insurance?: TriState;
   };
   ai_enrichment?: AiEnrichment;
   warnings?: string[];
@@ -189,7 +332,6 @@ export interface AssessmentPayload {
   summary?: Record<string, unknown>;
 }
 
-/** Job tracking (MongoDB job queue) */
 export interface AssessmentJob {
   job_id: string;
   status: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';

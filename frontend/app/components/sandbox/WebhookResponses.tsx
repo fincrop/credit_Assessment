@@ -136,7 +136,7 @@ export default function WebhookResponses() {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
-                    <span className="text-gray-500">Loading webhook responses...</span>
+                    <span className="text-stone-500">Loading webhook responses...</span>
                 </div>
             </div>
         );
@@ -237,11 +237,11 @@ export default function WebhookResponses() {
             {/* Empty State */}
             {responses.length === 0 && (
                 <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-                    <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-16 h-16 text-stone-700 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
                     </svg>
-                    <p className="text-gray-500 text-lg">No webhook responses yet</p>
-                    <p className="text-gray-400 text-sm mt-1">Responses from AgriStack will appear here</p>
+                    <p className="text-stone-500 text-lg">No webhook responses yet</p>
+                    <p className="text-stone-500 text-sm mt-1">Responses from AgriStack will appear here</p>
                 </div>
             )}
 
@@ -260,12 +260,12 @@ export default function WebhookResponses() {
                             <span className="font-medium text-gray-800">
                                 {getEndpointPath(item.source)}
                             </span>
-                            <span className="text-sm text-gray-500">{formatDate(item.receivedAt)}</span>
+                            <span className="text-sm text-stone-500">{formatDate(item.receivedAt)}</span>
                         </div>
                         <div className="flex items-center gap-3">
-                            <span className="text-xs text-gray-400 font-mono">{item._id}</span>
+                            <span className="text-xs text-stone-500 font-mono">{item._id}</span>
                             <svg
-                                className={`w-5 h-5 text-gray-400 transition-transform ${expandedId === item._id ? 'rotate-180' : ''}`}
+                                className={`w-5 h-5 text-stone-500 transition-transform ${expandedId === item._id ? 'rotate-180' : ''}`}
                                 fill="none" stroke="currentColor" viewBox="0 0 24 24"
                             >
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -287,13 +287,13 @@ export default function WebhookResponses() {
                                             <div className="flex bg-gray-100 p-1 rounded-lg self-start">
                                                 <button 
                                                     onClick={() => setViewMode('table')}
-                                                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-shadow ${viewMode === 'table' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
+                                                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-shadow ${viewMode === 'table' ? 'bg-white shadow-sm text-gray-800' : 'text-stone-500 hover:text-gray-700'}`}
                                                 >
                                                     Table View
                                                 </button>
                                                 <button 
                                                     onClick={() => setViewMode('json')}
-                                                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-shadow ${viewMode === 'json' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500 hover:text-gray-700'}`}
+                                                    className={`px-4 py-1.5 text-sm font-medium rounded-md transition-shadow ${viewMode === 'json' ? 'bg-white shadow-sm text-gray-800' : 'text-stone-500 hover:text-gray-700'}`}
                                                 >
                                                     Raw JSON
                                                 </button>
@@ -321,7 +321,7 @@ export default function WebhookResponses() {
                                                     <div>
                                                         <h3 className="text-lg font-semibold text-gray-800 mb-3 border-b pb-2">Farmer Profile</h3>
                                                         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                                                            <table className="w-full text-sm text-left text-gray-600">
+                                                            <table className="w-full text-sm text-left text-stone-400">
                                                                 <tbody>
                                                                     {Object.entries(payload.FarmerData).filter(([k]) => !k.includes('hash')).map(([key, value]) => (
                                                                         <tr key={key} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
@@ -344,7 +344,7 @@ export default function WebhookResponses() {
                                                     <div>
                                                         <h3 className="text-lg font-semibold text-gray-800 mb-3 border-b pb-2">Land Records ({payload.land_data.length})</h3>
                                                         <div className="overflow-x-auto border border-gray-200 rounded-lg">
-                                                            <table className="w-full text-sm text-left text-gray-600">
+                                                            <table className="w-full text-sm text-left text-stone-400">
                                                                 <thead className="bg-gray-50 border-b border-gray-200">
                                                                     <tr>
                                                                         <th className="px-4 py-3 font-medium text-gray-900 border-r border-gray-100">Farm ID</th>
@@ -373,7 +373,7 @@ export default function WebhookResponses() {
                                                                                         <div className="max-w-xs max-h-24 overflow-y-auto w-full text-[10px] bg-gray-50 p-2 border border-gray-200 rounded font-mono break-all custom-scrollbar text-gray-700">
                                                                                             {wkt}
                                                                                         </div>
-                                                                                    ) : <span className="text-gray-400 text-xs">Missing</span>}
+                                                                                    ) : <span className="text-stone-500 text-xs">Missing</span>}
                                                                                 </td>
                                                                             </tr>
                                                                         );
@@ -396,7 +396,7 @@ export default function WebhookResponses() {
             {/* Pagination Controls */}
             {totalPages > 1 && (
                 <div className="flex items-center justify-between border-t border-gray-200 pt-6 pb-2">
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-stone-500">
                         Showing <span className="font-medium">{(page - 1) * 50 + 1}</span> to <span className="font-medium">{Math.min(page * 50, totalCount)}</span> of <span className="font-medium">{totalCount}</span> records
                     </div>
                     <div className="flex gap-2">

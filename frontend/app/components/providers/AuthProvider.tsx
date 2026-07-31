@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
-interface User {
+export interface AuthUser {
     id: string;
     email: string;
     name: string;
@@ -11,15 +11,19 @@ interface User {
 }
 
 interface AuthContextType {
-    user: User | null;
+    user: AuthUser | null;
     loading: boolean;
     logout: () => Promise<void>;
+    refreshUser: () => Promise<AuthUser | null>;
+    setSessionUser: (user: AuthUser | null) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
     user: null,
     loading: true,
     logout: async () => {},
+    refreshUser: async () => null,
+    setSessionUser: () => {},
 });
 
 export function useAuth() {
@@ -27,26 +31,42 @@ export function useAuth() {
 }
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [user, setUser] = useState<User | null>(null);
+    const [user, setUser] = useState<AuthUser | null>(null);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
 
-    useEffect(() => {
-        fetch('/api/me')
-            .then((res) => (res.ok ? res.json() : null))
-            .then((data) => setUser(data?.user || null))
-            .catch(() => setUser(null))
-            .finally(() => setLoading(false));
+    const refreshUser = useCallback(async (): Promise<AuthUser | null> => {
+        try {
+            const res = await fetch('/api/me', { credentials: 'include' });
+            const data = res.ok ? await res.json() : null;
+            const next = (data?.user as AuthUser | null) || null;
+            setUser(next);
+            return next;
+        } catch {
+            setUser(null);
+            return null;
+        } finally {
+            setLoading(false);
+        }
     }, []);
 
+    const setSessionUser = useCallback((next: AuthUser | null) => {
+        setUser(next);
+        setLoading(false);
+    }, []);
+
+    useEffect(() => {
+        void refreshUser();
+    }, [refreshUser]);
+
     const logout = useCallback(async () => {
-        await fetch('/api/logout', { method: 'POST' });
+        await fetch('/api/logout', { method: 'POST', credentials: 'include' });
         setUser(null);
         router.push('/login');
     }, [router]);
 
     return (
-        <AuthContext.Provider value={{ user, loading, logout }}>
+        <AuthContext.Provider value={{ user, loading, logout, refreshUser, setSessionUser }}>
             {children}
         </AuthContext.Provider>
     );

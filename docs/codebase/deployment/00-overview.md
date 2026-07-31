@@ -1,6 +1,6 @@
 # Deployment — Overview
 
-Hosting is oriented around **Render** (`render.yaml`) with a **Dockerized FastAPI API** and a **separate Node Next.js** service. There is **no GitHub Actions / CI** in the repo today. Locally, assessments run either via FastAPI inline jobs (`PIPELINE_API_URL`) or `python worker.py`.
+Hosting is oriented around **Render** (`render.yaml`) with a **Dockerized FastAPI API** (build context `backend/Credit_assessment`) and a **separate Node Next.js** service (`frontend/`). There is **no GitHub Actions / CI** in the repo today. Locally, assessments run either via FastAPI inline jobs (`PIPELINE_API_URL`) or `python worker.py` from `backend/Credit_assessment`.
 
 | Doc | Summary |
 |-----|---------|

@@ -10,7 +10,7 @@ Variables are read in: `api/app.py`, `worker.py`, `main.py`, `mongodb_helper.py`
 
 ## Detailed Methodology
 
-Treat root `.env` (gitignored via `.env*`) for Python; `frontend/.env.local` for Next.
+Treat `backend/Credit_assessment/.env` (gitignored via `.env*`) for Python; `frontend/.env.local` for Next. Templates: `backend/Credit_assessment/.env.example` and root `.env.example` (index). Relative paths such as `CROP_MODEL_PATH` and `GEE_SA_KEY_PATH` resolve against `backend/Credit_assessment/`.
 
 ## Inputs & Outputs
 
@@ -71,7 +71,7 @@ N/A — configuration surface for all runtime modes.
 ## Current Implementation Notes
 
 - `render.yaml` sets `MONGODB_DATABASE=agristack`, `ML_MODE=rule_based`, `USE_MONGODB=true`, `CORS_ORIGINS=*`, generates `AUTH_SECRET` for frontend.
-- No committed `.env.example` was found in the tree at documentation time — **gap**.
+- Templates: root `.env.example` (index) and `backend/Credit_assessment/.env.example` (Python).
 
 ## Known Limitations & Issues
 

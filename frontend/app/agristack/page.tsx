@@ -38,10 +38,74 @@ export default function AgristackPage() {
 
   const isTokenUpdate = useRef(false);
   const prevEndpoint = useRef(activeEndpoint);
+  const tokenRestored = useRef(false);
 
   const currentEndpoint = ENDPOINTS.find(e => e.id === activeEndpoint) || ENDPOINTS[0];
   const endpointConfigs = getEndpointConfigs(accessToken);
   const currentConfig = endpointConfigs[activeEndpoint] || endpointConfigs.seek;
+
+  /** Public base URL AgriStack can POST webhooks to (never localhost). */
+  const publicWebhookBase = () => {
+    const configured = String(process.env.NEXT_PUBLIC_APP_DOMAIN || '')
+      .replace(/\/$/, '')
+      .trim();
+    if (configured && !/localhost|127\.0\.0\.1/i.test(configured)) {
+      return configured;
+    }
+    if (typeof window !== 'undefined') {
+      const origin = `${window.location.protocol}//${window.location.host}`;
+      if (!/localhost|127\.0\.0\.1/i.test(origin)) return origin;
+    }
+    return configured || 'http://localhost:3000';
+  };
+
+  const webhookPathFor = (endpoint: string) => {
+    if (endpoint === 'krishi-dss-seek') return '/webhook/kdss/on-seek';
+    if (endpoint === 'farmer-land-id' || endpoint === 'seek') return '/webhook/farmers/on-seek';
+    return '/webhook/on-seek';
+  };
+
+  // Restore AgriStack access token from sessionStorage (survives reload, clears on tab close)
+  useEffect(() => {
+    if (tokenRestored.current) return;
+    tokenRestored.current = true;
+    try {
+      const raw = sessionStorage.getItem('agristack_access_token');
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        access_token?: string;
+        token_type?: string;
+        expires_in?: number;
+        refresh_token?: string;
+      };
+      if (parsed?.access_token) {
+        dispatch(setToken({
+          access_token: parsed.access_token,
+          token_type: parsed.token_type,
+          expires_in: parsed.expires_in,
+          refresh_token: parsed.refresh_token,
+        }));
+      }
+    } catch {
+      sessionStorage.removeItem('agristack_access_token');
+    }
+  }, [dispatch]);
+
+  // Persist token whenever Redux token changes
+  useEffect(() => {
+    if (!accessToken) return;
+    try {
+      sessionStorage.setItem(
+        'agristack_access_token',
+        JSON.stringify({
+          access_token: accessToken,
+          token_type: 'Bearer',
+        })
+      );
+    } catch {
+      /* ignore quota */
+    }
+  }, [accessToken]);
 
   useEffect(() => {
     const configs = getEndpointConfigs(accessToken);
@@ -54,79 +118,68 @@ export default function AgristackPage() {
         prevEndpoint.current = activeEndpoint;
       }
       setHeaders(JSON.stringify(config.headers, null, 2));
-      setRequestBody(JSON.stringify(config.body, null, 2));
+      // Prefer NEXT_PUBLIC_APP_DOMAIN (Cloudflare tunnel) so AgriStack can reach us
+      const body = structuredClone(config.body) as Record<string, unknown>;
+      const header = body?.header as Record<string, unknown> | undefined;
+      if (header) {
+        header.sender_uri = `${publicWebhookBase()}${webhookPathFor(activeEndpoint)}`;
+      }
+      setRequestBody(JSON.stringify(body, null, 2));
     }
   }, [activeEndpoint, accessToken]);
 
-  // Direct browser call to AgriStack (bypasses Render IP block)
-  const callAgriStackDirect = async (endpoint: string, body: any, customHeaders: Record<string, string>) => {
+  /**
+   * Call AgriStack via Next.js API routes (server-side proxy).
+   * Browser → /api/token|/api/agristack|/api/krishi-dss-seek → AgriStack.
+   * Avoids CORS: sandbox.agristack.gov.in does not allow browser origins
+   * like http://localhost:3000, so direct fetch from the page always fails.
+   */
+  const callAgriStackViaProxy = async (
+    endpoint: string,
+    body: Record<string, unknown>,
+    customHeaders: Record<string, string>
+  ) => {
     const startTime = Date.now();
-    
-    // Update sender_uri to use the deployed frontend URL
-    if (body?.header) {
-      const baseUrl = typeof window !== 'undefined' 
-        ? `${window.location.protocol}//${window.location.host}`
-        : process.env.NEXT_PUBLIC_APP_DOMAIN || 'http://localhost:3000';
-      
-      // Update sender_uri based on endpoint type
-      if (endpoint === 'krishi-dss-seek') {
-        body.header.sender_uri = `${baseUrl}/webhook/kdss/on-seek`;
-      } else if (endpoint === 'farmer-land-id' || endpoint === 'seek') {
-        body.header.sender_uri = `${baseUrl}/webhook/farmers/on-seek`;
-      } else {
-        body.header.sender_uri = `${baseUrl}/webhook/on-seek`;
-      }
+    const config = endpointConfigs[endpoint] || currentConfig;
+
+    // sender_uri must be a public URL (Cloudflare tunnel), not localhost
+    if (body?.header && typeof body.header === 'object') {
+      const header = body.header as Record<string, unknown>;
+      header.sender_uri = `${publicWebhookBase()}${webhookPathFor(endpoint)}`;
     }
 
     try {
-      let res: Response;
-      
-      if (activeEndpoint === 'token') {
-        // Token endpoint uses form-urlencoded
-        const formData = new URLSearchParams();
-        Object.entries(body).forEach(([key, value]) => {
-          formData.append(key, String(value));
-        });
-        
-        res = await fetch(currentEndpoint.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: formData,
-        });
-      } else {
-        // All other endpoints use JSON
-        res = await fetch(currentEndpoint.url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...customHeaders,
-          },
-          body: JSON.stringify(body),
-        });
+      const proxyHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (endpoint !== 'token') {
+        proxyHeaders['X-Custom-Headers'] = JSON.stringify(customHeaders);
       }
 
-      const responseTime = Date.now() - startTime;
-      const responseText = await res.text();
-      
-      let data: any;
-      try {
-        data = JSON.parse(responseText);
-      } catch {
-        data = responseText;
-      }
+      const res = await fetch(config.apiRoute, {
+        method: 'POST',
+        headers: proxyHeaders,
+        body: JSON.stringify(body),
+      });
 
+      const payload = await res.json();
+      // Proxy routes already return { success, data, error, statusCode, responseTime }
+      if (payload && typeof payload === 'object' && 'statusCode' in payload) {
+        return payload;
+      }
       return {
         success: res.ok,
-        data: data,
+        data: payload,
         statusCode: res.status,
-        responseTime,
+        responseTime: Date.now() - startTime,
       };
     } catch (error) {
+      const raw = error instanceof Error ? error.message : String(error);
       return {
         success: false,
         error: {
           code: 0,
-          message: error instanceof Error ? error.message : 'Network error - CORS may be blocking the request',
+          message: raw || 'Failed to reach AgriStack proxy',
         },
         statusCode: 0,
         responseTime: Date.now() - startTime,
@@ -142,7 +195,9 @@ export default function AgristackPage() {
 
     try {
       const parsedHeaders = JSON.parse(headers);
-      const ids = bulkFarmerIds.split(',').map(id => id.trim()).filter(id => id);
+      // Deduplicate bulk IDs while preserving order
+      const rawIds = bulkFarmerIds.split(',').map(id => id.trim()).filter(id => id);
+      const ids = [...new Set(rawIds)];
 
       if ((activeEndpoint === 'seek' || activeEndpoint === 'farmer-land-id') && ids.length > 0) {
         const results = [];
@@ -170,7 +225,7 @@ export default function AgristackPage() {
             }
           }
           try {
-            const result = await callAgriStackDirect(activeEndpoint, parsedBody, parsedHeaders);
+            const result = await callAgriStackViaProxy(activeEndpoint, parsedBody, parsedHeaders);
             results.push({ farmer_id: id, status: result.statusCode, response: result.data, ...result });
           } catch (err) {
             results.push({ farmer_id: id, status: 500, error: err instanceof Error ? err.message : 'Unknown error' });
@@ -195,17 +250,22 @@ export default function AgristackPage() {
           setRequestBody(JSON.stringify(parsedBody, null, 2));
         }
         
-        const result = await callAgriStackDirect(activeEndpoint, parsedBody, parsedHeaders);
+        const result = await callAgriStackViaProxy(activeEndpoint, parsedBody, parsedHeaders);
         setResponse(result);
-        
-        if (activeEndpoint === 'token' && result.success && result.data?.access_token) {
+
+        const tokenData = result?.data as
+          | { access_token?: string; token_type?: string; expires_in?: number; refresh_token?: string }
+          | undefined;
+        if (activeEndpoint === 'token' && result.success && tokenData?.access_token) {
           isTokenUpdate.current = true;
-          dispatch(setToken({
-            access_token: result.data.access_token,
-            token_type: result.data.token_type,
-            expires_in: result.data.expires_in,
-            refresh_token: result.data.refresh_token,
-          }));
+          dispatch(
+            setToken({
+              access_token: tokenData.access_token,
+              token_type: tokenData.token_type,
+              expires_in: tokenData.expires_in,
+              refresh_token: tokenData.refresh_token,
+            })
+          );
         }
       }
     } catch (error) {
@@ -220,11 +280,21 @@ export default function AgristackPage() {
     if (!response?.success || !response.data) return;
     setIngestStatus({ loading: true, message: null, success: null });
     try {
-      const result = await ingestFarmerData(response.data);
+      const result = await ingestFarmerData(response.data) as {
+        farmer_ids: string[];
+        created?: string[];
+        updated?: string[];
+        message?: string;
+      };
       setSavedFarmerIds(result.farmer_ids || []);
+      const created = result.created?.length ?? 0;
+      const updated = result.updated?.length ?? 0;
+      let verb = 'Saved';
+      if (updated > 0 && created === 0) verb = 'Updated';
+      else if (updated > 0 && created > 0) verb = `Saved ${created}, updated ${updated}`;
       setIngestStatus({
         loading: false,
-        message: `✓ Saved ${result.farmer_ids.length} farmer(s): ${result.farmer_ids.join(', ')}`,
+        message: `✓ ${verb} ${result.farmer_ids.length} farmer(s): ${result.farmer_ids.join(', ')}`,
         success: true,
       });
     } catch (e) {
@@ -251,18 +321,17 @@ export default function AgristackPage() {
           <div className="max-w-5xl mx-auto space-y-6">
             {activeTab === 'sandbox' ? (
               <>
-                {/* Browser Direct Call Notice */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
                   <div className="flex items-start gap-3">
-                    <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-emerald-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <div>
-                      <p className="text-sm font-medium text-blue-800">Direct Browser Calls Enabled</p>
-                      <p className="text-xs text-blue-600 mt-1">
-                        AgriStack API is now called directly from your browser (not through the server). 
-                        This bypasses cloud IP blocks and uses your residential IP instead. 
-                        If you get CORS errors, the API may require server-side calls only.
+                      <p className="text-sm font-medium text-emerald-800">Server-side AgriStack proxy</p>
+                      <p className="text-xs text-emerald-700 mt-1">
+                        Calls go through Next.js routes (<code className="font-mono">/api/token</code>,{' '}
+                        <code className="font-mono">/api/agristack</code>) so the browser never talks to
+                        sandbox.agristack.gov.in directly — that avoids CORS on localhost.
                       </p>
                     </div>
                   </div>
@@ -293,7 +362,7 @@ export default function AgristackPage() {
                       className="w-full text-sm font-mono text-gray-900 border border-gray-300 rounded-md p-3 placeholder-gray-400 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none block"
                       rows={2}
                     />
-                    <p className="mt-2 text-xs text-gray-500 font-medium">
+                    <p className="mt-2 text-xs text-stone-500 font-medium">
                       If provided, the sandbox will sequentially execute the payload for each farmer ID.
                     </p>
                   </div>
@@ -315,7 +384,7 @@ export default function AgristackPage() {
                   <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm flex items-center justify-between gap-4">
                     <div>
                       <p className="text-sm font-semibold text-gray-800">Save to Assessment Platform</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
+                      <p className="text-xs text-stone-500 mt-0.5">
                         Extract farmer land records from this response and write them to <code className="font-mono">farm_info</code> in MongoDB.
                       </p>
                       {ingestStatus.message && (

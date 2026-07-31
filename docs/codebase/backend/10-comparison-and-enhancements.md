@@ -1,279 +1,159 @@
-# Backend — Comparison & Enhancements (Working Plan)
+# Backend — Comparison & Enhancements (Living backlog)
 
-**Status:** Draft for review — do not implement until this doc is validated.  
-**Date:** 2026-07-13  
-**Sources:** Updated stage deep-dives (`00`–`09`) × live tree after cleanup pass (`enhancement-roadmap.md` / `technical-debt-and-cleanup.md`).
+**Status:** Active — reflects code after cleanup + 2026-07-14 enhancement wave  
+**Companion:** [stage-actions/IMPLEMENTATION-STATUS.md](stage-actions/IMPLEMENTATION-STATUS.md) · per-stage deep-dives `01`–`09`
 
-This is the single working backlog for backend work. Stage files (`01`–`09`) remain the deep-dive rationale; this file answers: *what is true in code today, what the docs still claim incorrectly, and what we should change next — in order.*
-
----
-
-## 1. How to read this doc
-
-| Column / tag | Meaning |
-|--------------|---------|
-| **Docs claim** | What the updated deep-dive says about present condition |
-| **Code today** | Verified against the current tree |
-| **Verdict** | `Aligned` · `Doc drift` (docs stale) · `Gap` (docs right, code needs work) · `Product decision` |
-| **Wave** | Sequencing for implementation after you approve this plan |
+Use this file to answer: **what is live now**, **what we already shipped**, **what is still missing**, **what to build next**.
 
 ---
 
-## 2. Doc drift first (deep-dives vs cleanup already done)
+## 1. Legend
 
-Several “Present Condition” / “Do immediately” lines in `00`–`09` were written against pre-cleanup reality. **Do not re-implement these.**
-
-| Topic | Docs still say | Code today | Verdict |
-|-------|----------------|------------|---------|
-| Satellite cache | `force_fresh_download = True` hardcoded; reads dead | Env-gated `SATELLITE_FORCE_FRESH` (default off → cache reads used) | **Doc drift** — update `00` / `02` |
-| SHAP `ci` NameError | Urgent fix needed | Fixed: `ci = float(ca.get('cropping_intensity', 0))` | **Doc drift** — update `00` / `08` |
-| Legacy `credit_scorer.py` | Still present / edit risk | Deleted; package exports `AdvancedCreditScorer` only | **Doc drift** — update `00` / `07` |
-| `CREDIT_WEIGHTS` / ₹/ha tables | Config vs Advanced diverge | Aligned; scorer + counterfactuals read `PipelineConfig.CREDIT_WEIGHTS` / `CREDIT_LIMITS_PER_HA` | **Doc drift** — update `07` |
-| Season calendars | Three conflicting definitions | `SEASONS` (May/Oct windows) + `SEASON_SNAP_ANCHORS` (Jun 15 / Oct 15) documented as intentionally distinct | **Mostly aligned** — keep clarifying comments; not three “live” seasons |
-| Cloud caps | Instance attrs vs single `MAX_CLOUD_COVER=60` | `MAX_CLOUD_COVER_KHARIF/RABI/CONTINUOUS` in config | **Doc drift** — update `02` |
-| LGD → eco | UP only | Major state LGD codes mapped in `india_geo_context` | **Doc drift** — update `01` |
-| Cycle hints | Discarded via `_ = (...)` | Logged; `hints_applied: false` — still not used in detection math | **Partial** — docs overstate “silent discard”; gap remains on *application* |
-| AI `--explain` gate | Stale “not auto-run” | Enrichment runs SHAP/CF when `AI_CONFIG` enables them | **Doc drift** if any leftover claims remain |
-| Dead seasonal collector | ~1200 commented lines | Removed | **Doc drift** — update `02` |
-
-**Housekeeping after validation:** patch `00`–`09` “Present Condition” sections so they match this table, or point them here so engineers do not re-fix closed items.
+| Tag | Meaning |
+|-----|---------|
+| **Done** | In code as of 2026-07-14 |
+| **Missing** | Approved or clearly needed; not done yet |
+| **Deferred** | Explicitly postponed (major / product / research) |
+| **Product** | Needs business/lending decision before code |
 
 ---
 
-## 3. Stage-by-stage: present condition vs expected enhancements
+## 2. Wave already shipped (do not re-implement)
 
-### Stage 01 — Geospatial prep & snapping
-
-| Aspect | Code today | Docs expect / recommend | Verdict |
-|--------|------------|-------------------------|---------|
-| Polygon vs point bbox; 500 m floor | Live (`MIN_FIELD_BUFFER_KM = 0.5`) | Adaptive / smaller buffer for smallholders | **Gap** |
-| Registered vs geometry area duality | Live (registry drives credit area) | Geometry QA gate (area ratio + validity) | **Gap** |
-| Snap anchors Jun 15 / Oct 15 | Live via `SEASON_SNAP_ANCHORS` | Dynamic monsoon-onset anchors | **Gap** (major) |
-| Eco-context computed | Live; LGD hints for major states | Wire into Stage 03 thresholds | **Gap** (consumed unused) |
-| Assessment metadata for snap/geometry source | Not stamped | `season_anchor_used` / snap version on assessment | **Gap** |
-
-**Cross-theme:** Smallholding / neighbor contamination starts here and pollutes 02–07.
-
----
-
-### Stage 02 — Satellite observation grid
-
-| Aspect | Code today | Docs expect / recommend | Verdict |
-|--------|------------|-------------------------|---------|
-| Cache reads | Working unless `SATELLITE_FORCE_FRESH` | Env-gate (done) | **Aligned** |
-| 10-day bins, missing placeholders | Live | Keep | **Aligned** |
-| Cloud caps | Config `MAX_CLOUD_COVER_*` | Pixel-level mask (s2cloudless/SCL) | **Gap** (medium→major) |
-| Index parity GEE vs STAC | GEE ≈ NDVI/EVI/NDMI; others often NaN | `indices_available` + GEE parity | **Gap** |
-| Monsoon optical gaps | Higher cloud % only | Sentinel-1 SAR blend | **Gap** (major) |
+| Area | Done |
+|------|------|
+| Cleanup | SHAP `ci` fix; cache env-gate; legacy `credit_scorer` removed; `CREDIT_*` aligned; cloud caps in config; LGD beyond UP; dead seasonal collector removed |
+| 01 | Adaptive buffer (~0.15 km); geometry QA + fallback; `geospatial_prep` provenance |
+| 01→03 | Soft `agro_profile` / sowing priors; `hints_applied` + `applied_knobs` |
+| 02 | `indices_available` / provider / `cloud_mask_version`; per-job `force_fresh_satellite`; slim cache |
+| 03 | `land_utilization_fraction` alias; soft priors (above) |
+| 04 | Registry crop → `predicted_crop` (`registry_self_report`) when ML off |
+| 04/03 | `cycles_per_year` alongside `cropping_intensity` |
+| 05 | POWER Mongo + memory cache; `weather_degraded` / `weather_data_status` |
+| 06 | Yield-proxy FE/API aliases; `assessment_timing`; `crop_family_band` |
+| 07 | Tri-state benefits; `tests/test_credit_scoring_golden.py` |
+| 08 | `AI_ENRICHMENT_ENABLE`; driver-attribution labels; LLM `model_snapshot` |
+| 09 | Reaper; `GET /v1/jobs/health`; job `progress`; dashboard stage message |
 
 ---
 
-### Stage 03 — Crop cycle detection & LUI
+## 3. Stage-by-stage: live vs missing vs next
 
-| Aspect | Code today | Docs expect / recommend | Verdict |
-|--------|------------|-------------------------|---------|
-| CVI + Bartlett + cycle walk | Live backbone (classification off) | Keep; calibrate regionally | **Aligned** core |
-| Hints / `agro_profile` | Received + logged; **not applied** | Soft priors / ecoregion thresholds | **Gap** |
-| Peak floor 0.28 vs baseline 0.30 | Config keys exist; class fallbacks remain | Single source of truth, no confusion | **Mostly aligned** — simplify further if desired |
-| Intensity naming | LUI fraction vs cycles/year both exist | Rename distinctly in schema/API | **Gap** (clarity) |
-| Duration 40–195 / annual assumption | Live | Perennial / long-duration branch | **Gap** (major) |
-| Hat-profile imputation | Live | Ground-truth validation | **Gap** (major / research) |
+### Stage 01 — Geospatial
 
----
+| Item | Status |
+|------|--------|
+| Adaptive / smaller point buffer | **Done** |
+| Geometry QA (validity + area ratio) | **Done** |
+| Stamp snap/geometry on assessment | **Done** |
+| Soft wire eco/hints → Stage 03 | **Done** |
+| Dynamic monsoon-onset snap | **Deferred** |
+| ICAR/NARP / full agro-climatic shapefile join | **Deferred** |
 
-### Stage 04 — ML crop classification
+### Stage 02 — Satellite
 
-| Aspect | Code today | Docs expect / recommend | Verdict |
-|--------|------------|-------------------------|---------|
-| Default Path B (Unclassified) | Live; ML opt-in via env / job flag | Keep conservative default | **Aligned** |
-| Registry crop → `predicted_crop` | Hint logged only; Path B still `predicted_crop=None` | Use registry crop as self-reported label when ML off | **Gap** (high leverage) |
-| Registry soft prior on ML path | Not implemented | Bayesian / temperature boost | **Gap** (when ML on) |
-| Model card / sklearn pin / train=serve | Open | Before broad enable | **Gap** |
-| Dashboard `require_classification` | Job field exists; UI toggle open | Per-region/crop toggle | **Gap** (frontend+API) |
+| Item | Status |
+|------|--------|
+| Cache reads + env / per-job force-fresh | **Done** |
+| `indices_available` + provider stamp | **Done** |
+| Slim cache payloads | **Done** |
+| Stamp cloud mask version | **Done** (audit stamp; deepen STAC parity still open) |
+| Full GEE ↔ STAC index parity (PSRI/NDRE/NDWI) | **Missing** / defer unless needed |
+| Stronger pixel cloudless / SCL audit & tests | **Missing** |
+| Sentinel-1 SAR monsoon fill | **Deferred** |
+| Commercial high-res fallback | **Deferred** (drop unless product mandates) |
 
----
+### Stage 03 — Cycle detection
+
+| Item | Status |
+|------|--------|
+| Soft agro / sowing priors | **Done** |
+| Disambiguate LUI vs cycles/year in schema | **Done** (aliases; keep cleaning consumers) |
+| Perennial / long-duration branch | **Deferred** |
+| Hat-imputation ground-truth validation | **Deferred** (research) |
+
+### Stage 04 — Crop classification
+
+| Item | Status |
+|------|--------|
+| Path B default (ML off) | **Done** (by design) |
+| Registry crop as `predicted_crop` when ML off | **Done** |
+| Bayesian / temperature registry prior when ML on | **Missing** |
+| Model card + sklearn pin + train=serve retrain | **Missing** |
+| Dashboard `require_classification` toggle | **Missing** |
 
 ### Stage 05 — Weather
 
-| Aspect | Code today | Docs expect / recommend | Verdict |
-|--------|------------|-------------------------|---------|
-| NASA POWER + dynamic thresholds | Live | Keep; document formula + tests | **Gap** (tests/docs) |
-| POWER cache | None (unlike satellite) | Mongo cache by lat/lon/range | **Gap** |
-| Degraded-data flag | Silent partial failure risk | Explicit `weather_degraded` | **Gap** |
-| Spatial resolution | Centroid point | Parcel-weighted / IMD / ERA5 blend | **Gap** (medium→major) |
+| Item | Status |
+|------|--------|
+| POWER cache | **Done** |
+| Explicit degraded / unavailable flag | **Done** |
+| Risk-formula unit tests (synthetic series) | **Missing** |
+| Parcel-weighted multi-point sampling | **Deferred** |
+| IMD / ERA5-Land blend | **Deferred** |
 
----
+### Stage 06 — Performance
 
-### Stage 06 — Yield & performance
+| Item | Status |
+|------|--------|
+| Yield proxy labeling (API/FE) | **Done** |
+| Assessment-timing metadata | **Done** |
+| Crop-family vigor banding | **Done** (heuristic; not full calibration) |
+| Broader synthetic-arc unit tests for enhanced health | **Missing** (partial via credit golden only) |
+| AUC → district yield quantile calibration | **Deferred** |
 
-| Aspect | Code today | Docs expect / recommend | Verdict |
-|--------|------------|-------------------------|---------|
-| Enhanced path primary (class off) | Live | Expectation reset correct | **Aligned** |
-| Label “yield potential” | Still in API, scorer keys, dashboard | Rename to yield proxy / vigor index | **Gap** |
-| Absolute vigor unfair to low-biomass crops | Structural under Path B | Crop-family banding without full ML | **Gap** |
-| Mid-season AUC cap | Live | Flag/normalize for assessment timing | **Gap** |
-| Synthetic-arc unit tests | Missing / thin | Protect 40/100 credit weight | **Gap** |
+### Stage 07 — Credit
 
----
-
-### Stage 07 — Credit scoring & limits
-
-| Aspect | Code today | Docs expect / recommend | Verdict |
-|--------|------------|-------------------------|---------|
-| Live weights 35/25/15/8/7/5/5 | In `PipelineConfig` + Advanced | Docs that still show old config table | **Doc drift** then keep |
-| ₹/ha bands (~3–15k live) | In config; legacy 15–80k gone from tree | Business confirm scale is intended | **Product decision** |
-| Golden-file regression tests | Open | Fixture score/limit tests | **Gap** |
-| Unknown vs no benefits | Collapsed to neutral | Distinct states | **Gap** |
-| Model score vs policy limit | Coupled in one function | Separate layers | **Gap** (major) |
-
----
+| Item | Status |
+|------|--------|
+| Config weights/limits aligned with Advanced scorer | **Done** |
+| Tri-state benefits (unknown ≠ absent) | **Done** |
+| Golden score/limit tests | **Done** |
+| Confirm ₹/ha scale with product/lending | **Product** (blocker for band changes) |
+| Split model score vs policy limit layer | **Deferred** |
+| Recalibrate ₹/ha after product confirmation | **Deferred** (after Product) |
 
 ### Stage 08 — AI enrichment
 
-| Aspect | Code today | Docs expect / recommend | Verdict |
-|--------|------------|-------------------------|---------|
-| Rule-based “SHAP” default | Live (`model=None`) | Rename to driver attribution | **Gap** (naming/compliance) |
-| `ci` bug | Fixed | — | **Aligned** |
-| LLM / Sarvam | Opt-in | Snapshot prompt + model id; compliance export | **Gap** |
-| Master kill switch | Per-block config only | `AI_ENRICHMENT_ENABLE` | **Gap** (ops) |
+| Item | Status |
+|------|--------|
+| Master `AI_ENRICHMENT_ENABLE` | **Done** |
+| User-facing driver-attribution / yield-proxy labels | **Done** |
+| Snapshot prompt hash + model id | **Done** |
+| Structural compliance-only export (no LLM) | **Deferred** |
+| Formal third-party LLM data-handling review | **Deferred** (ops/legal) |
+
+### Stage 09 — Jobs
+
+| Item | Status |
+|------|--------|
+| Stuck RUNNING reaper | **Done** |
+| Queue health endpoint | **Done** |
+| Progress / stage on job + dashboard | **Done** |
+| Bounded concurrency (replace single lock) | **Missing** |
+| Job ownership authz on status GET | **Missing** |
+| Distributed queue + DLQ | **Deferred** |
 
 ---
 
-### Stage 09 — Jobs & worker
+## 4. Recommended next sequencing
 
-| Aspect | Code today | Docs expect / recommend | Verdict |
-|--------|------------|-------------------------|---------|
-| Dual consumer (worker + FastAPI BackgroundTasks) | Live | Keep until queue migration | **Aligned** |
-| Single `asyncio.Lock` | One heavy job / process | Bounded pool 2–4 | **Gap** |
-| Stuck RUNNING | No reaper | Timeout → FAILED + retry path | **Gap** (urgent) |
-| Queue health visibility | Absent | Depth / oldest / consumer alive | **Gap** |
-| Progress field | Stages emitted internally; UI weak | Surface `pipeline_stages` while polling | **Gap** |
-| Job status authz | Login cookie; ownership open | Farmer/account scoping | **Gap** |
-| Distributed queue | Not present | Celery/RQ/SQS later | **Gap** (major) |
+1. **Product:** settle ₹/ha bands (Stage 07) — no limit-table edits until then.  
+2. **Near-term eng:** classification dashboard toggle + model card (04); weather risk unit tests (05); enhanced-health synthetic tests (06); job authz + optional concurrency pool (09).  
+3. **Structural later:** perennial cycles (03); SAR (02); IMD/ERA5 (05); score vs policy split (07); distributed queue (09); dynamic snap / zone shapefile (01).
 
 ---
 
-## 4. Cross-stage themes (still valid)
+## 5. Verify
 
-These three threads from `00-overview.md` remain the right prioritization lens:
+```bash
+python tests/test_credit_scoring_golden.py
+# With API up:
+#   GET /health
+#   GET /v1/jobs/health
+```
 
-1. **Classification off by default** — Path B is production. Registry-as-`predicted_crop` and crop-family banding unlock 05/06/07 without trusting ML.
-2. **Smallholding + monsoon India** — 500 m buffer, Kharif clouds, national CVI floors, absolute vigor, POWER coarseness are one problem set; prefer compounding fixes (adaptive buffer, SAR later, regional CVI).
-3. **Integrity / lending risk** — ₹/ha policy confirmation, label honesty (“yield proxy”, “driver attribution”), golden tests, stuck-job reaper matter more than neat refactors.
-
----
-
-## 5. Proposed waves (implement only after you sign off)
-
-### Wave 0 — Documentation hygiene (no behavior change)
-
-1. Refresh `00`–`09` Present Condition to match §2 (or add “as of cleanup: see `10-comparison…`”).
-2. Mark closed roadmap rows in stage “Enhancement Recommendations” tables as **Done** with pointers to `technical-debt-and-cleanup.md`.
-
-**Exit criteria:** An engineer reading only stage docs cannot be told to re-fix `ci`, force-fresh, or revive `credit_scorer.py`.
+Env knobs of note: `SATELLITE_FORCE_FRESH`, `FIELD_BUFFER_LEGACY`, `AI_ENRICHMENT_ENABLE`, `JOB_RUNNING_TIMEOUT_MINUTES`, `ENABLE_CROP_CLASSIFICATION`.
 
 ---
-
-### Wave 1 — Integrity & ops (cheap, high risk reduction)
-
-| ID | Item | Stage | Notes |
-|----|------|-------|-------|
-| B1 | Confirm ₹/ha limit scale with lending/product | 07 | **Blocker for any limit tuning** — product, not code |
-| B2 | Job reaper: RUNNING past timeout → FAILED | 09 | Matches open Q10 |
-| B3 | Job queue health endpoint (depth, oldest QUEUED, consumer heartbeat) | 09 | |
-| B4 | Dashboard progress from `pipeline_stages` / elapsed | 09 + FE | Open Q12 |
-| B5 | Rename UI/API display strings: yield potential → yield proxy / vigor | 06 + FE | Keep internal keys stable initially if needed |
-| B6 | `AI_ENRICHMENT_ENABLE` master switch | 08 | |
-
-**Exit criteria:** Stuck jobs self-heal; operators see queue health; product has answered B1.
-
----
-
-### Wave 2 — Unlock Path B accuracy (compounding)
-
-| ID | Item | Stage | Notes |
-|----|------|-------|-------|
-| B7 | Registry crop → `predicted_crop` with `source: registry_self_report` when ML off | 04 | Highest leverage quick win still open |
-| B8 | Soft-apply `agro_profile` / sowing hint in cycle detector (thresholds / sow bias) | 01→03 | Open M1 |
-| B9 | Disambiguate schema names: `land_utilization_fraction` vs `cycles_per_year` | 03/04/07 | |
-| B10 | Crop-family vigor banding for enhanced performance path | 06 | Reduces absolute-scale unfairness |
-| B11 | Golden-file tests for credit score + limit | 07 | |
-| B12 | NASA POWER response cache + weather degraded flag | 05 | |
-
-**Exit criteria:** Declared crop and eco context affect live Path B; credit math has regression fixtures.
-
----
-
-### Wave 3 — Spatial / temporal fidelity
-
-| ID | Item | Stage |
-|----|------|-------|
-| B13 | Geometry QA (area ratio + validity) before trusting polygon | 01 |
-| B14 | Adaptive point buffer (lower floor for small declared area) | 01 |
-| B15 | Stamp snap/geometry provenance on assessment | 01 |
-| B16 | `indices_available` on assessment; degrade Stage 06/08 gracefully | 02 |
-| B17 | Pixel-level cloud/shadow masking | 02 |
-| B18 | Assessment-timing flag/normalize for in-progress yield proxy | 06 |
-| B19 | Unknown vs confirmed-absent benefits in credit | 07 |
-| B20 | Rename rule “SHAP” → driver attribution in API/docs/UI | 08 |
-| B21 | Bounded concurrency pool (replace single lock) | 09 |
-| B22 | Job status ownership / authz scoping | 09 |
-
----
-
-### Wave 4 — Structural investments (plan, don’t start until Waves 1–2 validated)
-
-| ID | Item | Stage |
-|----|------|-------|
-| B23 | Separate model score vs policy limit layer; recalibrate ₹/ha after B1 | 07 |
-| B24 | Perennial / long-duration cycle branch | 03 |
-| B25 | Sentinel-1 SAR monsoon fill | 02 |
-| B26 | IMD / ERA5-Land weather blend | 05 |
-| B27 | Retrain classifier + soft registry prior; model card | 04 |
-| B28 | Compliance explanation export (deterministic only) vs LLM narrative | 08 |
-| B29 | Distributed task queue + DLQ | 09 |
-| B30 | District yield quantile calibration for vigor proxy | 06 |
-| B31 | Monsoon-onset-aware dynamic snap | 01 |
-
----
-
-## 6. Suggested first implementation slice (after your OK)
-
-If Wave 0 + Wave 1 are approved without changes, the first **code** PR sequence would be:
-
-1. **B2** Job reaper  
-2. **B3** Queue health  
-3. **B6** AI enrichment master switch  
-4. **B5** Yield-proxy labeling (FE + format strings; optional API alias)  
-5. Then start Wave 2 with **B7** registry crop as `predicted_crop`
-
-B1 stays a parallel product conversation; do not change limit bands in code until it returns.
-
----
-
-## 7. Validation checklist (please confirm)
-
-Tick or edit before we proceed:
-
-- [ ] §2 doc-drift list matches your understanding of the cleanup pass  
-- [ ] Wave order (0 → 1 → 2 → 3 → 4) is acceptable  
-- [ ] B1 (₹/ha) is owned by product/lending — we only document until answered  
-- [ ] B7 (registry crop without ML) is desired product behavior, not a compliance risk  
-- [ ] Wave 4 items stay out of scope until Waves 1–2 land  
-- [ ] Preferred first code slice: B2 → B3 → B6 → B5 → B7 (or propose a different order)  
-- [ ] Any items to **drop**, **defer**, or **promote** from Waves 2–4  
-
----
-
-## 8. Relationship to other docs
-
-| Doc | Role after this file exists |
-|-----|-----------------------------|
-| `00`–`09` stage deep-dives | Why / ground reality / design options |
-| This file (`10-comparison-and-enhancements.md`) | **What to do next** + verified present state |
-| `maintenance/enhancement-roadmap.md` | Cross-cutting status board (FE/deploy too) — sync IDs when Waves complete |
-| `maintenance/technical-debt-and-cleanup.md` | Historical cleanup log; “do not reintroduce” |
-
----
-
-*Supersedes informal sequencing in `00-overview.md` “Prioritized Cross-Stage Roadmap” for execution planning; keep that section as narrative until Wave 0 updates it to point here.*
+*Supersedes earlier “draft for review” plan. Stage deep-dives should match this backlog’s Done/Missing tags.*

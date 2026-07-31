@@ -1,14 +1,79 @@
-import type { AssessmentPayload } from '../../types/assessment';
+'use client';
+
+import type { AssessmentPayload, CropCycle } from '../../types/assessment';
 import { formatNumber } from '../../lib/format';
+
+function PhenologyCard({ cycle, index }: { cycle: CropCycle; index: number }) {
+  const ph = cycle.phenology;
+  const title =
+    cycle.season_label ||
+    cycle.season_type ||
+    `Cycle ${index + 1}`;
+
+  if (!ph) {
+    return (
+      <div className="bg-[#F5F2EB] rounded-lg border border-dashed border-[#E4DFD4] p-4">
+        <p className="text-sm font-medium text-stone-700 mb-1">{title}</p>
+        <p className="text-xs text-stone-500">
+          Phenology not available for this cycle (older payload or fit skipped).
+        </p>
+        {(cycle.sowing_date || cycle.harvest_date) && (
+          <p className="text-[11px] text-stone-500 mt-2 font-mono">
+            {cycle.sowing_date ?? '?'} → {cycle.harvest_date ?? '?'}
+            {cycle.duration_days != null ? ` (${cycle.duration_days}d)` : ''}
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-4">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <p className="text-sm font-medium text-stone-800">{title}</p>
+        <span
+          className={`text-[10px] px-2 py-0.5 rounded-full border ${
+            ph.fit_ok
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border-amber-200 text-amber-900'
+          }`}
+        >
+          {ph.fit_ok ? 'fit ok' : ph.reason || 'fit incomplete'}
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-xs text-stone-700 mb-2">
+        <div>
+          <p className="text-[10px] text-stone-400 uppercase tracking-wider">SOS</p>
+          <p className="font-mono">{ph.sos ?? '—'}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-stone-400 uppercase tracking-wider">POS</p>
+          <p className="font-mono">{ph.pos ?? '—'}</p>
+        </div>
+        <div>
+          <p className="text-[10px] text-stone-400 uppercase tracking-wider">EOS</p>
+          <p className="font-mono">{ph.eos ?? '—'}</p>
+        </div>
+      </div>
+      {ph.r2 != null && (
+        <p className="text-[11px] text-stone-500">
+          R² <span className="font-mono text-stone-700">{formatNumber(ph.r2, 3)}</span>
+        </p>
+      )}
+    </div>
+  );
+}
 
 export function CropCyclesSection({ data }: { data: AssessmentPayload }) {
   const cc = data.crop_cycles;
 
   if (!cc) {
     return (
-      <div className="bg-[#161b22] rounded-xl border border-[#30363d] p-6">
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-2">Detected Crop Cycles</h2>
-        <p className="text-sm text-gray-600">No crop_cycles block in payload.</p>
+      <div className="bg-white rounded-xl border border-[#E4DFD4] p-6">
+        <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-2">
+          Detected Crop Cycles
+        </h2>
+        <p className="text-sm text-stone-400">No crop_cycles block in payload.</p>
       </div>
     );
   }
@@ -17,54 +82,74 @@ export function CropCyclesSection({ data }: { data: AssessmentPayload }) {
   const cycles = cc.cycles ?? [];
 
   const luiNum = um.land_utilization_index;
-  const luiDisplay = luiNum != null
-    ? (luiNum <= 1 ? `${formatNumber(luiNum * 100)}%` : formatNumber(luiNum))
-    : '—';
+  const luiDisplay =
+    luiNum != null
+      ? luiNum <= 1
+        ? `${formatNumber(luiNum * 100)}%`
+        : formatNumber(luiNum)
+      : '—';
 
   return (
-    <div className="bg-[#161b22] rounded-xl border border-[#30363d] p-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Land Use &amp; Crop Cycles</h2>
+    <div className="bg-white rounded-xl border border-[#E4DFD4] p-6 space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider">
+          Land Use &amp; Crop Cycles
+        </h2>
         <div className="flex items-center gap-2">
-          <span className={`text-xs px-2.5 py-1 rounded-full border ${cc.detected ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-gray-700/50 border-gray-600 text-gray-500'}`}>
-            {cc.detected ? '✓ Cycles detected' : 'No cycles'}
+          <span
+            className={`text-xs px-2.5 py-1 rounded-full border ${
+              cc.detected
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                : 'bg-stone-100 border-stone-200 text-stone-500'
+            }`}
+          >
+            {cc.detected ? 'Cycles detected' : 'No cycles'}
           </span>
-          <span className="text-xs px-2 py-0.5 rounded bg-[#21262d] border border-[#30363d] text-gray-500 font-mono">
+          <span className="text-xs px-2 py-0.5 rounded bg-[#F5F2EB] border border-[#E4DFD4] text-stone-500 font-mono">
             {cc.cycles_count ?? cycles.length} cycles
           </span>
           {cc.method && (
-            <span className="text-xs px-2 py-0.5 rounded bg-[#21262d] border border-[#30363d] text-gray-600 font-mono">{cc.method}</span>
+            <span className="text-xs px-2 py-0.5 rounded bg-[#F5F2EB] border border-[#E4DFD4] text-stone-500 font-mono">
+              {cc.method}
+            </span>
           )}
         </div>
       </div>
 
-      {/* Utilization KPIs */}
       <div className="grid grid-cols-3 gap-3">
-        <div className="bg-[#0d1117] rounded-lg border border-[#30363d] p-4">
-          <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest mb-1">Land Utilization</p>
-          <p className="text-2xl font-bold text-emerald-400">{luiDisplay}</p>
+        <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-4">
+          <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-1">
+            Land Utilization
+          </p>
+          <p className="text-2xl font-bold text-emerald-700">{luiDisplay}</p>
         </div>
-        <div className="bg-[#0d1117] rounded-lg border border-[#30363d] p-4">
-          <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest mb-1">Crops / Year</p>
-          <p className="text-2xl font-bold text-amber-400">{formatNumber(um.crops_per_year)}</p>
+        <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-4">
+          <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-1">
+            Crops / Year
+          </p>
+          <p className="text-2xl font-bold text-amber-700">{formatNumber(um.crops_per_year)}</p>
         </div>
-        <div className="bg-[#0d1117] rounded-lg border border-[#30363d] p-4">
-          <p className="text-[10px] font-semibold text-gray-600 uppercase tracking-widest mb-1">Pattern</p>
-          <p className="text-lg font-semibold text-gray-200">{um.cropping_pattern ?? '—'}</p>
+        <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-4">
+          <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-1">
+            Pattern
+          </p>
+          <p className="text-lg font-semibold text-stone-800">{um.cropping_pattern ?? '—'}</p>
         </div>
       </div>
 
-      {/* Raw cycles */}
-      {cycles.length > 0 && (
-        <details className="group">
-          <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300 transition-colors select-none list-none flex items-center gap-2">
-            <span className="group-open:rotate-90 transition-transform">▶</span>
-            Raw cycle objects ({cycles.length})
-          </summary>
-          <pre className="mt-3 text-[11px] text-emerald-400/80 bg-[#0d1117] rounded-lg border border-[#30363d] p-4 overflow-x-auto leading-relaxed">
-            {JSON.stringify(cycles, null, 2)}
-          </pre>
-        </details>
+      {cycles.length === 0 ? (
+        <p className="text-sm text-stone-500">No cycle rows to show phenology for.</p>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
+            Phenology
+          </p>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {cycles.map((c, i) => (
+              <PhenologyCard key={i} cycle={c} index={i} />
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

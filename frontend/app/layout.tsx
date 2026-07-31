@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AgriStack Sandbox - API Testing",
-  description: "Test and explore AgriStack APIs with the interactive sandbox",
+  title: "AgriCredit Platform",
+  description: "AgriStack data acquisition and farmer credit assessment",
 };
 
 export default function RootLayout({

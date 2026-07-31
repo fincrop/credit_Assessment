@@ -65,3 +65,6 @@ api/gee_service_account.json
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# LGD download / unpack scratch (village CSV is ~66MB)
+frontend/scripts/lgd_tmp/

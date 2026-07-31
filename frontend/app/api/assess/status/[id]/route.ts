@@ -33,6 +33,7 @@ export async function GET(
       started_at: job.started_at,
       completed_at: job.completed_at,
       error: job.error,
+      progress: job.progress ?? null,
       result: job.result
     });
 

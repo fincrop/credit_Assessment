@@ -286,22 +286,18 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Fallback: sometimes callback correlation structure differs; use latest docs.
-      if (webhookDocs.length === 0) {
-        for (const col of webhookCollections) {
-          const docs = await col.find({}).sort({ receivedAt: -1 }).limit(20).toArray();
-          webhookDocs.push(...docs);
-        }
-      }
-
+      // Do NOT fall back to unrelated latest webhooks — that can save the wrong farmer.
       for (const doc of webhookDocs) {
         farmersToInsert = farmersToInsert.concat(extractFarmersFromPayload(doc?.body));
       }
     }
 
     if (farmersToInsert.length === 0) {
+      const correlationIds = extractCorrelationIds(payloads);
       return NextResponse.json({
-        error: 'No farmer records found yet. Seek returned ACK only; wait for webhook callback, then retry Save to Platform.',
+        error: correlationIds.length
+          ? `Seek ACK only so far. No webhook payload yet for correlation_id=${correlationIds.join(', ')}. Keep Cloudflare tunnel running, confirm sender_uri uses NEXT_PUBLIC_APP_DOMAIN, wait ~30–60s, refresh Webhook Responses, then retry Save.`
+          : 'No farmer records found yet. Seek returned ACK only; wait for webhook callback, then retry Save to Platform.',
       }, { status: 400 });
     }
 
@@ -309,27 +305,38 @@ export async function POST(req: NextRequest) {
     const db = client.db(TARGET_DB);
     const collection = db.collection(COLLECTION);
 
-    const insertedIds = [];
+    const insertedIds: string[] = [];
+    const created: string[] = [];
+    const updated: string[] = [];
     const errors = [];
 
     // Upsert each farmer to ensure uniqueness by farmer_id
     for (const doc of farmersToInsert) {
       try {
-        await collection.updateOne(
+        const result = await collection.updateOne(
           { farmer_id: doc.farmer_id },
           { $set: doc },
           { upsert: true }
         );
         insertedIds.push(doc.farmer_id);
+        if (result.upsertedCount > 0) created.push(doc.farmer_id);
+        else updated.push(doc.farmer_id);
       } catch (err) {
         errors.push({ id: doc.farmer_id, error: err instanceof Error ? err.message : 'Unknown' });
       }
     }
 
+    const parts: string[] = [];
+    if (created.length) parts.push(`created ${created.length}`);
+    if (updated.length) parts.push(`updated ${updated.length}`);
+
     return NextResponse.json({
       success: true,
-      message: `Successfully ingested ${insertedIds.length} farmer(s)`,
+      message: `Successfully ingested ${insertedIds.length} farmer(s)` +
+        (parts.length ? ` (${parts.join(', ')})` : ''),
       farmer_ids: insertedIds,
+      created,
+      updated,
       errors: errors.length > 0 ? errors : undefined
     });
 

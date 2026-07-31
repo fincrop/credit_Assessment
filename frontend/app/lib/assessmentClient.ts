@@ -10,22 +10,27 @@ import type { AssessmentJob } from '../types/assessment';
 /** Enqueue a new assessment job via MongoDB job queue. Returns job_id immediately. */
 export async function runAssessmentJob(params: {
   farmerId: string;
-  pmKisanEnrolled?: boolean;
-  hasCropInsurance?: boolean;
+  /** Tri-state: null = unknown (never coerce with !!) */
+  pmKisanEnrolled?: boolean | null;
+  hasCropInsurance?: boolean | null;
 }): Promise<{ job_id: string; status: string }> {
   const res = await fetch('/api/assess/enqueue', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       farmer_id: params.farmerId.trim(),
-      pm_kisan_enrolled: params.pmKisanEnrolled ?? false,
-      has_crop_insurance: params.hasCropInsurance ?? false,
+      pm_kisan_enrolled:
+        params.pmKisanEnrolled === undefined ? null : params.pmKisanEnrolled,
+      has_crop_insurance:
+        params.hasCropInsurance === undefined ? null : params.hasCropInsurance,
     }),
   });
 
   const text = await res.text();
   let data: unknown;
-  try { data = text ? JSON.parse(text) : {}; } catch {
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
     throw new Error(`Invalid response (${res.status}): ${text.slice(0, 200)}`);
   }
 
@@ -47,7 +52,9 @@ export async function pollJobStatus(jobId: string): Promise<AssessmentJob> {
 
   const text = await res.text();
   let data: unknown;
-  try { data = text ? JSON.parse(text) : {}; } catch {
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
     throw new Error(`Poll response not JSON (${res.status}): ${text.slice(0, 100)}`);
   }
 
@@ -64,6 +71,8 @@ export async function ingestFarmerData(agristackResponse: unknown): Promise<{
   success: boolean;
   farmer_ids: string[];
   message: string;
+  created?: string[];
+  updated?: string[];
 }> {
   const res = await fetch('/api/ingest-farmer', {
     method: 'POST',

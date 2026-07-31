@@ -8,8 +8,8 @@ Describes how services are expected to run in production vs local development, b
 
 | Path | Role |
 |------|------|
-| `render.yaml` | Blueprint: `agri-credit-pipeline-api` (Docker) + `agri-credit-frontend` (Node, `rootDir: frontend`) |
-| `api/app.py` | Lazy pipeline init for port scan; `/health`; jobs + sync assess |
+| `render.yaml` | Blueprint: API Docker (`dockerContext: backend/Credit_assessment`) + frontend Node (`rootDir: frontend`) |
+| `backend/Credit_assessment/api/app.py` | Lazy pipeline init for port scan; `/health`; jobs + sync assess |
 | Root `README.md` | Local uvicorn + Next + cloudflared notes |
 
 ## Detailed Methodology
@@ -18,7 +18,7 @@ Describes how services are expected to run in production vs local development, b
 
 | Service | Runtime | Start | Notes |
 |---------|---------|-------|-------|
-| `agri-credit-pipeline-api` | Docker | uvicorn on `$PORT` | `healthCheckPath: /health`; free plan; buildFilter on Python paths |
+| `agri-credit-pipeline-api` | Docker | uvicorn on `$PORT` | `healthCheckPath: /health`; free plan; buildFilter on `backend/Credit_assessment/**` |
 | `agri-credit-frontend` | Node 20.11 | `npm ci && npm run build` / `npm start` | Needs `PIPELINE_API_URL` → API URL; Mongo; `AUTH_SECRET` |
 
 Frontend talks to API for enqueue when `PIPELINE_API_URL` set; both share Mongo.
@@ -29,9 +29,9 @@ Frontend talks to API for enqueue when `PIPELINE_API_URL` set; both share Mongo.
 
 | Piece | Command / config |
 |-------|------------------|
-| API | `uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload` |
+| API | `cd backend/Credit_assessment && uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload` |
 | Jobs A | `PIPELINE_API_URL=http://127.0.0.1:8000` in frontend env |
-| Jobs B | Unset URL + `python worker.py` |
+| Jobs B | Unset URL + `cd backend/Credit_assessment && python worker.py` |
 | Frontend | `cd frontend && npm run dev` |
 | Webhooks | cloudflared tunnel to :3000 |
 

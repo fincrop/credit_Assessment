@@ -1,20 +1,18 @@
 @import "tailwindcss";
 
 /* =========================================================
-   Design tokens — used by both Agristack (light) and
-   Dashboard (dark). Dashboard components use Tailwind
-   utility classes directly; these vars are fallbacks.
+   Design tokens — cream / off-white platform theme
    ========================================================= */
 :root {
-  --bg: #0d1117;
-  --bg-elevated: #161b22;
-  --bg-card: #21262d;
-  --border: #30363d;
-  --text: #e6edf3;
-  --text-muted: #8b949e;
-  --accent: #22c55e;
-  --accent-gold: #e8b84b;
-  --warn: #f0a029;
+  --bg: #F5F2EB;
+  --bg-elevated: #FFFEFA;
+  --bg-card: #FFFFFF;
+  --border: #E4DFD4;
+  --text: #1C1917;
+  --text-muted: #6B6560;
+  --accent: #16a34a;
+  --accent-gold: #c9972e;
+  --warn: #d97706;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
@@ -29,15 +27,17 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
+  background: var(--bg);
+  color: var(--text);
 }
 
 /* =========================================================
-   Smooth scrollbars (dark)
+   Smooth scrollbars
    ========================================================= */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #444d56; }
+::-webkit-scrollbar-thumb { background: #D6D0C4; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #B8B0A0; }
 
 /* =========================================================
    Tailwind animation extensions
@@ -66,4 +66,195 @@ html, body {
    ========================================================= */
 .agristack-root {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* Section card used on single-page farmer journey */
+.farmer-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
+}
+
+.farmer-section-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 0.25rem;
+}
+
+.farmer-section-sub {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: 0 0 1.25rem;
+}
+
+/* =========================================================
+   Leaflet + Geoman (farm boundary map)
+   ========================================================= */
+.farm-map-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #e8e4db;
+}
+
+.farm-map-container .leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #e8e4db;
+  font-family: inherit;
+}
+
+.farm-map-area-badge {
+  position: absolute;
+  z-index: 1000;
+  bottom: 12px;
+  left: 12px;
+  background: rgba(255, 254, 250, 0.94);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  pointer-events: none;
+}
+
+.farm-map-legend {
+  position: absolute;
+  z-index: 1000;
+  top: 12px;
+  right: 12px;
+  background: rgba(255, 254, 250, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  max-width: 180px;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.farm-map-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.farm-map-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Geoman toolbar — light theme */
+.leaflet-pm-toolbar .button-container,
+.leaflet-pm-toolbar .leaflet-buttons-control-button {
+  background: #FFFEFA !important;
+  border-color: #E4DFD4 !important;
+  color: #1C1917 !important;
+}
+
+.leaflet-pm-toolbar .leaflet-buttons-control-button:hover {
+  background: #F5F2EB !important;
+}
+
+.leaflet-pm-toolbar .active .leaflet-buttons-control-button {
+  background: #dcfce7 !important;
+}
+
+.leaflet-control-layers {
+  background: #FFFEFA !important;
+  color: #1C1917 !important;
+  border: 1px solid #E4DFD4 !important;
+  border-radius: 8px !important;
+}
+
+.leaflet-control-layers label {
+  color: #1C1917 !important;
+}
+
+.leaflet-bar a {
+  background: #FFFEFA !important;
+  color: #1C1917 !important;
+  border-bottom-color: #E4DFD4 !important;
+}
+
+.leaflet-bar a:hover {
+  background: #F5F2EB !important;
+}
+
+/* =========================================================
+   Assessment print report (same-document @media print)
+   ========================================================= */
+.print-only {
+  display: none;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  body {
+    background: #fff !important;
+    color: #1c1917 !important;
+  }
+
+  .assessment-print-report {
+    padding: 12mm 14mm;
+    font-size: 11pt;
+    line-height: 1.45;
+    color: #1c1917;
+  }
+
+  .assessment-print-report h1 {
+    font-size: 18pt;
+    margin: 0 0 6pt;
+  }
+
+  .assessment-print-report h2 {
+    font-size: 12pt;
+    margin: 0 0 6pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #57534e;
+  }
+
+  .assessment-print-report .print-section {
+    break-inside: avoid;
+    margin-bottom: 14pt;
+    padding-bottom: 8pt;
+    border-bottom: 1px solid #e4dfd4;
+  }
+
+  .assessment-print-report .muted {
+    color: #78716c;
+    font-size: 9.5pt;
+  }
+
+  .assessment-print-report .mono {
+    font-family: ui-monospace, monospace;
+  }
+
+  .assessment-print-report .index-line {
+    font-size: 16pt;
+    margin: 0 0 4pt;
+  }
+
+  .assessment-print-report ul {
+    margin: 0;
+    padding-left: 1.1rem;
+  }
 }
