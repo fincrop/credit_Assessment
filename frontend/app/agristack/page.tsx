@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAppDispatch, useAppSelector } from '../hooks/useRedux';
 import Sidebar from '../components/layout/Sidebar';
@@ -9,9 +10,49 @@ import ApiEndpointDisplay from '../components/sandbox/ApiEndpointDisplay';
 import RequestSection from '../components/sandbox/RequestSection';
 import ResponseSection from '../components/sandbox/ResponseSection';
 import WebhookResponses from '../components/sandbox/WebhookResponses';
-import { setToken } from '../store/tokenSlice';
+import { setToken, clearToken } from '../store/tokenSlice';
 import { ENDPOINTS, getEndpointConfigs } from '../config/endpoints';
 import { ingestFarmerData } from '../lib/assessmentClient';
+
+const AGRI_CREDS_KEY = 'agristack_session_creds';
+
+type AgriSessionCreds = {
+  username: string;
+  password: string;
+  client_id: string;
+};
+
+function readSessionCreds(): AgriSessionCreds | null {
+  try {
+    const raw = sessionStorage.getItem(AGRI_CREDS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as AgriSessionCreds;
+    if (!parsed?.username || !parsed?.password) return null;
+    return {
+      username: String(parsed.username),
+      password: String(parsed.password),
+      client_id: String(parsed.client_id || 'registry_sandbox'),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionCreds(creds: AgriSessionCreds) {
+  try {
+    sessionStorage.setItem(AGRI_CREDS_KEY, JSON.stringify(creds));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function clearSessionCreds() {
+  try {
+    sessionStorage.removeItem(AGRI_CREDS_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 export default function AgristackPage() {
   const router = useRouter();
@@ -35,6 +76,12 @@ export default function AgristackPage() {
     loading: false, message: null, success: null,
   });
   const [savedFarmerIds, setSavedFarmerIds] = useState<string[]>([]);
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [agriUsername, setAgriUsername] = useState('');
+  const [agriPassword, setAgriPassword] = useState('');
+  const [agriClientId, setAgriClientId] = useState('registry_sandbox');
+  const [agriLoginError, setAgriLoginError] = useState('');
+  const [agriLoginLoading, setAgriLoginLoading] = useState(false);
 
   const isTokenUpdate = useRef(false);
   const prevEndpoint = useRef(activeEndpoint);
@@ -71,30 +118,38 @@ export default function AgristackPage() {
     tokenRestored.current = true;
     try {
       const raw = sessionStorage.getItem('agristack_access_token');
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as {
-        access_token?: string;
-        token_type?: string;
-        expires_in?: number;
-        refresh_token?: string;
-      };
-      if (parsed?.access_token) {
-        dispatch(setToken({
-          access_token: parsed.access_token,
-          token_type: parsed.token_type,
-          expires_in: parsed.expires_in,
-          refresh_token: parsed.refresh_token,
-        }));
+      if (raw) {
+        const parsed = JSON.parse(raw) as {
+          access_token?: string;
+          token_type?: string;
+          expires_in?: number;
+          refresh_token?: string;
+        };
+        if (parsed?.access_token) {
+          dispatch(setToken({
+            access_token: parsed.access_token,
+            token_type: parsed.token_type,
+            expires_in: parsed.expires_in,
+            refresh_token: parsed.refresh_token,
+          }));
+        }
       }
     } catch {
       sessionStorage.removeItem('agristack_access_token');
+    } finally {
+      setSessionChecked(true);
     }
   }, [dispatch]);
 
-  // Persist token whenever Redux token changes
+  // Persist / clear token after session restore (avoid wiping on first mount)
   useEffect(() => {
-    if (!accessToken) return;
+    if (!sessionChecked) return;
     try {
+      if (!accessToken) {
+        sessionStorage.removeItem('agristack_access_token');
+        clearSessionCreds();
+        return;
+      }
       sessionStorage.setItem(
         'agristack_access_token',
         JSON.stringify({
@@ -105,7 +160,86 @@ export default function AgristackPage() {
     } catch {
       /* ignore quota */
     }
-  }, [accessToken]);
+  }, [accessToken, sessionChecked]);
+
+  // Restore last saved farmer IDs for continuation after Save to Platform
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('agristack_last_saved_farmers');
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { farmer_ids?: string[]; message?: string };
+      if (Array.isArray(parsed?.farmer_ids) && parsed.farmer_ids.length > 0) {
+        setSavedFarmerIds(parsed.farmer_ids);
+        setIngestStatus({
+          loading: false,
+          message: parsed.message || `✓ Saved ${parsed.farmer_ids.length} farmer(s)`,
+          success: true,
+        });
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleAgriLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAgriLoginError('');
+    setAgriLoginLoading(true);
+    try {
+      const username = agriUsername.trim();
+      const client_id = agriClientId.trim() || 'registry_sandbox';
+      const res = await fetch('/api/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          username,
+          password: agriPassword,
+          client_id,
+          grant_type: 'password',
+        }),
+      });
+      const result = await res.json();
+      const tokenData = result?.data as
+        | { access_token?: string; token_type?: string; expires_in?: number; refresh_token?: string }
+        | undefined;
+      if (result.success && tokenData?.access_token) {
+        // Keep session creds so the sandbox Token body can re-run without retyping
+        writeSessionCreds({ username, password: agriPassword, client_id });
+        dispatch(
+          setToken({
+            access_token: tokenData.access_token,
+            token_type: tokenData.token_type,
+            expires_in: tokenData.expires_in,
+            refresh_token: tokenData.refresh_token,
+          })
+        );
+        setAgriPassword('');
+        setActiveEndpoint('farmer-land-id');
+      } else {
+        setAgriLoginError(
+          result?.error?.message || 'Provide valid AgriStack credentials'
+        );
+      }
+    } catch {
+      setAgriLoginError('Could not reach AgriStack token service. Try again.');
+    } finally {
+      setAgriLoginLoading(false);
+    }
+  };
+
+  const handleAgriLogout = () => {
+    clearSessionCreds();
+    try {
+      sessionStorage.removeItem('agristack_last_saved_farmers');
+    } catch {
+      /* ignore */
+    }
+    setSavedFarmerIds([]);
+    setIngestStatus({ loading: false, message: null, success: null });
+    dispatch(clearToken());
+    setAgriLoginError('');
+  };
 
   useEffect(() => {
     const configs = getEndpointConfigs(accessToken);
@@ -113,16 +247,29 @@ export default function AgristackPage() {
     if (config) {
       if (prevEndpoint.current !== activeEndpoint) {
         setResponse(null);
-        setIngestStatus({ loading: false, message: null, success: null });
-        setSavedFarmerIds([]);
+        // Keep last-saved continuation banner; only reset in-flight save UI for this response
+        setIngestStatus((prev) =>
+          prev.success
+            ? prev
+            : { loading: false, message: null, success: null }
+        );
         prevEndpoint.current = activeEndpoint;
       }
       setHeaders(JSON.stringify(config.headers, null, 2));
-      // Prefer NEXT_PUBLIC_APP_DOMAIN (Cloudflare tunnel) so AgriStack can reach us
       const body = structuredClone(config.body) as Record<string, unknown>;
       const header = body?.header as Record<string, unknown> | undefined;
       if (header) {
         header.sender_uri = `${publicWebhookBase()}${webhookPathFor(activeEndpoint)}`;
+      }
+      // Autofill Token body from AgriStack gate credentials (same session)
+      if (activeEndpoint === 'token') {
+        const creds = readSessionCreds();
+        if (creds) {
+          body.username = creds.username;
+          body.password = creds.password;
+          body.client_id = creds.client_id || 'registry_sandbox';
+          body.grant_type = 'password';
+        }
       }
       setRequestBody(JSON.stringify(body, null, 2));
     }
@@ -188,10 +335,21 @@ export default function AgristackPage() {
   };
 
   const handleRun = async () => {
+    if (activeEndpoint !== 'token' && !accessToken) {
+      setResponse({
+        success: false,
+        error: { code: 401, message: 'Sign in with valid AgriStack credentials first' },
+        statusCode: 401,
+      });
+      return;
+    }
+
     setIsLoading(true);
     setResponse(null);
-    setIngestStatus({ loading: false, message: null, success: null });
-    setSavedFarmerIds([]);
+    // Keep post-save continuation banner; only clear failed/in-progress save state
+    setIngestStatus((prev) =>
+      prev.success ? prev : { loading: false, message: null, success: null }
+    );
 
     try {
       const parsedHeaders = JSON.parse(headers);
@@ -285,18 +443,33 @@ export default function AgristackPage() {
         created?: string[];
         updated?: string[];
         message?: string;
+        plot_counts?: { farmer_id: string; n_plots: number; n_included: number }[];
       };
-      setSavedFarmerIds(result.farmer_ids || []);
+      const ids = result.farmer_ids || [];
+      setSavedFarmerIds(ids);
       const created = result.created?.length ?? 0;
       const updated = result.updated?.length ?? 0;
       let verb = 'Saved';
       if (updated > 0 && created === 0) verb = 'Updated';
       else if (updated > 0 && created > 0) verb = `Saved ${created}, updated ${updated}`;
+      const plotNote =
+        result.plot_counts?.length
+          ? ` · ${result.plot_counts.map((p) => `${p.n_included}/${p.n_plots} plots`).join(', ')}`
+          : '';
+      const message = `✓ ${verb} ${ids.length} farmer(s): ${ids.join(', ')}${plotNote}`;
       setIngestStatus({
         loading: false,
-        message: `✓ ${verb} ${result.farmer_ids.length} farmer(s): ${result.farmer_ids.join(', ')}`,
+        message,
         success: true,
       });
+      try {
+        sessionStorage.setItem(
+          'agristack_last_saved_farmers',
+          JSON.stringify({ farmer_ids: ids, message })
+        );
+      } catch {
+        /* ignore */
+      }
     } catch (e) {
       setIngestStatus({ loading: false, message: `✗ ${e instanceof Error ? e.message : 'Ingest failed'}`, success: false });
     }
@@ -304,6 +477,109 @@ export default function AgristackPage() {
 
   const showIngestButton = response?.success &&
     (activeEndpoint === 'seek' || activeEndpoint === 'farmer-land-id' || activeEndpoint === 'land-parcel');
+
+  const showContinuation =
+    ingestStatus.success === true && savedFarmerIds.length > 0;
+
+  if (!sessionChecked) {
+    return (
+      <div className="min-h-screen bg-[#F5F2EB] flex items-center justify-center text-stone-500 text-sm">
+        Loading AgriStack session…
+      </div>
+    );
+  }
+
+  if (!accessToken) {
+    return (
+      <div className="min-h-screen bg-[#F5F2EB] text-stone-800 relative overflow-hidden flex items-center justify-center p-4">
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(ellipse 70% 45% at 15% 0%, rgba(56,189,248,0.16), transparent 55%), linear-gradient(180deg, #F5F2EB 0%, #EFEBE3 100%)',
+          }}
+        />
+        <div className="relative z-10 w-full max-w-md">
+          <div className="mb-6 flex items-center justify-between">
+            <Link href="/" className="text-sm text-stone-500 hover:text-emerald-700 transition-colors">
+              ← Platform home
+            </Link>
+          </div>
+          <div className="bg-white/90 border border-[#E4DFD4] rounded-2xl p-8 shadow-sm">
+            <div className="mb-6">
+              <p className="text-[10px] font-mono text-sky-600 uppercase tracking-wider mb-1">AgriStack path</p>
+              <h1 className="text-2xl font-bold text-stone-900 tracking-tight">Sign in to AgriStack</h1>
+              <p className="text-sm text-stone-500 mt-2 leading-relaxed">
+                Enter your AgriStack sandbox credentials. These are separate from your AgriCredit account
+                and are only kept for this browser session.
+              </p>
+            </div>
+            {agriLoginError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-5 text-sm text-red-700">
+                {agriLoginError}
+              </div>
+            )}
+            <form onSubmit={handleAgriLogin} className="space-y-4">
+              <div>
+                <label htmlFor="agri-username" className="block text-sm font-medium text-stone-700 mb-1.5">
+                  Username
+                </label>
+                <input
+                  id="agri-username"
+                  type="text"
+                  value={agriUsername}
+                  onChange={(e) => setAgriUsername(e.target.value)}
+                  required
+                  autoComplete="username"
+                  className="w-full px-4 py-2.5 rounded-lg border border-stone-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none text-stone-800"
+                />
+              </div>
+              <div>
+                <label htmlFor="agri-password" className="block text-sm font-medium text-stone-700 mb-1.5">
+                  Password
+                </label>
+                <input
+                  id="agri-password"
+                  type="password"
+                  value={agriPassword}
+                  onChange={(e) => setAgriPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                  className="w-full px-4 py-2.5 rounded-lg border border-stone-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none text-stone-800"
+                />
+              </div>
+              <div>
+                <label htmlFor="agri-client-id" className="block text-sm font-medium text-stone-700 mb-1.5">
+                  Client ID
+                </label>
+                <input
+                  id="agri-client-id"
+                  type="text"
+                  value={agriClientId}
+                  onChange={(e) => setAgriClientId(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-lg border border-stone-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none text-stone-800 font-mono text-sm"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={agriLoginLoading}
+                className="w-full py-3 rounded-lg font-semibold text-white bg-sky-600 hover:bg-sky-500 disabled:bg-stone-400 transition-colors"
+              >
+                {agriLoginLoading ? 'Validating…' : 'Validate & continue'}
+              </button>
+            </form>
+            <p className="text-xs text-stone-500 mt-5 leading-relaxed">
+              No AgriStack account? Use the{' '}
+              <Link href="/farmer" className="text-emerald-700 font-medium hover:underline">
+                Farmer Assessment Journey
+              </Link>{' '}
+              instead — it does not require AgriStack credentials.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -319,6 +595,55 @@ export default function AgristackPage() {
         <Header activeTab={activeTab} onTabChange={setActiveTab} />
         <main className="flex-1 overflow-y-auto p-6">
           <div className="max-w-5xl mx-auto space-y-6">
+            {showContinuation && (
+              <div className="sticky top-0 z-20 bg-blue-50 border border-blue-200 rounded-xl p-5 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-blue-900">Farms saved — continue to assessment</p>
+                    <p className="text-xs text-blue-800 mt-1 break-all">
+                      {ingestStatus.message || `${savedFarmerIds.length} farmer(s) ready`}
+                    </p>
+                    <ul className="mt-2 flex flex-wrap gap-2">
+                      {savedFarmerIds.map((id) => (
+                        <li key={id}>
+                          <Link
+                            href={`/dashboard?farmer_id=${encodeURIComponent(id)}`}
+                            className="inline-flex text-xs font-mono px-2 py-1 rounded-md bg-white border border-blue-200 text-blue-800 hover:bg-blue-100"
+                          >
+                            {id}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="flex flex-wrap gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const farmerId = encodeURIComponent(savedFarmerIds[0]);
+                        router.push(`/dashboard?farmer_id=${farmerId}`);
+                      }}
+                      className="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
+                    >
+                      Assess on Dashboard →
+                    </button>
+                    <Link
+                      href="/"
+                      className="inline-flex items-center bg-white border border-blue-200 hover:bg-blue-50 text-blue-900 font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
+                    >
+                      My farmers
+                    </Link>
+                    <Link
+                      href="/farmer/farms"
+                      className="inline-flex items-center text-blue-800 hover:text-blue-950 font-medium px-3 py-2 text-sm"
+                    >
+                      Manage farms
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activeTab === 'sandbox' ? (
               <>
                 <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
@@ -337,15 +662,24 @@ export default function AgristackPage() {
                   </div>
                 </div>
 
-                {accessToken && (
-                  <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 flex items-center gap-2">
+                <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2">
                     <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <span className="text-green-800 font-medium">Token Active</span>
-                    <span className="text-green-600 text-sm">- Token is auto-filled in Seek API headers</span>
+                    <span className="text-green-800 font-medium">AgriStack session active</span>
+                    <span className="text-green-600 text-sm">
+                      — Seek headers use this token; Token body is autofilled if you re-run it
+                    </span>
                   </div>
-                )}
+                  <button
+                    type="button"
+                    onClick={handleAgriLogout}
+                    className="text-sm text-stone-600 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition-colors"
+                  >
+                    Disconnect AgriStack
+                  </button>
+                </div>
 
                 <ApiEndpointDisplay method={currentEndpoint.method} url={currentEndpoint.url} />
 
@@ -377,42 +711,33 @@ export default function AgristackPage() {
                   isLoading={isLoading}
                 />
 
-                <ResponseSection response={response} isLoading={isLoading} />
-
-                {/* Save to Platform button */}
+                {/* Save + continue — above the large response so it stays visible */}
                 {showIngestButton && (
-                  <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-800">Save to Assessment Platform</p>
-                      <p className="text-xs text-stone-500 mt-0.5">
-                        Extract farmer land records from this response and write them to <code className="font-mono">farm_info</code> in MongoDB.
-                      </p>
-                      {ingestStatus.message && (
-                        <p className={`text-xs mt-1.5 font-medium ${ingestStatus.success ? 'text-green-600' : 'text-red-600'}`}>
-                          {ingestStatus.message}
+                  <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">Save to Assessment Platform</p>
+                        <p className="text-xs text-stone-500 mt-0.5">
+                          Write farmer land records to MongoDB, then open the dashboard to run credit assessment.
                         </p>
-                      )}
-                    </div>
-                    <button
-                      onClick={handleIngest}
-                      disabled={ingestStatus.loading}
-                      className="flex-shrink-0 bg-green-600 hover:bg-green-500 disabled:bg-gray-300 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
-                    >
-                      {ingestStatus.loading ? 'Saving…' : '⬆ Save to Platform'}
-                    </button>
-                    {ingestStatus.success && savedFarmerIds.length > 0 && (
+                        {ingestStatus.message && !showContinuation && (
+                          <p className={`text-xs mt-1.5 font-medium ${ingestStatus.success ? 'text-green-600' : 'text-red-600'}`}>
+                            {ingestStatus.message}
+                          </p>
+                        )}
+                      </div>
                       <button
-                        onClick={() => {
-                          const farmerId = encodeURIComponent(savedFarmerIds[0]);
-                          router.push(`/dashboard?farmer_id=${farmerId}`);
-                        }}
-                        className="flex-shrink-0 bg-blue-600 hover:bg-blue-500 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
+                        onClick={handleIngest}
+                        disabled={ingestStatus.loading}
+                        className="flex-shrink-0 bg-green-600 hover:bg-green-500 disabled:bg-gray-300 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
                       >
-                        Go to Dashboard →
+                        {ingestStatus.loading ? 'Saving…' : '⬆ Save to Platform'}
                       </button>
-                    )}
+                    </div>
                   </div>
                 )}
+
+                <ResponseSection response={response} isLoading={isLoading} />
               </>
             ) : (
               <WebhookResponses />

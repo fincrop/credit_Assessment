@@ -1,15 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../lib/mongodb';
+import { verifyJWT } from '../../lib/jwt';
 import {
-  buildClusteredFarmFields,
-  centroidFromPlotGeometry,
-} from '../../lib/farmerParcelCluster';
+  buildFarmInfoDocument,
+  normalizeAgriStackLands,
+} from '../../lib/farmInfoSchema';
+import { ownerFields, ownerFilter } from '../../lib/ownerScope';
 
 const TARGET_DB = process.env.MONGODB_DATABASE || process.env.MONGODB_DB || 'agristack';
 const COLLECTION = 'farm_info';
+const FARMER_FARMS = 'farmer_farms';
 
 export async function POST(req: NextRequest) {
   try {
+    const token = req.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const jwtPayload = await verifyJWT(token);
+    if (!jwtPayload?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const ownership = ownerFields(jwtPayload);
+
     const { agristack_response } = await req.json();
 
     if (!agristack_response) {
@@ -61,126 +70,50 @@ export async function POST(req: NextRequest) {
         for (const reg of registryRecords) {
           // Nested FarmerData + land_data (Seek / webhook full payload)
           if (reg?.FarmerData && typeof reg.FarmerData === 'object') {
-            const fd = reg.FarmerData;
+            const fd = reg.FarmerData as Record<string, unknown>;
             const farmerId = fd.farmer_id;
             if (!farmerId) continue;
-            const name = fd.farmer_name || fd.name || 'Unknown';
-            const lands = normalizeArray(reg.land_data).filter(Boolean) as Record<string, unknown>[];
-            let primaryFarm = (lands[0] || {}) as Record<string, unknown>;
-            let geom: Record<string, unknown> | null = null;
-            let latitude: number | null = null;
-            let longitude: number | null = null;
-            let field_area_ha: number | null = null;
-            let parcel_ingest_stats: ReturnType<
-              typeof buildClusteredFarmFields
-            >['ingest_stats'] | null = null;
-
-            if (lands.length > 0) {
-              const clustered = buildClusteredFarmFields(lands);
-              primaryFarm = (clustered.clusteredParcels[0] || primaryFarm) as Record<string, unknown>;
-              parcel_ingest_stats = clustered.ingest_stats;
-              geom =
-                (clustered.geometry as Record<string, unknown> | null) ||
-                ((primaryFarm.plot_geometry || primaryFarm.farm_geometry) as Record<
-                  string,
-                  unknown
-                > | null) ||
-                null;
-              field_area_ha =
-                clustered.field_area_ha != null && clustered.field_area_ha > 0
-                  ? clustered.field_area_ha
-                  : null;
-              if (
-                clustered.centroid?.latitude != null &&
-                clustered.centroid.longitude != null
-              ) {
-                latitude = clustered.centroid.latitude;
-                longitude = clustered.centroid.longitude;
-              }
-            }
-
-            const legacyExtent =
-              primaryFarm.owner_extent != null && primaryFarm.owner_extent !== ''
-                ? Number(primaryFarm.owner_extent)
-                : null;
-            let legacyHa =
-              legacyExtent != null && Number.isFinite(legacyExtent) ? legacyExtent : null;
-            if (
-              legacyHa != null &&
-              primaryFarm.area_unit &&
-              String(primaryFarm.area_unit).toLowerCase().includes('acre')
-            ) {
-              legacyHa *= 0.404686;
-            }
-            if (field_area_ha == null && legacyHa != null) {
-              field_area_ha = legacyHa;
-            }
-
-            type GeoJsonLike = { type?: string; coordinates?: unknown } | null;
-            const gForCe = geom as GeoJsonLike;
-            const gCoords = gForCe?.coordinates;
-            const hasCoordArray =
-              Array.isArray(gCoords) && gCoords.length > 0;
-
-            if (gForCe && hasCoordArray && (latitude == null || longitude == null)) {
-              if (gForCe.type === 'Polygon' || gForCe.type === 'MultiPolygon') {
-                const cg = centroidFromPlotGeometry({
-                  type: gForCe.type,
-                  coordinates: gCoords,
-                });
-                if (cg) {
-                  latitude = cg.lat;
-                  longitude = cg.lon;
-                }
-                try {
-                  const coords =
-                    gForCe.type === 'Polygon'
-                      ? (gCoords as number[][][])[0]
-                      : (gCoords as number[][][][])[0]?.[0];
-                  if (
-                    coords?.length &&
-                    (latitude == null || longitude == null)
-                  ) {
-                    const sumLat = coords.reduce(
-                      (sum: number, pt: number[]) => sum + Number(pt[1] || 0),
-                      0
-                    );
-                    const sumLon = coords.reduce(
-                      (sum: number, pt: number[]) => sum + Number(pt[0] || 0),
-                      0
-                    );
-                    latitude = sumLat / coords.length;
-                    longitude = sumLon / coords.length;
-                  }
-                } catch {
-                  /* ignore */
-                }
-              } else if (gForCe.type === 'Point') {
-                const pts = gCoords as number[];
-                longitude = Number(pts[0]);
-                latitude = Number(pts[1]);
-              }
-            }
-
-            out.push({
+            const name = String(fd.farmer_name || fd.name || 'Unknown');
+            const lands = normalizeArray(reg.land_data).filter(Boolean) as Record<
+              string,
+              unknown
+            >[];
+            const { farms, parcel_ingest_stats } = normalizeAgriStackLands(lands, {
+              ...fd,
+              state_lgd_code: fd.state_lgd_code ?? reg.state_lgd_code,
+            });
+            const doc = buildFarmInfoDocument({
               farmer_id: String(farmerId),
               name,
-              latitude,
-              longitude,
-              geometry: geom,
-              field_area_ha,
-              parcel_ingest_stats: parcel_ingest_stats || undefined,
-              crop: null,
-              sowing_date: null,
-              state_lgd_code: fd.state_lgd_code ?? reg.state_lgd_code ?? primaryFarm.state_lgd_code ?? null,
+              mobile: fd.mobile_no != null ? String(fd.mobile_no) : null,
+              farms,
+              parcel_ingest_stats,
+              farmer_profile: {
+                gender: fd.gender,
+                dob: fd.dob,
+                address: fd.address,
+                farmer_category: fd.farmer_category,
+                caste_category: fd.caste_category,
+                aadhaar_type: fd.aadhaar_type,
+                village_lgd_code: fd.village_lgd_code,
+                sub_district_lgd_code: fd.sub_district_lgd_code,
+              },
+              state_lgd_code:
+                (fd.state_lgd_code as string) ||
+                (reg.state_lgd_code as string) ||
+                null,
+              district_lgd_code: (fd.district_lgd_code as string) || null,
               farmer_benefits: {
-                pm_kisan_enrolled: false,
-                has_crop_insurance: false,
+                pm_kisan_enrolled: null,
+                has_crop_insurance: null,
               },
               source: 'agristack_ingest',
-              status: 'active',
+              created_by: ownership.created_by,
+              user_id: ownership.user_id,
+            });
+            out.push({
+              ...doc,
               created_at: new Date(),
-              updated_at: new Date(),
             });
             continue;
           }
@@ -249,6 +182,8 @@ export async function POST(req: NextRequest) {
             },
             source: 'agristack_ingest',
             status: 'active',
+            created_by: ownership.created_by,
+            user_id: ownership.user_id,
             created_at: new Date(),
             updated_at: new Date(),
           });
@@ -304,24 +239,97 @@ export async function POST(req: NextRequest) {
     const { client } = await connectToDatabase();
     const db = client.db(TARGET_DB);
     const collection = db.collection(COLLECTION);
+    const farmerFarms = db.collection(FARMER_FARMS);
 
     const insertedIds: string[] = [];
     const created: string[] = [];
     const updated: string[] = [];
     const errors = [];
 
-    // Upsert each farmer to ensure uniqueness by farmer_id
+    // Upsert each farmer to ensure uniqueness by farmer_id (scoped to this user on mirror)
     for (const doc of farmersToInsert) {
       try {
+        const farmerId = String(doc.farmer_id || '').trim();
+        if (!farmerId) {
+          errors.push({ id: '(missing)', error: 'farmer_id missing on extracted record' });
+          continue;
+        }
+
+        const {
+          created_at: docCreatedAt,
+          _id: _ignoredId,
+          ...rest
+        } = doc as Record<string, unknown> & { created_at?: Date; _id?: unknown };
+
+        const ownedDoc = {
+          ...rest,
+          farmer_id: farmerId,
+          created_by: ownership.created_by,
+          user_id: ownership.user_id,
+          updated_at: new Date(),
+        };
+
+        // created_at must only appear in $setOnInsert — conflict if also in $set
         const result = await collection.updateOne(
-          { farmer_id: doc.farmer_id },
-          { $set: doc },
+          { farmer_id: farmerId },
+          {
+            $set: ownedDoc,
+            $setOnInsert: { created_at: docCreatedAt || new Date() },
+          },
           { upsert: true }
         );
-        insertedIds.push(doc.farmer_id);
-        if (result.upsertedCount > 0) created.push(doc.farmer_id);
-        else updated.push(doc.farmer_id);
+        insertedIds.push(farmerId);
+        if (result.upsertedCount > 0) created.push(farmerId);
+        else updated.push(farmerId);
+
+        // Mirror into farmer_farms so home history lists AgriStack ingest for this user
+        const farmsArr = Array.isArray(doc.farms) ? doc.farms : [];
+        const mirrorFarms = farmsArr.map((f: Record<string, unknown>, i: number) => ({
+          farm_id: String(f.farm_id || `plot_${i + 1}`),
+          farm_name: f.farm_name || f.farm_id || `Plot ${i + 1}`,
+          boundary: f.geometry || null,
+          area_ha: f.area_ha ?? null,
+          centroid: f.centroid || null,
+          primary_crop: f.primary_crop || doc.crop || null,
+          sowing_date: f.sowing_date || doc.sowing_date || null,
+        }));
+        const mirrorFilter = {
+          agristack_farmer_id: farmerId,
+          ...ownerFilter(jwtPayload),
+        };
+        const existingMirror = await farmerFarms.findOne(mirrorFilter);
+        const now = new Date();
+        const mirrorFields = {
+          farmer_name: doc.name || 'Unknown',
+          phone: doc.mobile || null,
+          language: 'English',
+          agristack_farmer_id: farmerId,
+          location: {
+            state: doc.state ? { name: doc.state, lgd_code: doc.state_lgd_code } : null,
+            district: doc.district
+              ? { name: doc.district, lgd_code: doc.district_lgd_code }
+              : null,
+            village: doc.village ? { name: doc.village } : null,
+          },
+          farms: mirrorFarms,
+          farmer_benefits: doc.farmer_benefits || {
+            pm_kisan_enrolled: null,
+            has_crop_insurance: null,
+          },
+          source: 'agristack_ingest',
+          updated_at: now,
+          ...ownership,
+        };
+        if (existingMirror) {
+          await farmerFarms.updateOne({ _id: existingMirror._id }, { $set: mirrorFields });
+        } else {
+          await farmerFarms.insertOne({
+            ...mirrorFields,
+            created_at: now,
+          });
+        }
       } catch (err) {
+        console.error('ingest-farmer upsert failed:', err);
         errors.push({ id: doc.farmer_id, error: err instanceof Error ? err.message : 'Unknown' });
       }
     }
@@ -329,15 +337,42 @@ export async function POST(req: NextRequest) {
     const parts: string[] = [];
     if (created.length) parts.push(`created ${created.length}`);
     if (updated.length) parts.push(`updated ${updated.length}`);
+    const plotCounts = farmersToInsert.map((d) => ({
+      farmer_id: d.farmer_id,
+      n_plots: Array.isArray(d.farms) ? d.farms.length : 0,
+      n_included: Array.isArray(d.farms)
+        ? d.farms.filter((f: { included_in_assessment?: boolean }) => f.included_in_assessment !== false)
+            .length
+        : 0,
+    }));
+    const totalPlots = plotCounts.reduce((s, p) => s + p.n_plots, 0);
+
+    if (insertedIds.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            errors[0]?.error ||
+            'Failed to save farmers to MongoDB. Check server logs for details.',
+          farmer_ids: [],
+          errors,
+          plot_counts: plotCounts,
+        },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
-      message: `Successfully ingested ${insertedIds.length} farmer(s)` +
-        (parts.length ? ` (${parts.join(', ')})` : ''),
+      message:
+        `Successfully ingested ${insertedIds.length} farmer(s)` +
+        (parts.length ? ` (${parts.join(', ')})` : '') +
+        (totalPlots ? ` · ${totalPlots} plot(s) stored` : ''),
       farmer_ids: insertedIds,
       created,
       updated,
-      errors: errors.length > 0 ? errors : undefined
+      plot_counts: plotCounts,
+      errors: errors.length > 0 ? errors : undefined,
     });
 
   } catch (error) {

@@ -9,8 +9,15 @@ import { SubIndexBars } from './SubIndexBars';
 export function SummaryHero({ data }: { data: AssessmentPayload }) {
   const view = useRiskView(data);
   const score = view.score;
-  const pct = typeof score === 'number' ? Math.min(100, Math.max(0, score)) : 0;
-  const scoreColor = pct >= 70 ? '#16a34a' : pct >= 45 ? '#d97706' : '#dc2626';
+  const insufficient = !!view.insufficientData || score == null;
+  const pct = !insufficient && typeof score === 'number' ? Math.min(100, Math.max(0, score)) : 0;
+  const scoreColor = insufficient
+    ? '#a8a29e'
+    : pct >= 70
+      ? '#16a34a'
+      : pct >= 45
+        ? '#d97706'
+        : '#dc2626';
 
   const radius = 52;
   const circumference = 2 * Math.PI * radius;
@@ -24,29 +31,45 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
       <p className="text-xs text-stone-500 mb-5 leading-relaxed max-w-2xl">
         Expert-weighted field-health index (0–100). This is <strong>not</strong> a loan amount,
         credit limit, or probability of default.
+        {view.source === 'farmer_level' && ' Farmer-level aggregate across owned plots.'}
       </p>
+
+      {insufficient && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          Insufficient data to score this farmer
+          {view.category === 'INSUFFICIENT_DATA' ? ' (no scorable plots).' : '.'}
+        </div>
+      )}
+
+      {(view.warnings?.length ?? 0) > 0 && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          {view.warnings!.join(' · ')}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-6 items-center">
         <div className="relative flex-shrink-0">
           <svg width="130" height="130" viewBox="0 0 130 130">
             <circle cx="65" cy="65" r={radius} fill="none" stroke="#E8E4DB" strokeWidth="10" />
-            <circle
-              cx="65"
-              cy="65"
-              r={radius}
-              fill="none"
-              stroke={scoreColor}
-              strokeWidth="10"
-              strokeDasharray={`${dash} ${circumference}`}
-              strokeDashoffset={circumference * 0.25}
-              strokeLinecap="round"
-              transform="rotate(-90 65 65)"
-              style={{ transition: 'stroke-dasharray 0.8s ease' }}
-            />
+            {!insufficient && (
+              <circle
+                cx="65"
+                cy="65"
+                r={radius}
+                fill="none"
+                stroke={scoreColor}
+                strokeWidth="10"
+                strokeDasharray={`${dash} ${circumference}`}
+                strokeDashoffset={circumference * 0.25}
+                strokeLinecap="round"
+                transform="rotate(-90 65 65)"
+                style={{ transition: 'stroke-dasharray 0.8s ease' }}
+              />
+            )}
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-2xl font-bold" style={{ color: scoreColor }}>
-              {formatScoreWhole(score)}
+              {insufficient ? '—' : formatScoreWhole(score)}
             </span>
             <span className="text-[10px] text-stone-400 font-medium uppercase tracking-widest">
               Index
@@ -65,6 +88,12 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
                 {typeof view.category === 'string' ? view.category : '—'}
               </span>
             )}
+            {view.nPlotsScored != null && view.nPlotsTotal != null && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800">
+                {view.nPlotsScored}/{view.nPlotsTotal} plots scored
+                {view.nPlotsFailed ? ` · ${view.nPlotsFailed} failed` : ''}
+              </span>
+            )}
             {view.indexVersion && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#F5F2EB] border border-[#E4DFD4] text-[11px] text-stone-600 font-mono">
                 {view.indexVersion}
@@ -76,7 +105,15 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
               </span>
             )}
           </div>
-          {view.rawIndex != null &&
+          {view.diversification && view.diversification.bonus > 0 && (
+            <p className="text-xs text-emerald-800">
+              Diversification +{formatScoreOne(view.diversification.bonus)} (
+              {view.diversification.n_crops} crop(s), {view.diversification.n_districts}{' '}
+              location(s))
+            </p>
+          )}
+          {!insufficient &&
+            view.rawIndex != null &&
             view.score != null &&
             Math.abs(view.rawIndex - view.score) >= 0.5 && (
               <p className="text-xs text-amber-800">
@@ -94,9 +131,13 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
 
       <div className="mt-5 pt-5 border-t border-[#E4DFD4]">
         <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-3">
-          Sub-indices
+          Sub-indices{view.source === 'farmer_level' ? ' (farmer-level)' : ''}
         </p>
-        <SubIndexBars view={view} />
+        {insufficient || Object.keys(view.subIndices).length === 0 ? (
+          <p className="text-xs text-stone-400">No sub-index scores available.</p>
+        ) : (
+          <SubIndexBars view={view} />
+        )}
       </div>
 
       {view.scoringNarrative && (

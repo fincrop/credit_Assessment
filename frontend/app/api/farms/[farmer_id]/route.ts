@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../lib/mongodb';
 import { verifyJWT } from '../../../lib/jwt';
 import { ObjectId } from 'mongodb';
+import { ownerFilter } from '../../../lib/ownerScope';
 
 const TARGET_DB = process.env.MONGODB_DATABASE || process.env.MONGODB_DB || 'agristack';
 const COLLECTION = 'farmer_farms';
@@ -10,14 +11,17 @@ export async function GET(req: NextRequest, context: { params: Promise<{ farmer_
   const token = req.cookies.get('auth-token')?.value;
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const jwtPayload = await verifyJWT(token);
-  if (!jwtPayload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!jwtPayload?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { farmer_id } = await context.params;
   if (!ObjectId.isValid(farmer_id)) return NextResponse.json({ error: 'Invalid farmer_id' }, { status: 400 });
 
   const { client } = await connectToDatabase();
   const db = client.db(TARGET_DB);
-  const doc = await db.collection(COLLECTION).findOne({ _id: new ObjectId(farmer_id) });
+  const doc = await db.collection(COLLECTION).findOne({
+    _id: new ObjectId(farmer_id),
+    ...ownerFilter(jwtPayload),
+  });
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json({ success: true, farmer: { ...doc, _id: doc._id.toString() } });
 }
@@ -26,7 +30,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ farme
   const token = req.cookies.get('auth-token')?.value;
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const jwtPayload = await verifyJWT(token);
-  if (!jwtPayload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!jwtPayload?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { farmer_id } = await context.params;
   if (!ObjectId.isValid(farmer_id)) return NextResponse.json({ error: 'Invalid farmer_id' }, { status: 400 });
@@ -46,7 +50,7 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ farme
     const { client } = await connectToDatabase();
     const db = client.db(TARGET_DB);
     const result = await db.collection(COLLECTION).findOneAndUpdate(
-      { _id: new ObjectId(farmer_id) },
+      { _id: new ObjectId(farmer_id), ...ownerFilter(jwtPayload) },
       { $set },
       { returnDocument: 'after' }
     );
@@ -66,13 +70,19 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ farm
   const token = req.cookies.get('auth-token')?.value;
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const jwtPayload = await verifyJWT(token);
-  if (!jwtPayload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!jwtPayload?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { farmer_id } = await context.params;
   if (!ObjectId.isValid(farmer_id)) return NextResponse.json({ error: 'Invalid farmer_id' }, { status: 400 });
 
   const { client } = await connectToDatabase();
   const db = client.db(TARGET_DB);
-  await db.collection(COLLECTION).deleteOne({ _id: new ObjectId(farmer_id) });
+  const result = await db.collection(COLLECTION).deleteOne({
+    _id: new ObjectId(farmer_id),
+    ...ownerFilter(jwtPayload),
+  });
+  if (result.deletedCount === 0) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
   return NextResponse.json({ success: true });
 }

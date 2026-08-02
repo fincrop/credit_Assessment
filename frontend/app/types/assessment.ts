@@ -312,6 +312,15 @@ export interface AssessmentPayload {
   continuous_data_stats?: ContinuousDataStats;
   satellite_data?: Record<string, unknown>;
   risk_assessment?: RiskAssessment;
+  /** Multi-farm aggregate (when assessment_type === multi_farm). */
+  farmer_level?: FarmerLevel;
+  farm_assessments?: FarmAssessment[];
+  assessment_type?: string;
+  method?: string;
+  n_plots_total?: number;
+  n_plots_scored?: number;
+  n_plots_failed?: number;
+  n_plots_skipped?: number;
   signal_quality_summary?: SignalQualitySummary;
   index_version?: string;
   credit_assessment?: CreditAssessment;
@@ -332,12 +341,96 @@ export interface AssessmentPayload {
   summary?: Record<string, unknown>;
 }
 
+/** Farmer-level aggregate over all owned plots (multi_farm_aggregate_v5). */
+export interface Diversification {
+  score: number;
+  bonus: number;
+  n_crops: number;
+  n_districts: number;
+  n_seasons?: number;
+  n_plots: number;
+  note?: string;
+}
+
+export interface FarmerLevelBenefits {
+  bonus?: number;
+  conferred?: string[];
+  pm_kisan?: TriState;
+  has_crop_insurance?: TriState;
+  note?: string;
+}
+
+export interface FarmerLevel {
+  index_score: number | null;
+  raw_index?: number;
+  risk_category: RiskCategory;
+  confidence_gate: number | null;
+  sub_indices: Record<string, number>;
+  weights: Record<string, number>;
+  weak_sub_indices?: string[];
+  diversification?: Diversification;
+  benefits?: FarmerLevelBenefits;
+  portfolio_bonus?: number;
+  reason_codes?: ReasonCode[];
+  n_plots_total?: number;
+  n_plots_scored?: number;
+  n_plots_owned?: number;
+  total_scored_area_ha?: number;
+  weather_shared?: boolean;
+}
+
+export interface FarmAssessment {
+  plot_key?: string;
+  farm_id?: string;
+  area_ha: number;
+  tenure_factor: number;
+  included: boolean;
+  is_ror_owner?: boolean | null;
+  crop?: string | null;
+  district?: string | null;
+  season_types?: string[];
+  index_score?: number | null;
+  raw_index?: number;
+  risk_category?: string;
+  confidence_gate?: number | null;
+  sub_indices: Record<string, number>;
+  reason_codes?: ReasonCode[];
+  skipped_reason?: string;
+}
+
+/** Mid-run progress — partial_result never includes farmer_level. */
+export interface JobPartialResult {
+  farmer_id?: string;
+  farm_assessments: FarmAssessment[];
+  n_plots_total?: number;
+  n_plots_scored?: number;
+  n_plots_skipped?: number;
+  n_plots_failed?: number;
+  n_plots_done?: number;
+}
+
+export interface JobProgress {
+  current_stage?: string;
+  pipeline_stages?: string[];
+  n_plots_total?: number;
+  n_plots_done?: number;
+  n_plots_scored?: number;
+  n_plots_skipped?: number;
+  n_plots_failed?: number;
+  pending_plot_keys?: string[];
+  /** Farm rows only — never farmer_level / index_score aggregate. */
+  partial_result?: JobPartialResult;
+}
+
 export interface AssessmentJob {
   job_id: string;
   status: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED';
   farmer_id?: string;
   result?: AssessmentPayload;
   error?: string;
+  progress?: JobProgress | null;
   created_at?: string;
   updated_at?: string;
+  started_at?: string;
+  completed_at?: string;
 }

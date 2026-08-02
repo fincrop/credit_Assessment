@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAppDispatch } from '../../hooks/useRedux';
+import { clearToken } from '../../store/tokenSlice';
 
 export interface AuthUser {
     id: string;
@@ -30,10 +32,20 @@ export function useAuth() {
     return useContext(AuthContext);
 }
 
+function clearAgriStackSession() {
+    try {
+        sessionStorage.removeItem('agristack_access_token');
+        sessionStorage.removeItem('agristack_session_creds');
+    } catch {
+        /* ignore */
+    }
+}
+
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<AuthUser | null>(null);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
+    const dispatch = useAppDispatch();
 
     const refreshUser = useCallback(async (): Promise<AuthUser | null> => {
         try {
@@ -61,9 +73,11 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 
     const logout = useCallback(async () => {
         await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+        clearAgriStackSession();
+        dispatch(clearToken());
         setUser(null);
         router.push('/login');
-    }, [router]);
+    }, [router, dispatch]);
 
     return (
         <AuthContext.Provider value={{ user, loading, logout, refreshUser, setSessionUser }}>

@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+    agristackProxyEnabled,
+    callAgristackLambda,
+} from '../../lib/agristackLambdaProxy';
 
-function pickCredential(fromBody: unknown, ...envKeys: string[]): string {
-    const bodyVal = typeof fromBody === 'string' ? fromBody.trim() : '';
-    if (bodyVal) return bodyVal;
-    for (const key of envKeys) {
-        const v = (process.env[key] || '').trim();
-        if (v) return v;
-    }
-    return '';
+function bodyString(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
 }
 
 export async function POST(request: NextRequest) {
@@ -15,35 +13,20 @@ export async function POST(request: NextRequest) {
         const body = (await request.json()) as Record<string, unknown>;
         const startTime = Date.now();
 
-        const merged: Record<string, unknown> = {
-            ...body,
-            grant_type: pickCredential(body.grant_type) || 'password',
-            client_id:
-                pickCredential(
-                    body.client_id,
-                    'AGRISTACK_CLIENT_ID',
-                    'NEXT_PUBLIC_AGRISTACK_CLIENT_ID'
-                ) || 'registry_sandbox',
-            username: pickCredential(
-                body.username,
-                'AGRISTACK_USERNAME',
-                'NEXT_PUBLIC_AGRISTACK_USERNAME'
-            ),
-            password: pickCredential(
-                body.password,
-                'AGRISTACK_PASSWORD',
-                'NEXT_PUBLIC_AGRISTACK_PASSWORD'
-            ),
-        };
+        const username = bodyString(body.username);
+        const password = bodyString(body.password);
+        const clientId =
+            bodyString(body.client_id) || 'registry_sandbox';
+        const grantType = bodyString(body.grant_type) || 'password';
 
-        if (!merged.username) {
+        if (!username || !password) {
             return NextResponse.json(
                 {
                     success: false,
                     error: {
                         code: 400,
                         message:
-                            'username is required — set AGRISTACK_USERNAME in frontend/.env.local and restart Next.js',
+                            'Provide valid AgriStack credentials (username and password are required in the request body)',
                     },
                     statusCode: 400,
                 },
@@ -51,10 +34,63 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const params = new URLSearchParams();
-        for (const [key, value] of Object.entries(merged)) {
-            if (value != null && value !== '') params.append(key, String(value));
+        // Mumbai Lambda — avoids non-India cloud IP blocks on Token
+        if (agristackProxyEnabled()) {
+            const { json, responseTime, status } = await callAgristackLambda(
+                'token',
+                {
+                    username,
+                    password,
+                    client_id: clientId,
+                    grant_type: grantType,
+                }
+            );
+
+            const data = json.data as Record<string, unknown> | undefined;
+            const accessToken =
+                (typeof data?.access_token === 'string' && data.access_token) ||
+                (typeof json.access_token === 'string' && json.access_token) ||
+                null;
+
+            if (status === 401 || (!accessToken && (json.error || json.success === false))) {
+                const errObj = json.error as
+                    | { message?: string; code?: number }
+                    | string
+                    | undefined;
+                const message =
+                    typeof errObj === 'string'
+                        ? errObj
+                        : errObj?.message ||
+                          (typeof data?.error === 'string'
+                              ? data.error
+                              : 'AgriStack token proxy failed');
+                return NextResponse.json(
+                    {
+                        success: false,
+                        error: { code: status || 401, message },
+                        data,
+                        statusCode: status || 401,
+                        responseTime,
+                        via: 'lambda-ap-south-1',
+                    },
+                    { status: status === 401 ? 401 : 200 }
+                );
+            }
+
+            return NextResponse.json({
+                success: Boolean(accessToken),
+                data: data || json,
+                statusCode: Number(json.statusCode ?? json.status ?? status),
+                responseTime: Number(json.responseTime ?? json.ms ?? responseTime),
+                via: 'lambda-ap-south-1',
+            });
         }
+
+        const params = new URLSearchParams();
+        params.append('grant_type', grantType);
+        params.append('client_id', clientId);
+        params.append('username', username);
+        params.append('password', password);
 
         const response = await fetch('https://sandbox.agristack.gov.in/sandbox-api/nm/token', {
             method: 'POST',
@@ -96,8 +132,30 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        if (!response.ok) {
+            const upstream = data as { error_description?: string; error?: string; message?: string };
+            const detail =
+                upstream?.error_description ||
+                upstream?.message ||
+                (typeof upstream?.error === 'string' ? upstream.error : null) ||
+                'Provide valid AgriStack credentials';
+            return NextResponse.json(
+                {
+                    success: false,
+                    error: {
+                        code: response.status,
+                        message: detail,
+                    },
+                    data,
+                    statusCode: response.status,
+                    responseTime,
+                },
+                { status: response.status === 401 || response.status === 403 ? response.status : 401 }
+            );
+        }
+
         return NextResponse.json({
-            success: response.ok,
+            success: true,
             data: data,
             statusCode: response.status,
             responseTime,

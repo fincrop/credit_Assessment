@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId, type Db } from 'mongodb';
-import { connectToDatabase } from '../../lib/mongodb';
+import { connectToDatabase, isMongoTransientError } from '../../lib/mongodb';
 import { verifyJWT } from '../../lib/jwt';
+import {
+  buildFarmInfoDocument,
+  normalizeJourneyFarms,
+} from '../../lib/farmInfoSchema';
+import { ownerFields, ownerFilter } from '../../lib/ownerScope';
 
 const TARGET_DB = process.env.MONGODB_DATABASE || process.env.MONGODB_DB || 'agristack';
 const COLLECTION = 'farmer_farms';
 const FARM_INFO_COLLECTION = 'farm_info';
-
-type JwtPayload = { email?: string };
 
 type JourneyFarm = {
   farm_id?: string;
@@ -28,76 +31,14 @@ function farmIdsFrom(farms: unknown): string[] {
     .filter((id): id is string => !!id);
 }
 
-/** Build pipeline-ready farm_info doc from farmer-journey payload. */
-function buildFarmInfoDoc(params: {
-  pipelineFarmerId: string;
-  farmerName: string;
-  phone: string | null;
-  location: {
-    state?: LgdSel;
-    district?: LgdSel;
-    village?: LgdSel;
-  };
-  farms: JourneyFarm[];
-  farmerBenefits: Record<string, unknown>;
-  now: Date;
-}): Record<string, unknown> {
-  const { pipelineFarmerId, farmerName, phone, location, farms, farmerBenefits, now } = params;
-  const primary = farms[0] || {};
-  const polygons = farms
-    .map((f) => f.boundary)
-    .filter(
-      (b): b is { type: string; coordinates: number[][][] } =>
-        !!b && b.type === 'Polygon' && Array.isArray(b.coordinates)
-    );
-
-  let geometry: Record<string, unknown> | null = null;
-  if (polygons.length === 1) {
-    geometry = polygons[0];
-  } else if (polygons.length > 1) {
-    geometry = {
-      type: 'MultiPolygon',
-      coordinates: polygons.map((p) => p.coordinates),
-    };
-  }
-
-  const fieldAreaHa = farms.reduce((sum, f) => sum + (Number(f.area_ha) || 0), 0);
-  const latitude = Number(primary.centroid?.lat);
-  const longitude = Number(primary.centroid?.lng);
-
-  return {
-    farmer_id: pipelineFarmerId,
-    name: farmerName,
-    farm_name: primary.farm_name || farmerName,
-    mobile: phone,
-    latitude: Number.isFinite(latitude) ? latitude : null,
-    longitude: Number.isFinite(longitude) ? longitude : null,
-    geometry,
-    field_area_ha: fieldAreaHa > 0 ? fieldAreaHa : null,
-    crop: primary.primary_crop || null,
-    sowing_date: primary.sowing_date || null,
-    state_lgd_code: location?.state?.lgd_code || null,
-    district_lgd_code: location?.district?.lgd_code || null,
-    state: location?.state?.name || null,
-    district: location?.district?.name || null,
-    village: location?.village?.name || null,
-    farmer_benefits: {
-      pm_kisan_enrolled: !!(farmerBenefits as { pm_kisan_enrolled?: boolean })?.pm_kisan_enrolled,
-      has_crop_insurance: !!(farmerBenefits as { has_crop_insurance?: boolean })?.has_crop_insurance,
-    },
-    source: 'farmer_journey',
-    status: 'active',
-    updated_at: now,
-  };
-}
-
 async function upsertFarmInfo(db: Db, doc: Record<string, unknown>): Promise<void> {
   const farmerId = String(doc.farmer_id || '');
   if (!farmerId) return;
+  const { created_at: _c, ...rest } = doc;
   await db.collection(FARM_INFO_COLLECTION).updateOne(
     { farmer_id: farmerId },
     {
-      $set: doc,
+      $set: { ...rest, updated_at: doc.updated_at || new Date() },
       $setOnInsert: { created_at: doc.updated_at || new Date() },
     },
     { upsert: true }
@@ -107,8 +48,10 @@ async function upsertFarmInfo(db: Db, doc: Record<string, unknown>): Promise<voi
 export async function POST(req: NextRequest) {
   const token = req.cookies.get('auth-token')?.value;
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const jwtPayload = (await verifyJWT(token)) as JwtPayload | null;
-  if (!jwtPayload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const jwtPayload = await verifyJWT(token);
+  if (!jwtPayload?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const ownership = ownerFields(jwtPayload);
 
   try {
     const body = await req.json();
@@ -147,21 +90,24 @@ export async function POST(req: NextRequest) {
       location: location || {},
       farms: farms || [],
       historical_data: historical_data || [],
-      farmer_benefits: farmer_benefits || { pm_kisan_enrolled: false, has_crop_insurance: false },
+      farmer_benefits: farmer_benefits || {
+        pm_kisan_enrolled: null,
+        has_crop_insurance: null,
+      },
       irrigation_type: irrigation_type || null,
       soil_type: soil_type || null,
       notes: notes || null,
       updated_at: now,
+      ...ownership,
     };
 
     const farmIds = farmIdsFrom(farms);
 
-    // Prefer explicit farmer_id (edit), then agristack_farmer_id upsert, else insert
     let filter: Record<string, unknown> | null = null;
     if (farmer_id && ObjectId.isValid(String(farmer_id))) {
-      filter = { _id: new ObjectId(String(farmer_id)) };
+      filter = { _id: new ObjectId(String(farmer_id)), ...ownerFilter(jwtPayload) };
     } else if (fields.agristack_farmer_id) {
-      filter = { agristack_farmer_id: fields.agristack_farmer_id };
+      filter = { agristack_farmer_id: fields.agristack_farmer_id, ...ownerFilter(jwtPayload) };
     }
 
     let docId: string;
@@ -171,22 +117,24 @@ export async function POST(req: NextRequest) {
     if (filter) {
       const existing = await col.findOne(filter);
       if (existing) {
-        await col.updateOne(
-          { _id: existing._id },
-          {
-            $set: {
-              ...fields,
-              created_by: existing.created_by || jwtPayload.email,
-            },
-          }
-        );
+        await col.updateOne({ _id: existing._id }, { $set: fields });
         docId = existing._id.toString();
         upserted = false;
         updated = true;
+      } else if (farmer_id && ObjectId.isValid(String(farmer_id))) {
+        // Explicit id belonging to someone else (or missing)
+        const other = await col.findOne({ _id: new ObjectId(String(farmer_id)) });
+        if (other) {
+          return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+        const result = await col.insertOne({
+          ...fields,
+          created_at: now,
+        });
+        docId = result.insertedId.toString();
       } else {
         const result = await col.insertOne({
           ...fields,
-          created_by: jwtPayload.email,
           created_at: now,
         });
         docId = result.insertedId.toString();
@@ -194,33 +142,49 @@ export async function POST(req: NextRequest) {
     } else {
       const result = await col.insertOne({
         ...fields,
-        created_by: jwtPayload.email,
         created_at: now,
       });
       docId = result.insertedId.toString();
     }
 
-    // Pipeline reads farm_info by farmer_id — sync journey payload there.
-    // Dashboard uses agristack_farmer_id when set, else farmer_farms _id.
+    const loc = fields.location as {
+      state?: LgdSel;
+      district?: LgdSel;
+      village?: LgdSel;
+    };
     const pipelineFarmerId = fields.agristack_farmer_id || docId;
-    await upsertFarmInfo(
-      db,
-      buildFarmInfoDoc({
-        pipelineFarmerId,
-        farmerName: fields.farmer_name,
-        phone: fields.phone,
-        location: fields.location,
-        farms: fields.farms as JourneyFarm[],
-        farmerBenefits: fields.farmer_benefits as Record<string, unknown>,
-        now,
-      })
-    );
+    const plots = normalizeJourneyFarms(fields.farms as JourneyFarm[], {
+      district_lgd_code: loc?.district?.lgd_code || null,
+      state_lgd_code: loc?.state?.lgd_code || null,
+      village_lgd_code: loc?.village?.lgd_code || null,
+    });
+    const farmInfo = buildFarmInfoDocument({
+      farmer_id: pipelineFarmerId,
+      name: fields.farmer_name,
+      mobile: fields.phone,
+      farms: plots,
+      farmer_benefits: fields.farmer_benefits as {
+        pm_kisan_enrolled?: boolean | null;
+        has_crop_insurance?: boolean | null;
+      },
+      state_lgd_code: loc?.state?.lgd_code || null,
+      district_lgd_code: loc?.district?.lgd_code || null,
+      state: loc?.state?.name || null,
+      district: loc?.district?.name || null,
+      village: loc?.village?.name || null,
+      source: 'farmer_journey',
+      created_by: ownership.created_by,
+      user_id: ownership.user_id,
+      now,
+    });
+    await upsertFarmInfo(db, farmInfo as unknown as Record<string, unknown>);
 
     return NextResponse.json({
       success: true,
       farmer_id: docId,
       pipeline_farmer_id: pipelineFarmerId,
       farm_ids: farmIds,
+      n_plots: plots.length,
       upserted,
       updated,
     });
@@ -237,21 +201,107 @@ export async function GET(req: NextRequest) {
   const token = req.cookies.get('auth-token')?.value;
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const jwtPayload = await verifyJWT(token);
-  if (!jwtPayload) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!jwtPayload?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   try {
     const { client } = await connectToDatabase();
     const db = client.db(TARGET_DB);
     const col = db.collection(COLLECTION);
-    const farmers = await col.find({}).sort({ created_at: -1 }).limit(100).toArray();
+    const farmers = await col
+      .find(ownerFilter(jwtPayload))
+      .sort({ created_at: -1 })
+      .limit(100)
+      .toArray();
+
+    const pipelineIds = farmers.map(
+      (f) => String(f.agristack_farmer_id || f._id.toString())
+    );
+
+    /** farmer_id → latest assessment summary */
+    const latestMap = new Map<
+      string,
+      { assessment_date?: string | Date; status?: string; has_assessment: boolean }
+    >();
+
+    if (pipelineIds.length) {
+      const fromHistory = await db
+        .collection('credit_assessments')
+        .aggregate([
+          { $match: { farmer_id: { $in: pipelineIds } } },
+          { $sort: { assessment_date: -1, created_at: -1 } },
+          {
+            $group: {
+              _id: '$farmer_id',
+              assessment_date: { $first: '$assessment_date' },
+              status: { $first: '$status' },
+            },
+          },
+        ])
+        .toArray();
+
+      for (const row of fromHistory) {
+        latestMap.set(String(row._id), {
+          assessment_date: row.assessment_date,
+          status: row.status,
+          has_assessment: true,
+        });
+      }
+
+      const missing = pipelineIds.filter((id) => !latestMap.has(id));
+      if (missing.length) {
+        const fromJobs = await db
+          .collection('jobs')
+          .aggregate([
+            {
+              $match: {
+                farmer_id: { $in: missing },
+                status: 'SUCCESS',
+                result: { $exists: true, $ne: null },
+              },
+            },
+            { $sort: { completed_at: -1, created_at: -1 } },
+            {
+              $group: {
+                _id: '$farmer_id',
+                assessment_date: { $first: '$completed_at' },
+                status: { $first: '$status' },
+              },
+            },
+          ])
+          .toArray();
+        for (const row of fromJobs) {
+          latestMap.set(String(row._id), {
+            assessment_date: row.assessment_date,
+            status: row.status,
+            has_assessment: true,
+          });
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
-      farmers: farmers.map((f) => ({ ...f, _id: f._id.toString() })),
+      farmers: farmers.map((f) => {
+        const pipeline_farmer_id = String(f.agristack_farmer_id || f._id.toString());
+        const latest = latestMap.get(pipeline_farmer_id);
+        return {
+          ...f,
+          _id: f._id.toString(),
+          pipeline_farmer_id,
+          has_assessment: !!latest?.has_assessment,
+          latest_assessment_date: latest?.assessment_date ?? null,
+        };
+      }),
     });
   } catch (error) {
+    const transient = isMongoTransientError(error);
+    if (!transient) console.error('GET /api/farms error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Internal server error' },
-      { status: 500 }
+      {
+        error: error instanceof Error ? error.message : 'Internal server error',
+        transient,
+      },
+      { status: transient ? 503 : 500 }
     );
   }
 }

@@ -24,9 +24,9 @@ export const getEndpointConfigs = (accessToken: string | null): Record<string, E
             'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: {
-            client_id: process.env.NEXT_PUBLIC_AGRISTACK_CLIENT_ID || 'registry_sandbox',
-            username: process.env.NEXT_PUBLIC_AGRISTACK_USERNAME || '',
-            password: process.env.NEXT_PUBLIC_AGRISTACK_PASSWORD || '',
+            client_id: 'registry_sandbox',
+            username: '',
+            password: '',
             grant_type: 'password',
         },
         apiRoute: '/api/token',

@@ -2,7 +2,8 @@
 
 Satellite-based agricultural credit assessment: continuous Sentinel-2 → crop cycles → weather/performance → rule-based credit score, with a Next.js operator UI (AgriStack sandbox + assessment dashboard).
 
-**Codebase reference:** [docs/codebase/README.md](docs/codebase/README.md)
+**Codebase reference:** [docs/codebase/README.md](docs/codebase/README.md)  
+**AgriStack / Lambda status:** [UPDATE.md](UPDATE.md)
 
 ## Layout
 
@@ -10,6 +11,7 @@ Satellite-based agricultural credit assessment: continuous Sentinel-2 → crop c
 |------|------|
 | `backend/Credit_assessment/` | Python pipeline, FastAPI (`api/app.py`), worker, models |
 | `frontend/` | Next.js app |
+| `infra/agristack-lambda/` | Mumbai Lambda: AgriStack Token/Seek/KDSS proxy + webhooks → Mongo |
 | `docs/codebase/` | Architecture and deployment docs |
 
 ## Local run
@@ -35,27 +37,37 @@ npm install
 npm run dev
 ```
 
-Set `AUTH_SECRET` (or `NEXTAUTH_SECRET`) and `MONGODB_URI` in `frontend/.env.local`.
+Set in `frontend/.env.local` (see root `.env.example`):
 
-### 4. Public tunnel for AgriStack webhooks (optional)
+- `MONGODB_URI`, `AUTH_SECRET` / `NEXTAUTH_SECRET`
+- `PIPELINE_API_URL=http://127.0.0.1:8000`
+- **AgriStack via Mumbai Lambda (recommended):**
+  - `AGRISTACK_PROXY_URL` = your Lambda Function URL (no trailing slash)
+  - `AGRISTACK_PROXY_SECRET` = same value as Lambda env `AGRISTACK_PROXY_SECRET`
+  - `NEXT_PUBLIC_APP_DOMAIN` = same Lambda base URL (AgriStack `sender_uri` / webhooks)
+
+With those set, **Cloudflare tunnel is not required** for AgriStack Seek/webhooks: outbound calls and inbound callbacks go through the India Lambda into Mongo.
+
+### 4. Cloudflare tunnel (optional / legacy only)
+
+Only needed if you are **not** using the Mumbai Lambda and AgriStack must POST to your laptop:
 
 ```bash
 npx cloudflared tunnel --url http://localhost:3000
 ```
 
-Point `NEXT_PUBLIC_APP_DOMAIN` at the tunnel URL. Optionally set `WEBHOOK_SECRET` and send header `x-webhook-secret`.
+Then point `NEXT_PUBLIC_APP_DOMAIN` at the tunnel URL.
 
-## Deploy
+## Deploy (Render + Lambda)
 
-See [docs/codebase/deployment/00-overview.md](docs/codebase/deployment/00-overview.md) and `render.yaml` (Docker API under `backend/Credit_assessment` + Node frontend on Render).
+| Piece | Where | Notes |
+|-------|--------|--------|
+| FastAPI | Render (see `render.yaml`) | Set `MONGODB_URI`, GEE secrets, optional `API_SERVICE_KEY` |
+| Next.js | Render frontend service | Set Mongo, `AUTH_SECRET`, `PIPELINE_API_URL` → API URL, **plus** `AGRISTACK_PROXY_*` and `NEXT_PUBLIC_APP_DOMAIN` → Lambda |
+| AgriStack edge | AWS Lambda `ap-south-1` | Upload `infra/agristack-lambda/function.zip`; set Mongo + `AGRISTACK_PROXY_SECRET` + `LAMBDA_PUBLIC_BASE_URL` |
+
+Do **not** commit secrets. Do **not** put AgriStack passwords in `NEXT_PUBLIC_*` (they ship to the browser).
 
 ## Dev scripts
 
 One-off utilities live under `backend/Credit_assessment/scripts/devtools/` (not on the production path).
-
-
-cd backend/Credit_assessment
-uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
-
-cd frontend
-npm run dev

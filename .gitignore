@@ -35,6 +35,10 @@ yarn-error.log*
 .env*
 !.env.example
 
+# local Lambda secrets / large deploy artifacts
+infra/agristack-lambda/.proxy-secret.local
+infra/agristack-lambda/function.zip
+
 # --- Conda / local Python environments (do not commit) ---
 .conda/
 env/

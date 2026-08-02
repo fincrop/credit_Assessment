@@ -21,7 +21,9 @@ def slim_assessment_for_api(
     assessment root when present).
 
     Top-level ``risk_assessment``, ``credit_assessment`` (shim),
-    ``ai_enrichment``, and ``signal_quality_summary`` are preserved for API consumers.
+    ``ai_enrichment``, ``signal_quality_summary``, ``farmer_level``,
+    ``farm_assessments``, ``assessment_type``, and plot-count warning fields
+    are preserved for API consumers.
     """
     out = copy.deepcopy(assessment)
     # Explicit keep-list documentation: do not strip these keys.
@@ -30,6 +32,15 @@ def slim_assessment_for_api(
         out.get("credit_assessment"),
         out.get("ai_enrichment"),
         out.get("signal_quality_summary"),
+        out.get("farmer_level"),
+        out.get("farm_assessments"),
+        out.get("assessment_type"),
+        out.get("method"),
+        out.get("n_plots_total"),
+        out.get("n_plots_scored"),
+        out.get("n_plots_failed"),
+        out.get("n_plots_skipped"),
+        out.get("warnings"),
     )
     sd = out.get("satellite_data")
     if isinstance(sd, dict):

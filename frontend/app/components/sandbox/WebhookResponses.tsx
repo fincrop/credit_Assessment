@@ -175,7 +175,10 @@ export default function WebhookResponses() {
                         Legacy.
                     </li>
                     <li>
-                        <strong>Cloudflare quick tunnel:</strong> the <code className="rounded bg-amber-100 px-1">*.trycloudflare.com</code>{' '}
+                        <strong>Webhook base:</strong> prefer the Mumbai Lambda URL in{' '}
+                        <code className="rounded bg-amber-100 px-1">NEXT_PUBLIC_APP_DOMAIN</code>
+                        {' '}(no Cloudflare tunnel needed). Legacy note: a{' '}
+                        <code className="rounded bg-amber-100 px-1">*.trycloudflare.com</code>{' '}
                         host only works while <code className="rounded bg-amber-100 px-1">cloudflared</code> is running. If the URL
                         changed, update <code className="rounded bg-amber-100 px-1">NEXT_PUBLIC_APP_DOMAIN</code> in{' '}
                         <code className="rounded bg-amber-100 px-1">.env.local</code> and restart{' '}

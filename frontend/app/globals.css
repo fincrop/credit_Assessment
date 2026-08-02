@@ -128,8 +128,9 @@ html, body {
 
 .farm-map-legend {
   position: absolute;
-  z-index: 1000;
-  top: 12px;
+  /* Keep clear of Geoman draw toolbar (top-right) and zoom/layers (top-left) */
+  z-index: 900;
+  bottom: 12px;
   right: 12px;
   background: rgba(255, 254, 250, 0.95);
   border: 1px solid var(--border);
@@ -138,6 +139,7 @@ html, body {
   max-width: 180px;
   font-size: 11px;
   color: var(--text);
+  pointer-events: none;
 }
 
 .farm-map-legend-item {

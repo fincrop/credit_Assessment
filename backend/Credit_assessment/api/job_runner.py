@@ -146,12 +146,123 @@ def process_assessment_job(
             benefits_override["pm_kisan_enrolled"] = job.get("pm_kisan_enrolled")
         if "has_crop_insurance" in job and job.get("has_crop_insurance") is not None:
             benefits_override["has_crop_insurance"] = job.get("has_crop_insurance")
-        raw_result = pipeline.assess_farmer_from_db(
-            farmer_id=farmer_id,
-            farmer_benefits_override=(benefits_override or None),
-            enable_crop_classification=enable_crop_classification,
-            force_fresh_satellite=force_fresh_satellite,
-        )
+
+        raw_result: Dict[str, Any]
+        use_multi = False
+        try:
+            from config import PipelineConfig
+            from assessment.multi_farm_assessor import (
+                MultiFarmAssessor,
+                assign_plot_keys,
+                counters_from_farm_assessments,
+            )
+
+            multi_on = bool(getattr(PipelineConfig, "MULTI_FARM_ENABLED", True))
+            mongo = getattr(pipeline, "db", None)
+            farm_info = None
+            if multi_on and mongo is not None and hasattr(mongo, "get_farm_by_id"):
+                farm_info = mongo.get_farm_by_id(farmer_id)
+            if multi_on and isinstance(farm_info, dict) and (farm_info.get("farms") or []):
+                use_multi = True
+                farm_copy = dict(farm_info)
+                if benefits_override:
+                    fb = dict(farm_copy.get("farmer_benefits") or {})
+                    for k, v in benefits_override.items():
+                        fb[k] = v  # only keys actually specified (tri-state safe)
+                    farm_copy["farmer_benefits"] = fb
+                max_plots = int(getattr(PipelineConfig, "MULTI_FARM_MAX_PLOTS", 12) or 12)
+                keyed_farms = assign_plot_keys(list(farm_copy.get("farms") or []))
+                farm_copy["farms"] = keyed_farms
+                n_expected = len(keyed_farms)
+                logger.info(
+                    "[JOB %s] Multi-farm path (%d plots, cap=%d) — sequential stream",
+                    job_id,
+                    n_expected,
+                    max_plots,
+                )
+
+                # Seed pending plot keys (no farmer_level — A1)
+                try:
+                    jobs_col.update_one(
+                        {"_id": job["_id"]},
+                        {
+                            "$set": {
+                                "progress": {
+                                    "current_stage": f"plot 0/{n_expected}",
+                                    "n_plots_total": n_expected,
+                                    "n_plots_done": 0,
+                                    "n_plots_scored": 0,
+                                    "n_plots_skipped": 0,
+                                    "n_plots_failed": 0,
+                                    "pending_plot_keys": [f.get("plot_key") for f in keyed_farms],
+                                    "partial_result": {
+                                        "farmer_id": farmer_id,
+                                        "farm_assessments": [],
+                                        "n_plots_total": n_expected,
+                                        "n_plots_scored": 0,
+                                        "n_plots_skipped": 0,
+                                        "n_plots_failed": 0,
+                                        "n_plots_done": 0,
+                                    },
+                                },
+                                "updated_at": utc_now(),
+                            }
+                        },
+                    )
+                except Exception as e:
+                    logger.debug("Could not seed job progress: %s", e)
+
+                def _on_plot_done(rows: list) -> None:
+                    """A2: one $set of whole partial_result per plot-done; never farmer_level."""
+                    counts = counters_from_farm_assessments(rows)
+                    jobs_col.update_one(
+                        {"_id": job["_id"]},
+                        {
+                            "$set": {
+                                "progress": {
+                                    "current_stage": (
+                                        f"plot {counts['n_plots_done']}/{n_expected}"
+                                    ),
+                                    "n_plots_total": n_expected,
+                                    "n_plots_done": counts["n_plots_done"],
+                                    "n_plots_scored": counts["n_plots_scored"],
+                                    "n_plots_skipped": counts["n_plots_skipped"],
+                                    "n_plots_failed": counts["n_plots_failed"],
+                                    "pending_plot_keys": [
+                                        f.get("plot_key") for f in keyed_farms
+                                    ],
+                                    "partial_result": {
+                                        "farmer_id": farmer_id,
+                                        "farm_assessments": rows,
+                                        **counts,
+                                    },
+                                },
+                                "updated_at": utc_now(),
+                            }
+                        },
+                    )
+
+                raw_result = MultiFarmAssessor(
+                    pipeline, max_plots=max_plots
+                ).assess_farmer_multi(
+                    farm_copy, save_to_db=True, on_plot_done=_on_plot_done
+                )
+            else:
+                raw_result = pipeline.assess_farmer_from_db(
+                    farmer_id=farmer_id,
+                    farmer_benefits_override=(benefits_override or None),
+                    enable_crop_classification=enable_crop_classification,
+                    force_fresh_satellite=force_fresh_satellite,
+                )
+        except Exception:
+            if use_multi:
+                raise
+            raw_result = pipeline.assess_farmer_from_db(
+                farmer_id=farmer_id,
+                farmer_benefits_override=(benefits_override or None),
+                enable_crop_classification=enable_crop_classification,
+                force_fresh_satellite=force_fresh_satellite,
+            )
 
         # Progress from pipeline_stages before final status write
         _set_job_progress(jobs_col, job["_id"], raw_result)
@@ -162,6 +273,10 @@ def process_assessment_job(
         job_status = "SUCCESS" if pipeline_ok else "FAILED"
         if pipeline_ok:
             err_msg = None
+            warns = raw_result.get("warnings") or []
+            if warns:
+                # Surface partial plot failures without failing the job
+                slim_result.setdefault("warnings", warns)
         else:
             err_msg = raw_result.get("error")
             errs = raw_result.get("errors")

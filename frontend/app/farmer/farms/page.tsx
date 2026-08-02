@@ -10,6 +10,9 @@ interface FarmDoc {
   farmer_name: string;
   phone?: string | null;
   agristack_farmer_id?: string | null;
+  pipeline_farmer_id?: string;
+  has_assessment?: boolean;
+  latest_assessment_date?: string | Date | null;
   location?: {
     state?: { name?: string };
     district?: { name?: string };
@@ -19,6 +22,14 @@ interface FarmDoc {
   farms?: { farm_name?: string; primary_crop?: string; area_ha?: number }[];
   created_at?: string;
   updated_at?: string;
+}
+
+function pipelineId(f: FarmDoc): string {
+  return f.pipeline_farmer_id || f.agristack_farmer_id || f._id;
+}
+
+function dashboardHref(f: FarmDoc): string {
+  return `/dashboard?farmer_id=${encodeURIComponent(pipelineId(f))}`;
 }
 
 export default function SavedFarmsPage() {
@@ -121,6 +132,7 @@ export default function SavedFarmsPage() {
                     <th className="px-4 py-3 font-semibold">District</th>
                     <th className="px-4 py-3 font-semibold">Farms</th>
                     <th className="px-4 py-3 font-semibold">Crops</th>
+                    <th className="px-4 py-3 font-semibold">Assessment</th>
                     <th className="px-4 py-3 font-semibold">Date</th>
                     <th className="px-4 py-3 font-semibold">Actions</th>
                   </tr>
@@ -130,7 +142,7 @@ export default function SavedFarmsPage() {
                     const crops = [
                       ...new Set((f.farms || []).map((x) => x.primary_crop).filter(Boolean)),
                     ];
-                    const dashId = f.agristack_farmer_id || f._id;
+                    const assessed = !!f.has_assessment;
                     return (
                       <tr
                         key={f._id}
@@ -146,6 +158,15 @@ export default function SavedFarmsPage() {
                         <td className="px-4 py-3 text-stone-500 max-w-[160px] truncate">
                           {crops.join(', ') || '—'}
                         </td>
+                        <td className="px-4 py-3">
+                          {assessed ? (
+                            <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                              Assessed
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-stone-400">Not assessed</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-stone-500 text-xs">
                           {f.created_at ? new Date(f.created_at).toLocaleDateString() : '—'}
                         </td>
@@ -158,10 +179,10 @@ export default function SavedFarmsPage() {
                               Edit
                             </Link>
                             <Link
-                              href={`/dashboard?farmer_id=${encodeURIComponent(dashId)}`}
+                              href={dashboardHref(f)}
                               className="text-xs font-semibold text-emerald-700 hover:text-emerald-300"
                             >
-                              Run Assessment
+                              {assessed ? 'View Assessment' : 'Run Assessment'}
                             </Link>
                             <button
                               type="button"
@@ -219,18 +240,27 @@ export default function SavedFarmsPage() {
                       ))}
                     </ul>
                   </div>
+                  {selected.has_assessment && selected.latest_assessment_date && (
+                    <p className="text-[11px] text-emerald-700">
+                      Last assessed{' '}
+                      {new Date(selected.latest_assessment_date).toLocaleString('en-IN', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })}
+                    </p>
+                  )}
                   <div className="flex flex-col gap-2 pt-2">
+                    <Link
+                      href={dashboardHref(selected)}
+                      className="text-center text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg"
+                    >
+                      {selected.has_assessment ? 'View Assessment' : 'Run Assessment'}
+                    </Link>
                     <Link
                       href={`/farmer?edit=${encodeURIComponent(selected._id)}`}
                       className="text-center text-xs font-semibold bg-[#21262d] hover:bg-[#30363d] text-sky-400 py-2 rounded-lg"
                     >
                       Edit in wizard
-                    </Link>
-                    <Link
-                      href={`/dashboard?farmer_id=${encodeURIComponent(selected.agristack_farmer_id || selected._id)}`}
-                      className="text-center text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg"
-                    >
-                      Run Assessment
                     </Link>
                   </div>
                 </div>

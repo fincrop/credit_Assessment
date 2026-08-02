@@ -62,15 +62,50 @@ export function AssessmentPrintReport({ data }: { data: AssessmentPayload }) {
       <section className="print-section">
         <h2>Index</h2>
         <p className="index-line">
-          <strong>{formatScoreWhole(view.score)}</strong>
+          <strong>{view.insufficientData ? '—' : formatScoreWhole(view.score)}</strong>
           {view.category ? <> · {String(view.category)}</> : null}
           {view.indexVersion ? <> · {view.indexVersion}</> : null}
+          {view.nPlotsScored != null && view.nPlotsTotal != null ? (
+            <> · {view.nPlotsScored}/{view.nPlotsTotal} plots</>
+          ) : null}
         </p>
-        <p className="muted">
-          Raw {formatScoreOne(view.rawIndex)} · Gate {formatGateMultiplier(view.gate)}
-        </p>
-        <SubIndexBars view={view} compact />
+        {!view.insufficientData && (
+          <p className="muted">
+            Raw {formatScoreOne(view.rawIndex)} · Gate {formatGateMultiplier(view.gate)}
+          </p>
+        )}
+        {!view.insufficientData && <SubIndexBars view={view} compact />}
       </section>
+
+      {view.perFarm && view.perFarm.length > 0 && (
+        <section className="print-section">
+          <h2>Per-farm scores</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Farm</th>
+                <th>Area</th>
+                <th>Tenure</th>
+                <th>Index</th>
+                <th>Risk</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {view.perFarm.map((f, i) => (
+                <tr key={f.farm_id || i}>
+                  <td className="mono">{f.farm_id || `plot_${i}`}</td>
+                  <td>{formatNumber(f.area_ha, 2)} ha</td>
+                  <td>{formatScoreOne(f.tenure_factor)}</td>
+                  <td>{f.included ? formatScoreWhole(f.index_score ?? null) : '—'}</td>
+                  <td>{f.included ? f.risk_category || '—' : 'skipped'}</td>
+                  <td>{f.skipped_reason || f.crop || ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       <section className="print-section">
         <h2>Reason codes</h2>

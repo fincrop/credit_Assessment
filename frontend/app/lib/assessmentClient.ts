@@ -42,28 +42,68 @@ export async function runAssessmentJob(params: {
   return data as { job_id: string; status: string };
 }
 
-/** Poll job status from MongoDB via Next.js API route. */
-export async function pollJobStatus(jobId: string): Promise<AssessmentJob> {
+export type PollJobResult =
+  | { ok: true; job: AssessmentJob }
+  | { ok: false; transient: boolean; message: string; status?: number };
+
+/**
+ * Poll job status. Never throws on HTTP errors — returns { ok:false } so the
+ * dashboard can backoff without spamming the console on DNS blips.
+ */
+export async function pollJobStatusSafe(jobId: string): Promise<PollJobResult> {
   const id = jobId.trim();
   if (!/^[a-f0-9]{24}$/i.test(id)) {
-    throw new Error('Invalid job id; submit a new assessment from the dashboard.');
+    return { ok: false, transient: false, message: 'Invalid job id' };
   }
-  const res = await fetch(`/api/assess/status/${encodeURIComponent(id)}`);
 
-  const text = await res.text();
-  let data: unknown;
   try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    throw new Error(`Poll response not JSON (${res.status}): ${text.slice(0, 100)}`);
-  }
+    const res = await fetch(`/api/assess/status/${encodeURIComponent(id)}`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
 
-  if (!res.ok) {
-    const d = data as Record<string, unknown>;
-    throw new Error(String(d?.error ?? `HTTP ${res.status}`));
-  }
+    const text = await res.text();
+    let data: Record<string, unknown> = {};
+    try {
+      data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    } catch {
+      return {
+        ok: false,
+        transient: true,
+        message: `Poll response not JSON (${res.status})`,
+        status: res.status,
+      };
+    }
 
-  return data as AssessmentJob;
+    if (!res.ok) {
+      const transient = data.transient === true || res.status === 503;
+      return {
+        ok: false,
+        transient,
+        message: String(data.error ?? `HTTP ${res.status}`),
+        status: res.status,
+      };
+    }
+
+    return { ok: true, job: data as unknown as AssessmentJob };
+  } catch (err) {
+    return {
+      ok: false,
+      transient: true,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/** @deprecated Prefer pollJobStatusSafe — kept for callers that expect throws. */
+export async function pollJobStatus(jobId: string): Promise<AssessmentJob> {
+  const result = await pollJobStatusSafe(jobId);
+  if (!result.ok) {
+    const err = new Error(result.message) as Error & { transient?: boolean };
+    err.transient = result.transient;
+    throw err;
+  }
+  return result.job;
 }
 
 /** Ingest a raw Agristack API response into MongoDB farm_info. */
@@ -77,6 +117,7 @@ export async function ingestFarmerData(agristackResponse: unknown): Promise<{
   const res = await fetch('/api/ingest-farmer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ agristack_response: agristackResponse }),
   });
 

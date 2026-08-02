@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../lib/mongodb';
+import { verifyJWT } from '../../../lib/jwt';
+import { ownerFilter, ownerFields } from '../../../lib/ownerScope';
 
 const TARGET_DB = process.env.MONGODB_DATABASE || process.env.MONGODB_DB || 'agristack';
 
@@ -29,8 +31,60 @@ function asTriState(v: unknown): boolean | null {
   return null;
 }
 
+async function assertFarmerOwned(
+  farmerId: string,
+  user: { id: string; email: string }
+): Promise<boolean> {
+  const { client } = await connectToDatabase();
+  const db = client.db(TARGET_DB);
+  const ownership = ownerFilter(user);
+
+  const farmInfo = await db.collection('farm_info').findOne(
+    { farmer_id: farmerId, ...ownership },
+    { projection: { _id: 1 } }
+  );
+  if (farmInfo) return true;
+
+  const journey = await db.collection('farmer_farms').findOne(
+    {
+      $and: [
+        ownership,
+        {
+          $or: [
+            { agristack_farmer_id: farmerId },
+            // journey docs use ObjectId string as pipeline id when no agristack id
+          ],
+        },
+      ],
+    },
+    { projection: { _id: 1 } }
+  );
+  if (journey) return true;
+
+  // Also allow journey _id as farmer_id
+  try {
+    const { ObjectId } = await import('mongodb');
+    if (ObjectId.isValid(farmerId)) {
+      const byId = await db.collection('farmer_farms').findOne(
+        { _id: new ObjectId(farmerId), ...ownership },
+        { projection: { _id: 1 } }
+      );
+      if (byId) return true;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return false;
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const token = req.cookies.get('auth-token')?.value;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const jwtPayload = await verifyJWT(token);
+    if (!jwtPayload?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const body = await req.json();
     const { farmer_id } = body;
     const pm_kisan_enrolled = asTriState(body.pm_kisan_enrolled);
@@ -43,6 +97,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const farmerId = String(farmer_id).trim();
+    const owned = await assertFarmerOwned(farmerId, jwtPayload);
+    if (!owned) {
+      return NextResponse.json(
+        { error: 'Farmer not found or not owned by your account' },
+        { status: 403 }
+      );
+    }
+
+    const ownership = ownerFields(jwtPayload);
     const base = pipelineBaseUrl();
     if (base) {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -53,7 +117,7 @@ export async function POST(req: NextRequest) {
         method: 'POST',
         headers,
         body: JSON.stringify({
-          farmer_id: String(farmer_id).trim(),
+          farmer_id: farmerId,
           pm_kisan_enrolled,
           has_crop_insurance,
         }),
@@ -78,6 +142,29 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Stamp ownership on the job if pipeline returned a job_id we can update
+      const jobId = (data as { job_id?: string })?.job_id;
+      if (jobId) {
+        try {
+          const { ObjectId } = await import('mongodb');
+          if (ObjectId.isValid(jobId)) {
+            const { client } = await connectToDatabase();
+            const db = client.db(TARGET_DB);
+            await db.collection('jobs').updateOne(
+              { _id: new ObjectId(jobId) },
+              {
+                $set: {
+                  requested_by: ownership.created_by,
+                  requested_by_user_id: ownership.user_id,
+                },
+              }
+            );
+          }
+        } catch {
+          /* non-fatal */
+        }
+      }
+
       return NextResponse.json(data);
     }
 
@@ -91,7 +178,7 @@ export async function POST(req: NextRequest) {
     const jobsCollection = db.collection('jobs');
 
     const jobDoc = {
-      farmer_id,
+      farmer_id: farmerId,
       pm_kisan_enrolled,
       has_crop_insurance,
       status: 'QUEUED',
@@ -99,6 +186,8 @@ export async function POST(req: NextRequest) {
       updated_at: new Date(),
       result: null,
       error: null,
+      requested_by: ownership.created_by,
+      requested_by_user_id: ownership.user_id,
     };
 
     const result = await jobsCollection.insertOne(jobDoc);

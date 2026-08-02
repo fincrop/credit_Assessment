@@ -3,13 +3,15 @@
 import { useMemo } from 'react';
 import type {
   AssessmentPayload,
+  Diversification,
+  FarmAssessment,
   ReasonCode,
   RiskCategory,
   TriState,
 } from '../types/assessment';
 import { resolveWeights, SUBSTANTIVE_SUBINDEX_KEYS } from './formatRisk';
 
-export type RiskViewSource = 'risk_index_v5' | 'legacy_shim';
+export type RiskViewSource = 'farmer_level' | 'risk_index_v5' | 'legacy_shim';
 
 export interface RiskView {
   score: number | null;
@@ -31,6 +33,16 @@ export interface RiskView {
   narrative: string | null;
   narrativeSource: string | null;
   scoringNarrative: string | null;
+  /** Multi-farm extras */
+  perFarm?: FarmAssessment[];
+  diversification?: Diversification | null;
+  nPlotsScored?: number | null;
+  nPlotsTotal?: number | null;
+  nPlotsFailed?: number | null;
+  portfolioBonus?: number | null;
+  totalScoredAreaHa?: number | null;
+  insufficientData?: boolean;
+  warnings?: string[];
 }
 
 function scalarSubScore(val: unknown): number | null {
@@ -40,6 +52,17 @@ function scalarSubScore(val: unknown): number | null {
     if (typeof s === 'number' && Number.isFinite(s)) return s;
   }
   return null;
+}
+
+function orderSubs(subIndices: Record<string, number>): Record<string, number> {
+  const ordered: Record<string, number> = {};
+  for (const k of SUBSTANTIVE_SUBINDEX_KEYS) {
+    if (subIndices[k] != null) ordered[k] = subIndices[k];
+  }
+  for (const [k, v] of Object.entries(subIndices)) {
+    if (!(k in ordered) && k !== 'data_confidence') ordered[k] = v;
+  }
+  return ordered;
 }
 
 export function buildRiskView(data: AssessmentPayload | null | undefined): RiskView {
@@ -59,13 +82,79 @@ export function buildRiskView(data: AssessmentPayload | null | undefined): RiskV
     narrative: null,
     narrativeSource: null,
     scoringNarrative: null,
+    insufficientData: false,
   };
 
   if (!data) return empty;
 
+  const fl = data.farmer_level;
+  const ai = data.ai_enrichment;
+  const warnings = Array.isArray(data.warnings)
+    ? data.warnings.map(String)
+    : undefined;
+
+  // --- Multi-farm farmer_level first ---
+  if (fl && typeof fl === 'object') {
+    const subIndices: Record<string, number> = {};
+    for (const [k, v] of Object.entries(fl.sub_indices || {})) {
+      if (typeof v === 'number' && Number.isFinite(v)) subIndices[k] = v;
+    }
+    const score =
+      typeof fl.index_score === 'number' && Number.isFinite(fl.index_score)
+        ? fl.index_score
+        : null;
+    const insufficient =
+      score == null ||
+      fl.risk_category === 'INSUFFICIENT_DATA' ||
+      data.status === 'FAILED';
+
+    const pm: TriState =
+      fl.benefits?.pm_kisan !== undefined
+        ? fl.benefits.pm_kisan
+        : data.farmer_benefits?.pm_kisan_enrolled !== undefined
+          ? data.farmer_benefits.pm_kisan_enrolled
+          : null;
+    const ins: TriState =
+      fl.benefits?.has_crop_insurance !== undefined
+        ? fl.benefits.has_crop_insurance
+        : data.farmer_benefits?.has_crop_insurance !== undefined
+          ? data.farmer_benefits.has_crop_insurance
+          : null;
+
+    return {
+      score,
+      rawIndex: typeof fl.raw_index === 'number' ? fl.raw_index : null,
+      category: (fl.risk_category as RiskCategory) || null,
+      subIndices: orderSubs(subIndices),
+      weights: resolveWeights(fl.weights ?? null),
+      gate: typeof fl.confidence_gate === 'number' ? fl.confidence_gate : null,
+      reasonCodes: (fl.reason_codes || []).filter(Boolean),
+      weakSubIndices: (fl.weak_sub_indices || []).map(String),
+      benefits: {
+        pm_kisan: pm,
+        has_crop_insurance: ins,
+        bonus: fl.benefits?.bonus,
+      },
+      indexVersion: data.index_version || 'index_v5',
+      method: data.method || 'multi_farm_aggregate_v5',
+      source: 'farmer_level',
+      narrative: ai?.english_narrative ?? null,
+      narrativeSource: ai?.narrative_source ?? null,
+      scoringNarrative: null,
+      perFarm: data.farm_assessments,
+      diversification: fl.diversification || null,
+      nPlotsScored: fl.n_plots_scored ?? data.n_plots_scored ?? null,
+      nPlotsTotal: fl.n_plots_total ?? data.n_plots_total ?? null,
+      nPlotsFailed: data.n_plots_failed ?? null,
+      portfolioBonus: fl.portfolio_bonus ?? null,
+      totalScoredAreaHa: fl.total_scored_area_ha ?? null,
+      insufficientData: insufficient,
+      warnings,
+    };
+  }
+
   const ra = data.risk_assessment;
   const ca = data.credit_assessment;
-  const ai = data.ai_enrichment;
 
   const subIndices: Record<string, number> = {};
   if (ra?.sub_indices) {
@@ -77,15 +166,6 @@ export function buildRiskView(data: AssessmentPayload | null | undefined): RiskV
     for (const [k, v] of Object.entries(ca.component_scores)) {
       if (typeof v === 'number' && Number.isFinite(v)) subIndices[k] = v;
     }
-  }
-
-  // Prefer substantive keys order for display consumers
-  const ordered: Record<string, number> = {};
-  for (const k of SUBSTANTIVE_SUBINDEX_KEYS) {
-    if (subIndices[k] != null) ordered[k] = subIndices[k];
-  }
-  for (const [k, v] of Object.entries(subIndices)) {
-    if (!(k in ordered) && k !== 'data_confidence') ordered[k] = v;
   }
 
   const weights = resolveWeights(ra?.weights ?? ca?.component_weights ?? null);
@@ -117,7 +197,6 @@ export function buildRiskView(data: AssessmentPayload | null | undefined): RiskV
     String
   );
 
-  // A5: engine-preserved tri-state first
   const pm: TriState =
     ra?.benefits?.pm_kisan !== undefined
       ? ra.benefits.pm_kisan
@@ -135,7 +214,7 @@ export function buildRiskView(data: AssessmentPayload | null | undefined): RiskV
     score,
     rawIndex,
     category,
-    subIndices: ordered,
+    subIndices: orderSubs(subIndices),
     weights,
     gate,
     reasonCodes,
@@ -147,11 +226,13 @@ export function buildRiskView(data: AssessmentPayload | null | undefined): RiskV
     },
     indexVersion:
       ra?.index_version ?? ca?.index_version ?? data.index_version ?? null,
-    method: ra?.method ?? ca?.method ?? null,
+    method: ra?.method ?? ca?.method ?? data.method ?? null,
     source: ra ? 'risk_index_v5' : 'legacy_shim',
     narrative: ai?.english_narrative ?? null,
     narrativeSource: ai?.narrative_source ?? null,
     scoringNarrative: ca?.scoring_narrative ?? null,
+    insufficientData: score == null && !ra && !ca,
+    warnings,
   };
 }
 

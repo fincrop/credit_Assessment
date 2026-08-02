@@ -1,0 +1,10 @@
+{
+  "name": "agristack-lambda",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mumbai Lambda: AgriStack token/seek proxy + webhook → MongoDB",
+  "dependencies": {
+    "mongodb": "^6.17.0"
+  }
+}

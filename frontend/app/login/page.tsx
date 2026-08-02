@@ -76,8 +76,8 @@ function LoginForm() {
                 <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-green-500 to-green-700 rounded-2xl mb-4 shadow-lg shadow-green-200">
                     <span className="text-white text-2xl font-bold">A</span>
                 </div>
-                <h1 className="text-3xl font-bold text-gray-900">AgriStack</h1>
-                <p className="text-stone-500 mt-1">API Sandbox</p>
+                <h1 className="text-3xl font-bold text-gray-900">AgriCredit</h1>
+                <p className="text-stone-500 mt-1">Sign in to your platform account</p>
             </div>
 
             <div className="bg-white rounded-2xl shadow-xl shadow-gray-200/50 border border-gray-100 p-8">
@@ -244,7 +244,7 @@ function LoginForm() {
             </div>
 
             <p className="text-center text-stone-500 text-sm mt-6">
-                AgriStack Sandbox &copy; {new Date().getFullYear()}
+                AgriCredit Platform &copy; {new Date().getFullYear()}
             </p>
         </div>
     );

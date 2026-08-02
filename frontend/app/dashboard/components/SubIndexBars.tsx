@@ -14,16 +14,21 @@ interface Props {
   view: RiskView;
   /** Compact for print / nested layouts */
   compact?: boolean;
+  /** Overview hero: omit confidence-gate / provisional-weights copy */
+  hideGate?: boolean;
 }
 
 /** Shared CSS bars — print-safe (no canvas). */
-export function SubIndexBars({ view, compact }: Props) {
+export function SubIndexBars({ view, compact, hideGate }: Props) {
   const weights = resolveWeights(view.weights);
-  const gateFrac = gateAsFraction(view.gate);
+  const gateFrac = hideGate ? null : gateAsFraction(view.gate);
   const raw = view.rawIndex;
   const score = view.score;
   const gatedDiffers =
-    raw != null && score != null && Math.abs(raw - score) >= 0.5;
+    !hideGate &&
+    raw != null &&
+    score != null &&
+    Math.abs(raw - score) >= 0.5;
 
   const keys = SUBSTANTIVE_SUBINDEX_KEYS.filter(
     (k) => view.subIndices[k] != null || weights[k] != null
@@ -100,7 +105,9 @@ export function SubIndexBars({ view, compact }: Props) {
         </div>
       )}
 
-      <p className="text-[10px] text-stone-400">Weights are provisional (AHP-style).</p>
+      {!hideGate && (
+        <p className="text-[10px] text-stone-400">Weights are provisional (AHP-style).</p>
+      )}
     </div>
   );
 }

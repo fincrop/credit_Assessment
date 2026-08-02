@@ -1,19 +1,75 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from './components/providers/AuthProvider';
 
+type FarmerListItem = {
+  _id: string;
+  farmer_name?: string;
+  agristack_farmer_id?: string | null;
+  farms?: unknown[];
+  source?: string;
+  updated_at?: string | Date;
+  created_at?: string | Date;
+};
+
+function formatDate(value: string | Date | undefined): string {
+  if (!value) return '—';
+  try {
+    return new Date(value).toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch {
+    return '—';
+  }
+}
+
+function pipelineId(f: FarmerListItem): string {
+  return f.agristack_farmer_id || f._id;
+}
+
+function sourceLabel(f: FarmerListItem): string {
+  if (f.source === 'agristack_ingest' || f.agristack_farmer_id) return 'AgriStack';
+  return 'Journey';
+}
+
 export default function HomePage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
+  const [farmers, setFarmers] = useState<FarmerListItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
   useEffect(() => {
     if (!loading && !user) {
       router.replace('/login');
     }
   }, [loading, user, router]);
+
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      setHistoryLoading(true);
+      try {
+        const res = await fetch('/api/farms', { credentials: 'include' });
+        const data = await res.json();
+        if (!cancelled && res.ok && Array.isArray(data.farmers)) {
+          setFarmers(data.farmers);
+        }
+      } catch {
+        if (!cancelled) setFarmers([]);
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   if (loading || !user) {
     return (
@@ -73,7 +129,8 @@ export default function HomePage() {
             Choose your journey
           </h1>
           <p className="text-stone-500 text-base leading-relaxed">
-            Acquire official AgriStack land data, or register a farm yourself and run an AI-powered credit assessment.
+            Acquire official AgriStack land data (requires AgriStack credentials), or register a farm
+            yourself and run an AI-powered credit assessment.
           </p>
         </div>
 
@@ -83,7 +140,8 @@ export default function HomePage() {
             className="group relative rounded-2xl border border-[#E4DFD4] bg-white/80 backdrop-blur-md p-8 hover:border-emerald-400 hover:bg-emerald-50 transition-all duration-300 animate-slide-in"
             style={{ animationDelay: '0.05s' }}
           >
-            <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+            <div
+              className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
               style={{ boxShadow: 'inset 0 1px 0 0 rgba(255,255,255,0.06)' }}
             />
             <div className="w-12 h-12 rounded-xl bg-sky-500/15 border border-sky-500/25 flex items-center justify-center mb-5 text-2xl">
@@ -93,10 +151,11 @@ export default function HomePage() {
               AgriStack Data Acquisition
             </h2>
             <p className="text-sm text-stone-500 leading-relaxed mb-6">
-              Fetch &amp; explore official government farmer land data via the AgriStack sandbox.
+              Sign in with your AgriStack credentials, then fetch &amp; explore official government
+              farmer land data.
             </p>
             <span className="inline-flex items-center gap-2 text-sm font-semibold text-sky-400 group-hover:gap-3 transition-all">
-              Open sandbox
+              Connect AgriStack
               <span aria-hidden>→</span>
             </span>
           </Link>
@@ -106,7 +165,8 @@ export default function HomePage() {
             className="group relative rounded-2xl border border-[#E4DFD4] bg-white/80 backdrop-blur-md p-8 hover:border-emerald-400 hover:bg-emerald-50 transition-all duration-300 animate-slide-in"
             style={{ animationDelay: '0.12s' }}
           >
-            <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+            <div
+              className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
               style={{ boxShadow: 'inset 0 1px 0 0 rgba(255,255,255,0.06)' }}
             />
             <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center mb-5 text-2xl">
@@ -116,7 +176,8 @@ export default function HomePage() {
               Farmer Assessment Journey
             </h2>
             <p className="text-sm text-stone-500 leading-relaxed mb-6">
-              Add your farm boundaries, crops, and get an AI-powered credit assessment.
+              Add your farm boundaries, crops, and get an AI-powered credit assessment — no AgriStack
+              account needed.
             </p>
             <span className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 group-hover:gap-3 transition-all">
               Start farmer journey
@@ -124,6 +185,70 @@ export default function HomePage() {
             </span>
           </Link>
         </div>
+
+        <section className="mt-14 animate-slide-in" style={{ animationDelay: '0.18s' }}>
+          <div className="flex items-end justify-between gap-4 mb-5">
+            <div>
+              <h2 className="text-xl font-bold text-stone-900 tracking-tight">My farmers &amp; farms</h2>
+              <p className="text-sm text-stone-500 mt-1">
+                Farmers you have saved or assessed on this account.
+              </p>
+            </div>
+            <Link
+              href="/farmer/farms"
+              className="text-sm font-medium text-emerald-700 hover:text-emerald-800 shrink-0"
+            >
+              Manage all →
+            </Link>
+          </div>
+
+          {historyLoading ? (
+            <p className="text-sm text-stone-500 py-8">Loading your history…</p>
+          ) : farmers.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-[#E4DFD4] bg-white/50 px-6 py-10 text-center">
+              <p className="text-stone-600 text-sm">
+                No assessments yet — start Farmer Assessment or connect AgriStack.
+              </p>
+            </div>
+          ) : (
+            <ul className="space-y-3">
+              {farmers.slice(0, 8).map((f) => {
+                const farmCount = Array.isArray(f.farms) ? f.farms.length : 0;
+                const pid = pipelineId(f);
+                return (
+                  <li
+                    key={f._id}
+                    className="rounded-xl border border-[#E4DFD4] bg-white/80 px-5 py-4 flex flex-wrap items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold text-stone-900 truncate">
+                        {f.farmer_name || 'Unnamed farmer'}
+                      </p>
+                      <p className="text-xs text-stone-500 mt-0.5">
+                        {farmCount} farm{farmCount === 1 ? '' : 's'} · {sourceLabel(f)} ·{' '}
+                        {formatDate(f.updated_at || f.created_at)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Link
+                        href={`/dashboard?farmer_id=${encodeURIComponent(pid)}`}
+                        className="text-sm font-medium px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
+                      >
+                        Assess
+                      </Link>
+                      <Link
+                        href={`/farmer/farms`}
+                        className="text-sm font-medium px-3 py-1.5 rounded-lg text-stone-600 hover:bg-stone-100 transition-colors"
+                      >
+                        Details
+                      </Link>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
 
         <div className="mt-10 flex flex-wrap gap-4 text-sm animate-slide-in" style={{ animationDelay: '0.2s' }}>
           <Link href="/dashboard" className="text-stone-500 hover:text-emerald-700 transition-colors">

@@ -63,8 +63,28 @@ export function LocationStrip({ data }: { data: AssessmentPayload }) {
               Field Area
             </p>
             <p className="text-sm font-semibold text-stone-800">
-              {formatNumber(data.field_area_ha, 2)}{' '}
+              {formatNumber(
+                view.totalScoredAreaHa ?? data.field_area_ha,
+                2
+              )}{' '}
               <span className="text-stone-400 text-xs">ha</span>
+            </p>
+          </div>
+        )}
+
+        {view.nPlotsTotal != null && (
+          <div>
+            <p className="text-[10px] text-stone-400 font-semibold uppercase tracking-wider mb-0.5">
+              Plots
+            </p>
+            <p className="text-sm font-semibold text-stone-800">
+              {view.nPlotsScored ?? 0}/{view.nPlotsTotal} scored
+              {view.nPlotsFailed ? (
+                <span className="text-amber-700 text-xs font-normal">
+                  {' '}
+                  · {view.nPlotsFailed} failed
+                </span>
+              ) : null}
             </p>
           </div>
         )}

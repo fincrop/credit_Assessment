@@ -53,7 +53,13 @@ services:
         value: agristack
       - key: AUTH_SECRET
         generateValue: true
+      # Mumbai Lambda Function URL (AgriStack sender_uri / webhook base) — plain URL, no markdown
       - key: NEXT_PUBLIC_APP_DOMAIN
+        sync: false
+      # Same Lambda base; Next /api/token|/api/agristack|/api/krishi-dss-seek proxy here
+      - key: AGRISTACK_PROXY_URL
+        sync: false
+      - key: AGRISTACK_PROXY_SECRET
         sync: false
       # Point at the API service URL after both are live, e.g. https://agri-credit-pipeline-api.onrender.com
       - key: PIPELINE_API_URL

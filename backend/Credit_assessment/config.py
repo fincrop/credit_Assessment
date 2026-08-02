@@ -401,6 +401,13 @@ class PipelineConfig:
     BENEFITS_BONUS_PER_FLAG = 2.0
     BENEFITS_BONUS_MAX = 4.0
 
+    # Multi-farm orchestration (MultiFarmAssessor + FarmerAggregator)
+    MULTI_FARM_ENABLED = True
+    MULTI_FARM_MAX_PLOTS = 12  # cost guard: max plots scored per farmer
+    TENURE_LEASE_FACTOR = 0.35  # cultivator-but-not-ROR-owner discount
+    PORTFOLIO_BONUS_MAX = 8.0
+    DIVERSIFICATION_BONUS_MAX = 5.0
+
     # Stability sub-index anomaly penalties (points deducted before gate)
     CREDIT_ANOMALY_PENALTY_HIGH = 1.8
     CREDIT_ANOMALY_PENALTY_MEDIUM = 0.55

@@ -1183,6 +1183,26 @@ class MongoDBHelper:
             logger.debug("save_index_version failed: %s", e)
             return False
 
+    def save_multi_farm_assessment(self, farmer_id: str, farmer_result: Dict) -> Optional[str]:
+        """
+        INSERT a farmer-level (multi-plot) assessment as history (audit trail),
+        mirroring single-farm save_assessment — NOT an upsert. Dashboard reads
+        job.result for the live view.
+        """
+        if self.assessments is None:
+            logger.debug("save_multi_farm_assessment: no assessments collection")
+            return None
+        try:
+            doc = dict(farmer_result)
+            doc["farmer_id"] = farmer_id
+            doc["assessment_type"] = "multi_farm"
+            doc["created_at"] = datetime.now(timezone.utc)
+            res = self.assessments.insert_one(doc)
+            return str(res.inserted_id)
+        except Exception as e:
+            logger.debug("save_multi_farm_assessment failed: %s", e)
+            return None
+
     # ── Connection management ─────────────────────────────────────────────
 
     def close(self):

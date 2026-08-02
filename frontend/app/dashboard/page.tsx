@@ -1,13 +1,13 @@
 'use client';
 
-import { Suspense, useState, useEffect, FormEvent, useCallback } from 'react';
+import { Suspense, useState, useEffect, FormEvent, useCallback, useMemo } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import type { AssessmentPayload, TriState } from '../types/assessment';
-import { runAssessmentJob, pollJobStatus } from '../lib/assessmentClient';
-import { LocationStrip } from './components/LocationStrip';
-import { SummaryHero } from './components/SummaryHero';
+import type { AssessmentPayload, FarmAssessment, TriState } from '../types/assessment';
+import { runAssessmentJob, pollJobStatusSafe } from '../lib/assessmentClient';
+import { FarmerIdentityCard, type FarmInfoSummary } from './components/FarmerIdentityCard';
+import { RiskScoreCard } from './components/RiskScoreCard';
+import { StreamingFarmList } from './components/StreamingFarmList';
 import { IndexInsightsCard } from './components/IndexInsightsCard';
-import { SignalQualityStrip } from './components/SignalQualityStrip';
 import { CropCyclesSection } from './components/CropCyclesSection';
 import { CroppingSection } from './components/CroppingSection';
 import { PerformanceSection } from './components/PerformanceSection';
@@ -15,6 +15,12 @@ import { WeatherSection } from './components/WeatherSection';
 import { AIEnrichmentSection } from './components/AIEnrichmentSection';
 import { AssessmentPrintReport } from './components/AssessmentPrintReport';
 import { useRiskView } from '../lib/useRiskView';
+import {
+  buildStreamRows,
+  portfolioSummaryFromRows,
+  countersFromAssessments,
+} from '../lib/streamFarms';
+import { assignPlotKeysClient } from '../lib/plotKey';
 import Link from 'next/link';
 
 function TriStateSelect({
@@ -68,11 +74,16 @@ function DashboardPageContent() {
   );
   const [loadingMsg, setLoadingMsg] = useState('');
   const [data, setData] = useState<AssessmentPayload | null>(null);
+  const [partialFarms, setPartialFarms] = useState<FarmAssessment[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
+  const [farmInfo, setFarmInfo] = useState<FarmInfoSummary | null>(null);
+  const [seedFarms, setSeedFarms] = useState<Record<string, unknown>[]>([]);
 
   const [farmerId, setFarmerId] = useState('');
   const [pmKisanEnrolled, setPmKisanEnrolled] = useState<TriState>(null);
   const [hasCropInsurance, setHasCropInsurance] = useState<TriState>(null);
+
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   type TabId = 'overview' | 'cropPerf' | 'weather' | 'cycles' | 'ai';
   const [activeTab, setActiveTab] = useState<TabId>('overview');
@@ -86,6 +97,7 @@ function DashboardPageContent() {
   ];
 
   const riskView = useRiskView(data);
+  const showShell = status === 'QUEUED' || status === 'RUNNING' || status === 'SUCCESS' || (status === 'FAILED' && !!farmInfo);
 
   const syncJobToUrl = useCallback(
     (id: string | null, farmer?: string) => {
@@ -99,27 +111,142 @@ function DashboardPageContent() {
     [router, searchParams]
   );
 
+  const loadFarmInfo = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/farm-info/${encodeURIComponent(id)}`, {
+        credentials: 'include',
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setFarmInfo(null);
+        setSeedFarms([]);
+        return;
+      }
+      const fi = json.farm_info;
+      setFarmInfo({
+        farmer_id: fi.farmer_id,
+        name: fi.name,
+        mobile: fi.mobile,
+        state: fi.state,
+        district: fi.district,
+        village: fi.village,
+        farmer_benefits: fi.farmer_benefits,
+      });
+      const farms = assignPlotKeysClient(
+        Array.isArray(fi.farms) ? fi.farms : []
+      );
+      setSeedFarms(farms);
+    } catch {
+      setFarmInfo(null);
+      setSeedFarms([]);
+    }
+  }, []);
+
+  const loadLatestAssessment = useCallback(async (id: string) => {
+    setHistoryLoading(true);
+    setLoadingMsg('Loading last assessment…');
+    try {
+      const res = await fetch(
+        `/api/assessments/latest?farmer_id=${encodeURIComponent(id)}`,
+        { credentials: 'include', cache: 'no-store' }
+      );
+      const json = await res.json();
+      if (!res.ok || !json.assessment) return false;
+      const payload = json.assessment as AssessmentPayload;
+      setData(payload);
+      if (Array.isArray(payload.farm_assessments)) {
+        setPartialFarms(payload.farm_assessments);
+      }
+      setStatus('SUCCESS');
+      setLoadingMsg('');
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setHistoryLoading(false);
+      setLoadingMsg('');
+    }
+  }, []);
+
   useEffect(() => {
     const qFarmerId = (searchParams.get('farmer_id') || '').trim();
-    if (qFarmerId) setFarmerId(qFarmerId);
-
     const qJobId = (searchParams.get('job_id') || '').trim();
+
+    if (qFarmerId) {
+      setFarmerId(qFarmerId);
+      void loadFarmInfo(qFarmerId);
+    }
+
     if (qJobId && /^[a-f0-9]{24}$/i.test(qJobId) && !jobId) {
       setJobId(qJobId);
       setStatus('QUEUED');
       setLoadingMsg('Reconnecting to job…');
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only hydrate once from URL
+
+    // Deep-link with farmer only → open stored results when available
+    if (qFarmerId && !qJobId) {
+      void loadLatestAssessment(qFarmerId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const startRerun = () => {
+    setData(null);
+    setPartialFarms([]);
+    setJobId(null);
+    setErrorMsg('');
+    setStatus('IDLE');
+    setLoadingMsg('');
+    const params = new URLSearchParams();
+    if (farmerId.trim()) params.set('farmer_id', farmerId.trim());
+    router.replace(params.toString() ? `/dashboard?${params}` : '/dashboard', { scroll: false });
+  };
   useEffect(() => {
     if (!jobId || status === 'SUCCESS' || status === 'FAILED') return;
 
-    const interval = setInterval(async () => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let inFlight = false;
+    let failStreak = 0;
+
+    const schedule = (ms: number) => {
+      if (cancelled) return;
+      timer = setTimeout(tick, ms);
+    };
+
+    const tick = async () => {
+      if (cancelled || inFlight) {
+        schedule(failStreak > 0 ? Math.min(10000, 2000 * (failStreak + 1)) : 2500);
+        return;
+      }
+      inFlight = true;
       try {
-        const job = await pollJobStatus(jobId);
+        const polled = await pollJobStatusSafe(jobId);
+        if (!polled.ok) {
+          failStreak += 1;
+          if (polled.transient || /DNS|SRV|ETIMEOUT|Mongo/i.test(polled.message)) {
+            setLoadingMsg(
+              'Database briefly unreachable (DNS). Retrying… assessment keeps running on the server.'
+            );
+          }
+          schedule(Math.min(12000, 3000 * failStreak));
+          return;
+        }
+
+        const job = polled.job;
+        failStreak = 0;
 
         setStatus(job.status);
+
+        if (job.farmer_id && !farmInfo) {
+          void loadFarmInfo(String(job.farmer_id));
+        }
+
+        const prog = job.progress;
+        if (prog?.partial_result?.farm_assessments) {
+          setPartialFarms(prog.partial_result.farm_assessments);
+        }
 
         const resultFailed =
           job.result &&
@@ -128,40 +255,84 @@ function DashboardPageContent() {
 
         if (job.status === 'SUCCESS' && job.result && !resultFailed) {
           setData(job.result);
-          clearInterval(interval);
+          if (job.result.farm_assessments) {
+            setPartialFarms(job.result.farm_assessments);
+          }
+          return; // stop polling
         } else if (job.status === 'FAILED' || resultFailed) {
-          const r = job.result as { error?: string } | undefined;
+          const r = job.result as AssessmentPayload | undefined;
           setStatus('FAILED');
-          setErrorMsg(job.error ?? r?.error ?? 'Pipeline failed unexpectedly');
-          clearInterval(interval);
+          setErrorMsg(
+            job.error ?? (r as { error?: string })?.error ?? 'Pipeline failed unexpectedly'
+          );
+          if (r) {
+            setData(r);
+            if (r.farm_assessments) setPartialFarms(r.farm_assessments);
+          }
+          return;
         } else if (job.status === 'RUNNING') {
-          const prog = (job as { progress?: { current_stage?: string; pipeline_stages?: string[] } })
-            .progress;
           const stage = prog?.current_stage || prog?.pipeline_stages?.slice(-1)[0];
+          const done = prog?.n_plots_done;
+          const total = prog?.n_plots_total;
           setLoadingMsg(
             stage
-              ? `Pipeline running — stage: ${stage}`
-              : 'Pipeline is running. Computing satellite aggregations & ML models...'
+              ? `Analyzing — ${stage}${done != null && total != null ? ` (${done}/${total})` : ''}`
+              : 'Pipeline is running…'
           );
         } else {
-          setLoadingMsg('Job queued. Waiting for worker...');
+          setLoadingMsg('Job queued. Waiting for worker…');
         }
-      } catch (err) {
-        console.error('Error polling job status:', err);
+        schedule(2500);
+      } finally {
+        inFlight = false;
       }
-    }, 3000);
+    };
 
-    return () => clearInterval(interval);
-  }, [jobId, status]);
+    void tick();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [jobId, status, farmInfo, loadFarmInfo]);
+
+  const streamRows = useMemo(
+    () =>
+      buildStreamRows({
+        seedFarms,
+        partialAssessments: partialFarms,
+        finalAssessments: data?.farm_assessments,
+        jobStatus: status,
+      }),
+    [seedFarms, partialFarms, data, status]
+  );
+
+  const doneCounters = useMemo(() => {
+    if (partialFarms.length) return countersFromAssessments(partialFarms);
+    if (data?.farm_assessments) return countersFromAssessments(data.farm_assessments);
+    const done = streamRows.filter(
+      (r) => r.status !== 'pending' && r.status !== 'analyzing'
+    ).length;
+    const scored = streamRows.filter((r) => r.status === 'scored').length;
+    return {
+      n_plots_done: done,
+      n_plots_total: streamRows.length,
+      n_plots_scored: scored,
+      n_plots_skipped: 0,
+      n_plots_failed: 0,
+    };
+  }, [partialFarms, data, streamRows]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!farmerId.trim()) return;
 
     setData(null);
+    setPartialFarms([]);
     setErrorMsg('');
     setStatus('QUEUED');
-    setLoadingMsg('Submitting job to queue...');
+    setLoadingMsg('Submitting job…');
+    await loadFarmInfo(farmerId.trim());
 
     try {
       const res = await runAssessmentJob({
@@ -181,12 +352,28 @@ function DashboardPageContent() {
   const resetToIdle = () => {
     setStatus('IDLE');
     setData(null);
+    setPartialFarms([]);
     setJobId(null);
+    setFarmInfo(null);
+    setSeedFarms([]);
     setFarmerId('');
     setPmKisanEnrolled(null);
     setHasCropInsurance(null);
     syncJobToUrl(null);
   };
+
+  const assessedLabel =
+    data?.assessment_date
+      ? new Date(data.assessment_date).toLocaleString('en-IN', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        })
+      : undefined;
+
+  const plotsLabel =
+    doneCounters.n_plots_total != null
+      ? `${(data?.n_plots_scored ?? doneCounters.n_plots_scored ?? 0)}/${doneCounters.n_plots_total} scored`
+      : undefined;
 
   return (
     <div className="min-h-screen bg-[#F5F2EB] text-stone-800 selection:bg-emerald-500/30">
@@ -206,17 +393,11 @@ function DashboardPageContent() {
               Home
             </Link>
             <span className="text-[#E4DFD4]">|</span>
-            <Link
-              href="/agristack"
-              className="text-stone-500 hover:text-emerald-700 font-medium transition-colors"
-            >
+            <Link href="/agristack" className="text-stone-500 hover:text-emerald-700 font-medium transition-colors">
               Data Acquisition
             </Link>
             <span className="text-[#E4DFD4]">|</span>
-            <Link
-              href="/farmer"
-              className="text-stone-500 hover:text-emerald-700 font-medium transition-colors"
-            >
+            <Link href="/farmer" className="text-stone-500 hover:text-emerald-700 font-medium transition-colors">
               Farmer Journey
             </Link>
             <span className="text-[#E4DFD4]">|</span>
@@ -226,10 +407,13 @@ function DashboardPageContent() {
       </header>
 
       <main className="p-6 max-w-7xl mx-auto w-full space-y-6 no-print">
-        {status === 'IDLE' && !data && (
+        {historyLoading && status === 'IDLE' && !data && (
+          <p className="text-center text-sm text-stone-500 mt-16">Loading last assessment…</p>
+        )}
+
+        {status === 'IDLE' && !data && !historyLoading && (
           <div className="bg-white border border-[#E4DFD4] rounded-xl p-8 max-w-2xl mx-auto mt-12 shadow-sm">
             <h2 className="text-xl font-bold mb-6 text-stone-900">Run New Assessment</h2>
-
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
                 <label className="block text-sm font-semibold text-stone-700 mb-2">
@@ -243,140 +427,142 @@ function DashboardPageContent() {
                   className="w-full bg-[#F5F2EB] border border-[#E4DFD4] text-stone-800 rounded-lg p-3 placeholder-stone-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors font-mono text-sm"
                   required
                 />
-                <p className="text-xs text-stone-500 mt-2">
-                  This ID must exist in the <code className="text-emerald-700">farm_info</code>{' '}
-                  collection.
-                </p>
               </div>
-
               <div className="grid sm:grid-cols-2 gap-4 pt-1">
-                <TriStateSelect
-                  label="PM-KISAN enrolled"
-                  value={pmKisanEnrolled}
-                  onChange={setPmKisanEnrolled}
-                />
-                <TriStateSelect
-                  label="Crop insurance (PMFBY)"
-                  value={hasCropInsurance}
-                  onChange={setHasCropInsurance}
-                />
+                <TriStateSelect label="PM-KISAN enrolled" value={pmKisanEnrolled} onChange={setPmKisanEnrolled} />
+                <TriStateSelect label="Crop insurance (PMFBY)" value={hasCropInsurance} onChange={setHasCropInsurance} />
               </div>
-              <p className="text-xs text-stone-500">
-                Unknown does not penalise the index (positive-only benefits).
-              </p>
-
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={!farmerId.trim()}
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-stone-200 disabled:text-stone-400 text-white font-bold py-3 px-4 rounded-lg transition-colors"
-                >
-                  Run Pipeline
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={!farmerId.trim()}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-stone-200 disabled:text-stone-400 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+              >
+                Run Pipeline
+              </button>
             </form>
           </div>
         )}
 
-        {(status === 'QUEUED' || status === 'RUNNING') && (
-          <div className="flex flex-col items-center justify-center py-20">
-            <div className="relative w-16 h-16 mb-6">
-              <div className="absolute inset-0 border-t-2 border-emerald-500 rounded-full animate-spin"></div>
-              <div
-                className="absolute inset-2 border-r-2 border-sky-500 rounded-full animate-spin"
-                style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}
-              ></div>
-            </div>
-            <h3 className="text-lg font-bold text-emerald-700 mb-2">Pipeline Working</h3>
-            <p className="text-sm text-stone-500 font-mono">{loadingMsg}</p>
-            <p className="text-[10px] text-stone-400 mt-4 uppercase tracking-widest">
-              Job ID: {jobId}
-            </p>
-          </div>
-        )}
-
-        {status === 'FAILED' && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center max-w-2xl mx-auto mt-12">
-            <h3 className="text-lg font-bold text-red-700 mb-2">Assessment Failed</h3>
-            <p className="text-sm text-red-600 mb-6">{errorMsg}</p>
-            <button
-              onClick={() => {
-                setStatus('IDLE');
-                setJobId(null);
-                syncJobToUrl(null, farmerId || undefined);
-              }}
-              className="bg-white hover:bg-[#F5F2EB] border border-[#E4DFD4] text-stone-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            >
-              Try Again
-            </button>
-          </div>
-        )}
-
-        {data && status === 'SUCCESS' && (
+        {showShell && (
           <div className="space-y-6 animate-slide-in">
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <h2 className="text-xl font-bold text-stone-900">Assessment Insights</h2>
-                {riskView.indexVersion && (
-                  <p className="text-xs text-stone-500 font-mono mt-0.5">{riskView.indexVersion}</p>
-                )}
+                <p className="text-xs text-stone-500 font-mono mt-0.5">
+                  {status === 'SUCCESS'
+                    ? riskView.indexVersion || 'complete'
+                    : status === 'FAILED'
+                      ? 'failed'
+                      : loadingMsg || status}
+                </p>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="bg-white hover:bg-[#F5F2EB] border border-[#E4DFD4] text-stone-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  Print / PDF
-                </button>
+                {status === 'SUCCESS' && data && (
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="bg-white hover:bg-[#F5F2EB] border border-[#E4DFD4] text-stone-700 px-4 py-2 rounded-lg text-sm font-medium"
+                  >
+                    Print / PDF
+                  </button>
+                )}
+                {status === 'SUCCESS' && farmerId.trim() && (
+                  <button
+                    type="button"
+                    onClick={startRerun}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                  >
+                    Re-run Assessment
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={resetToIdle}
-                  className="bg-white hover:bg-[#F5F2EB] border border-[#E4DFD4] text-stone-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                  className="bg-white hover:bg-[#F5F2EB] border border-[#E4DFD4] text-stone-700 px-4 py-2 rounded-lg text-sm font-medium"
                 >
                   ← New Assessment
                 </button>
               </div>
             </div>
 
-            <div className="flex bg-white border border-[#E4DFD4] rounded-lg p-1 gap-1 overflow-x-auto">
-              {TABS.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setActiveTab(t.id)}
-                  className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${
-                    activeTab === t.id
-                      ? 'bg-emerald-600 text-white shadow-sm'
-                      : 'text-stone-500 hover:text-stone-800 hover:bg-[#F5F2EB]'
-                  }`}
-                >
-                  {t.label}
-                </button>
-              ))}
+            {status === 'FAILED' && (
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+                {errorMsg || 'Assessment failed'}
+              </div>
+            )}
+
+            <div className="grid lg:grid-cols-[35%_1fr] gap-5 items-stretch">
+              <FarmerIdentityCard
+                farmInfo={farmInfo}
+                farmerId={farmerId || farmInfo?.farmer_id || data?.farmer_id || '—'}
+                plotsLabel={plotsLabel}
+                assessedLabel={assessedLabel}
+                portfolioSummary={portfolioSummaryFromRows(streamRows)}
+                pmKisan={
+                  pmKisanEnrolled ??
+                  data?.farmer_benefits?.pm_kisan_enrolled ??
+                  riskView.benefits.pm_kisan
+                }
+                cropInsurance={
+                  hasCropInsurance ??
+                  data?.farmer_benefits?.has_crop_insurance ??
+                  riskView.benefits.has_crop_insurance
+                }
+              />
+              <RiskScoreCard
+                data={status === 'SUCCESS' && data ? data : null}
+                placeholder={status !== 'SUCCESS' || !data}
+                statusMessage={
+                  status === 'FAILED'
+                    ? errorMsg || 'No farmer score — see plot outcomes below.'
+                    : loadingMsg || 'Analyzing plots…'
+                }
+              />
             </div>
 
-            {activeTab === 'overview' && (
-              <div className="space-y-6">
-                <LocationStrip data={data} />
-                <SummaryHero data={data} />
-                <SignalQualityStrip data={data} />
-                <IndexInsightsCard view={riskView} />
-              </div>
+            <StreamingFarmList
+              rows={streamRows}
+              jobId={jobId}
+              farmerId={farmerId || String(data?.farmer_id || '')}
+              doneCount={doneCounters.n_plots_done ?? 0}
+              totalCount={doneCounters.n_plots_total ?? streamRows.length}
+            />
+
+            {status === 'SUCCESS' && data && (
+              <>
+                <div className="flex bg-white border border-[#E4DFD4] rounded-lg p-1 gap-1 overflow-x-auto">
+                  {TABS.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setActiveTab(t.id)}
+                      className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${
+                        activeTab === t.id
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-stone-500 hover:text-stone-800 hover:bg-[#F5F2EB]'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+
+                {activeTab === 'overview' && (
+                  <div className="space-y-6">
+                    <IndexInsightsCard view={riskView} />
+                  </div>
+                )}
+                {activeTab === 'cropPerf' && (
+                  <div className="space-y-6">
+                    <CroppingSection data={data} />
+                    <PerformanceSection data={data} />
+                  </div>
+                )}
+                {activeTab === 'weather' && <WeatherSection data={data} />}
+                {activeTab === 'cycles' && <CropCyclesSection data={data} />}
+                {activeTab === 'ai' && <AIEnrichmentSection data={data} />}
+              </>
             )}
-
-            {activeTab === 'cropPerf' && (
-              <div className="space-y-6">
-                <CroppingSection data={data} />
-                <PerformanceSection data={data} />
-              </div>
-            )}
-
-            {activeTab === 'weather' && <WeatherSection data={data} />}
-
-            {activeTab === 'cycles' && <CropCyclesSection data={data} />}
-
-            {activeTab === 'ai' && <AIEnrichmentSection data={data} />}
           </div>
         )}
       </main>
