@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { ingestFarmerData } from '../../lib/assessmentClient';
 
 interface WebhookResponse {
     _id: string;
@@ -10,6 +11,19 @@ interface WebhookResponse {
     body: Record<string, unknown>;
     rawBody: string;
 }
+
+type SavedPayload = {
+    farmer_ids: string[];
+    message: string;
+    plot_counts?: { farmer_id: string; n_plots: number; n_included: number }[];
+    created?: string[];
+    updated?: string[];
+};
+
+type Props = {
+    /** Notify parent so the “Farms saved — continue to assessment” banner can show. */
+    onFarmersSaved?: (payload: SavedPayload) => void;
+};
 
 // Syntax highlighting function for JSON
 function highlightJson(json: string): string {
@@ -32,7 +46,7 @@ function highlightJson(json: string): string {
         .replace(/,/g, '<span style="color: #d4d4d4">,</span>');
 }
 
-export default function WebhookResponses() {
+export default function WebhookResponses({ onFarmersSaved }: Props) {
     const [responses, setResponses] = useState<WebhookResponse[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -42,6 +56,8 @@ export default function WebhookResponses() {
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
+    const [savingId, setSavingId] = useState<string | null>(null);
+    const [saveMsg, setSaveMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
 
     // Helper to safely extract AgriStack Croparea Data
     const getFarmerPayload = (body: any) => {
@@ -128,6 +144,62 @@ export default function WebhookResponses() {
         return '/webhook/on-seek';
     };
 
+    const handleSaveWebhook = async (item: WebhookResponse) => {
+        const payload = getFarmerPayload(item.body);
+        if (!payload) {
+            setSaveMsg({
+                id: item._id,
+                ok: false,
+                text: 'No FarmerData/land_data in this webhook yet.',
+            });
+            return;
+        }
+        setSavingId(item._id);
+        setSaveMsg(null);
+        try {
+            const result = (await ingestFarmerData(item.body)) as SavedPayload & {
+                success?: boolean;
+            };
+            const ids = result.farmer_ids || [];
+            if (!ids.length) {
+                throw new Error(result.message || 'Ingest returned no farmer_ids');
+            }
+            const plotNote =
+                result.plot_counts?.length
+                    ? ` · ${result.plot_counts
+                          .map((p) => `${p.n_included}/${p.n_plots} plots`)
+                          .join(', ')}`
+                    : '';
+            const message =
+                result.message ||
+                `✓ Saved ${ids.length} farmer(s): ${ids.join(', ')}${plotNote}`;
+            setSaveMsg({ id: item._id, ok: true, text: message });
+            onFarmersSaved?.({
+                farmer_ids: ids,
+                message,
+                plot_counts: result.plot_counts,
+                created: result.created,
+                updated: result.updated,
+            });
+            try {
+                sessionStorage.setItem(
+                    'agristack_last_saved_farmers',
+                    JSON.stringify({ farmer_ids: ids, message })
+                );
+            } catch {
+                /* ignore */
+            }
+        } catch (e) {
+            setSaveMsg({
+                id: item._id,
+                ok: false,
+                text: e instanceof Error ? e.message : 'Save failed',
+            });
+        } finally {
+            setSavingId(null);
+        }
+    };
+
     if (isLoading) {
         return (
             <div className="flex items-center justify-center py-20">
@@ -185,8 +257,9 @@ export default function WebhookResponses() {
                         <code className="rounded bg-amber-100 px-1">npm run dev</code>.
                     </li>
                     <li>
-                        Health (GET):{' '}
-                        <span className="break-all font-mono text-xs">{farmersUrl}</span>
+                        After a webhook arrives with farmer/land tables, click{' '}
+                        <strong>Save to Platform</strong> on that card — that is what unlocks{' '}
+                        <em>Farms saved — continue to assessment</em>. Viewing the JSON alone does not save.
                     </li>
                 </ul>
                 <div className="mt-3 space-y-1 border-t border-amber-200/80 pt-3 font-mono text-xs text-amber-900/85 break-all">
@@ -287,7 +360,8 @@ export default function WebhookResponses() {
                                     <div className="flex flex-col gap-4">
                                         {/* Toggle Switch */}
                                         {hasData && (
-                                            <div className="flex bg-gray-100 p-1 rounded-lg self-start">
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                <div className="flex bg-gray-100 p-1 rounded-lg self-start">
                                                 <button 
                                                     onClick={() => setViewMode('table')}
                                                     className={`px-4 py-1.5 text-sm font-medium rounded-md transition-shadow ${viewMode === 'table' ? 'bg-white shadow-sm text-gray-800' : 'text-stone-500 hover:text-gray-700'}`}
@@ -300,6 +374,24 @@ export default function WebhookResponses() {
                                                 >
                                                     Raw JSON
                                                 </button>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleSaveWebhook(item)}
+                                                    disabled={savingId === item._id}
+                                                    className="bg-green-600 hover:bg-green-500 disabled:bg-gray-300 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
+                                                >
+                                                    {savingId === item._id ? 'Saving…' : '⬆ Save to Platform'}
+                                                </button>
+                                                {saveMsg?.id === item._id && (
+                                                    <span
+                                                        className={`text-xs font-medium ${
+                                                            saveMsg.ok ? 'text-green-700' : 'text-red-600'
+                                                        }`}
+                                                    >
+                                                        {saveMsg.text}
+                                                    </span>
+                                                )}
                                             </div>
                                         )}
 

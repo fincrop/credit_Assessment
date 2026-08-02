@@ -208,6 +208,9 @@ export async function POST(req: NextRequest) {
 
       const webhookDocs: any[] = [];
       if (correlationIds.length > 0) {
+        const escaped = correlationIds.map((id) =>
+          id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        );
         for (const col of webhookCollections) {
           const docs = await col.find({
             $or: [
@@ -215,6 +218,9 @@ export async function POST(req: NextRequest) {
               { 'body.data.message.correlation_id': { $in: correlationIds } },
               { 'body.message.ack.correlation_id': { $in: correlationIds } },
               { 'body.data.message.ack.correlation_id': { $in: correlationIds } },
+              { 'body.header.correlation_id': { $in: correlationIds } },
+              { 'body.correlation_id': { $in: correlationIds } },
+              ...escaped.map((id) => ({ rawBody: { $regex: id } })),
             ],
           }).sort({ receivedAt: -1 }).limit(10).toArray();
           webhookDocs.push(...docs);
@@ -223,16 +229,23 @@ export async function POST(req: NextRequest) {
 
       // Do NOT fall back to unrelated latest webhooks — that can save the wrong farmer.
       for (const doc of webhookDocs) {
-        farmersToInsert = farmersToInsert.concat(extractFarmersFromPayload(doc?.body));
+        farmersToInsert = farmersToInsert.concat(
+          extractFarmersFromPayload(doc?.body),
+          extractFarmersFromPayload(doc?.body?.data),
+          extractFarmersFromPayload(doc?.body?.message)
+        );
       }
     }
 
     if (farmersToInsert.length === 0) {
       const correlationIds = extractCorrelationIds(payloads);
+      const lambdaHint = process.env.AGRISTACK_PROXY_URL
+        ? 'Confirm NEXT_PUBLIC_APP_DOMAIN points at the Mumbai Lambda webhook base, wait ~30–60s, open Webhook Responses, use Save to Platform there, then retry.'
+        : 'Confirm sender_uri / NEXT_PUBLIC_APP_DOMAIN is reachable, wait ~30–60s, refresh Webhook Responses, then retry Save (or Save from the Webhook tab).';
       return NextResponse.json({
         error: correlationIds.length
-          ? `Seek ACK only so far. No webhook payload yet for correlation_id=${correlationIds.join(', ')}. Keep Cloudflare tunnel running, confirm sender_uri uses NEXT_PUBLIC_APP_DOMAIN, wait ~30–60s, refresh Webhook Responses, then retry Save.`
-          : 'No farmer records found yet. Seek returned ACK only; wait for webhook callback, then retry Save to Platform.',
+          ? `Seek ACK only so far. No matching webhook farmer payload for correlation_id=${correlationIds.join(', ')}. ${lambdaHint}`
+          : 'No farmer records found yet. Seek returned ACK only; wait for webhook callback, then Save from Webhook Responses or retry Save to Platform.',
       }, { status: 400 });
     }
 

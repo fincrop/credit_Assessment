@@ -433,12 +433,27 @@ export default function AgristackPage() {
     }
   };
 
-  // Save successful Agristack response to MongoDB farm_info
+  // Save successful Agristack response (or webhook body) to MongoDB farm_info
   const handleIngest = async () => {
     if (!response?.success || !response.data) return;
     setIngestStatus({ loading: true, message: null, success: null });
     try {
-      const result = await ingestFarmerData(response.data) as {
+      // Prefer AgriStack payload; unwrap accidental Lambda/proxy wrappers
+      let payload: unknown = response.data;
+      if (
+        payload &&
+        typeof payload === 'object' &&
+        !Array.isArray(payload) &&
+        'data' in payload &&
+        (payload as { data?: unknown }).data &&
+        typeof (payload as { data?: unknown }).data === 'object'
+      ) {
+        const inner = (payload as { data: Record<string, unknown> }).data;
+        if (inner.message || inner.header || Array.isArray(inner)) {
+          payload = inner;
+        }
+      }
+      const result = await ingestFarmerData(payload) as {
         farmer_ids: string[];
         created?: string[];
         updated?: string[];
@@ -446,6 +461,9 @@ export default function AgristackPage() {
         plot_counts?: { farmer_id: string; n_plots: number; n_included: number }[];
       };
       const ids = result.farmer_ids || [];
+      if (!ids.length) {
+        throw new Error(result.message || 'Save succeeded but returned no farmer_ids');
+      }
       setSavedFarmerIds(ids);
       const created = result.created?.length ?? 0;
       const updated = result.updated?.length ?? 0;
@@ -480,6 +498,19 @@ export default function AgristackPage() {
 
   const showContinuation =
     ingestStatus.success === true && savedFarmerIds.length > 0;
+
+  const handleFarmersSavedFromWebhook = (payload: {
+    farmer_ids: string[];
+    message: string;
+  }) => {
+    const ids = payload.farmer_ids || [];
+    setSavedFarmerIds(ids);
+    setIngestStatus({
+      loading: false,
+      message: payload.message,
+      success: ids.length > 0,
+    });
+  };
 
   if (!sessionChecked) {
     return (
@@ -740,7 +771,7 @@ export default function AgristackPage() {
                 <ResponseSection response={response} isLoading={isLoading} />
               </>
             ) : (
-              <WebhookResponses />
+              <WebhookResponses onFarmersSaved={handleFarmersSavedFromWebhook} />
             )}
           </div>
         </main>
