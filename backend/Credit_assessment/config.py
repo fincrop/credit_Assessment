@@ -11,10 +11,28 @@ RiskIndexEngine sub-index weights, SAR/signal/phenology/weather pillar knobs.
 from pathlib import Path
 from typing import Union
 
-# Directory containing main.py / config.py / api/ (Docker WORKDIR and local cwd).
+# Directory containing main.py / config.py / api/ (Docker WORKDIR=/app and local cwd).
 PACKAGE_ROOT = Path(__file__).resolve().parent
-# Monorepo root (contains frontend/ and backend/).
-REPO_ROOT = PACKAGE_ROOT.parents[1]
+
+
+def _resolve_repo_root(package_root: Path) -> Path:
+    """Monorepo root when layout is ``…/backend/Credit_assessment``; else package root.
+
+    In Docker the image context is only ``backend/Credit_assessment`` (WORKDIR ``/app``),
+    so ``parents[1]`` does not exist — fall back to PACKAGE_ROOT.
+    """
+    # Local/dev monorepo: <repo>/backend/Credit_assessment
+    if (
+        package_root.name == "Credit_assessment"
+        and package_root.parent.name == "backend"
+        and len(package_root.parents) > 1
+    ):
+        return package_root.parents[1]
+    return package_root
+
+
+# Monorepo root (contains frontend/ and backend/) when present; otherwise PACKAGE_ROOT.
+REPO_ROOT = _resolve_repo_root(PACKAGE_ROOT)
 
 
 def resolve_package_path(path: Union[str, Path]) -> Path:
