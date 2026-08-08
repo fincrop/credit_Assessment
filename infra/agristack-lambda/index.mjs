@@ -20,8 +20,8 @@ const DB_NAME =
   process.env.MONGODB_DB ||
   'agristack';
 
-/** Upstream AgriStack fetch timeout (ms) */
-const UPSTREAM_TIMEOUT_MS = Number(process.env.AGRISTACK_FETCH_TIMEOUT_MS || 10000);
+/** Upstream AgriStack fetch timeout (ms). Seek often needs >10s under sandbox load. */
+const UPSTREAM_TIMEOUT_MS = Number(process.env.AGRISTACK_FETCH_TIMEOUT_MS || 45000);
 
 /** Reuse Mongo client across warm invocations */
 let mongoClient = null;

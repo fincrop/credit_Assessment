@@ -140,7 +140,24 @@ async def lifespan(app: FastAPI):
     else:
         _jobs_col = None
 
+    # Warm GEE/Mongo pipeline in the background so the first Assess is not a cold start.
+    # Port stays open for health checks (Render) while this runs.
+    async def _warm_pipeline() -> None:
+        try:
+            await _ensure_pipeline()
+            logger.info("Pipeline warm-up complete")
+        except Exception:
+            logger.exception("Pipeline warm-up failed (will retry on first job)")
+
+    warm_task = asyncio.create_task(_warm_pipeline())
+
     yield
+
+    warm_task.cancel()
+    try:
+        await warm_task
+    except asyncio.CancelledError:
+        pass
 
     global _pipeline
     _pipeline = None
@@ -305,20 +322,86 @@ async def _run_assessment(body: AssessRequest) -> Dict[str, Any]:
     return slim_assessment_for_api(result, include_heavy=body.include_heavy)
 
 
+def _seed_job_progress_early(job_id: str, farmer_id: str) -> None:
+    """
+    Write plot keys into job.progress as soon as the job is RUNNING so the
+    dashboard can flip the first farm to Analyzing before GEE starts.
+    """
+    if _jobs_col is None or _mongo_for_jobs is None:
+        return
+    try:
+        from assessment.multi_farm_assessor import assign_plot_keys
+
+        dbn = (
+            os.environ.get("MONGODB_DATABASE")
+            or os.environ.get("MONGODB_DB")
+            or "agristack"
+        )
+        farm_info = _mongo_for_jobs[dbn]["farm_info"].find_one({"farmer_id": farmer_id})
+        farms = list((farm_info or {}).get("farms") or [])
+        if not farms:
+            _jobs_col.update_one(
+                {"_id": ObjectId(job_id)},
+                {
+                    "$set": {
+                        "progress": {
+                            "current_stage": "starting",
+                            "n_plots_total": 0,
+                            "n_plots_done": 0,
+                        },
+                        "updated_at": utc_now(),
+                    }
+                },
+            )
+            return
+        keyed = assign_plot_keys(farms)
+        # Only count plots that will actually be attempted (included).
+        included = [
+            f
+            for f in keyed
+            if f.get("included_in_assessment", True) is not False
+        ]
+        n = len(included) or len(keyed)
+        keys = [f.get("plot_key") for f in (included or keyed)]
+        _jobs_col.update_one(
+            {"_id": ObjectId(job_id)},
+            {
+                "$set": {
+                    "progress": {
+                        "current_stage": f"plot 0/{n}",
+                        "n_plots_total": n,
+                        "n_plots_done": 0,
+                        "n_plots_scored": 0,
+                        "n_plots_skipped": 0,
+                        "n_plots_failed": 0,
+                        "pending_plot_keys": keys,
+                        "partial_result": {
+                            "farmer_id": farmer_id,
+                            "farm_assessments": [],
+                            "n_plots_total": n,
+                            "n_plots_done": 0,
+                            "n_plots_scored": 0,
+                            "n_plots_skipped": 0,
+                            "n_plots_failed": 0,
+                        },
+                    },
+                    "updated_at": utc_now(),
+                }
+            },
+        )
+    except Exception as exc:
+        logger.debug("Early progress seed skipped: %s", exc)
+
+
 async def _claim_and_run_job(job_id: str) -> None:
     """
     After HTTP returns, claim the QUEUED job and run the pipeline in a thread pool.
+    Claim RUNNING immediately (before pipeline warm) so the UI leaves the pending lag.
     Serialized with _pipeline_job_lock so only one heavy run uses the pipeline at a time.
     """
     global _jobs_col, _pipeline_job_lock
     if _jobs_col is None or _pipeline_job_lock is None:
         logger.error("Inline job %s skipped: Mongo jobs not ready", job_id)
-        return
-
-    try:
-        pipeline = await _ensure_pipeline()
-    except HTTPException:
-        logger.exception("Inline job %s skipped: pipeline init failed", job_id)
         return
 
     try:
@@ -329,6 +412,10 @@ async def _claim_and_run_job(job_id: str) -> None:
                     "status": "RUNNING",
                     "started_at": utc_now(),
                     "updated_at": utc_now(),
+                    "progress": {
+                        "current_stage": "starting",
+                        "n_plots_done": 0,
+                    },
                 }
             },
             return_document=ReturnDocument.AFTER,
@@ -340,6 +427,37 @@ async def _claim_and_run_job(job_id: str) -> None:
     if not job:
         logger.info("Job %s not in QUEUED state (already processed or claimed)", job_id)
         return
+
+    farmer_id = str(job.get("farmer_id") or "")
+    _seed_job_progress_early(job_id, farmer_id)
+
+    try:
+        pipeline = await _ensure_pipeline()
+    except HTTPException as exc:
+        logger.exception("Inline job %s skipped: pipeline init failed", job_id)
+        try:
+            _jobs_col.update_one(
+                {"_id": ObjectId(job_id)},
+                {
+                    "$set": {
+                        "status": "FAILED",
+                        "error": f"Pipeline init failed: {exc.detail}",
+                        "completed_at": utc_now(),
+                        "updated_at": utc_now(),
+                    }
+                },
+            )
+        except Exception:
+            logger.exception("Could not persist FAILED for job %s", job_id)
+        return
+
+    # Refresh job doc after early progress write
+    try:
+        refreshed = _jobs_col.find_one({"_id": ObjectId(job_id)})
+        if refreshed:
+            job = refreshed
+    except Exception:
+        pass
 
     _env_classify = os.environ.get("ENABLE_CROP_CLASSIFICATION", "false").strip().lower()
     env_classification_enabled = _env_classify in ("1", "true", "yes")

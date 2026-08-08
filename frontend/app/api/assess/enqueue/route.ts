@@ -113,7 +113,59 @@ export async function POST(req: NextRequest) {
       const key = pipelineApiKey();
       if (key) headers['X-API-Key'] = key;
 
-      const res = await fetch(`${base}/v1/jobs/assess`, {
+      const assessUrl = `${base}/v1/jobs/assess`;
+
+      // Fail fast if PIPELINE_API_URL points at the wrong process (HTML apps, Next, etc.)
+      try {
+        const healthRes = await fetch(`${base}/health`, {
+          method: 'GET',
+          headers: key ? { 'X-API-Key': key } : undefined,
+          signal: AbortSignal.timeout(5000),
+        });
+        const healthText = await healthRes.text();
+        const looksHtml =
+          /^\s*<!doctype/i.test(healthText) || /^\s*<html/i.test(healthText);
+        let healthJson: Record<string, unknown> | null = null;
+        try {
+          healthJson = healthText ? JSON.parse(healthText) : null;
+        } catch {
+          healthJson = null;
+        }
+        const looksLikeOurApi =
+          healthJson != null &&
+          (healthJson.status === 'ok' || healthJson.pipeline_loaded != null);
+        if (!healthRes.ok || looksHtml || !looksLikeOurApi) {
+          console.error('[assess/enqueue] pipeline health failed', {
+            base,
+            status: healthRes.status,
+            preview: healthText.slice(0, 160),
+          });
+          return NextResponse.json(
+            {
+              error:
+                `PIPELINE_API_URL (${base}) is not the Agri-Credit FastAPI service. ` +
+                `Expected GET /health JSON with status/pipeline_loaded. ` +
+                `Got HTTP ${healthRes.status}` +
+                (looksHtml ? ' (HTML — wrong process on this port?).' : '.') +
+                ` Start: cd backend/Credit_assessment && uvicorn api.app:app --host 0.0.0.0 --port 8000`,
+            },
+            { status: 502 }
+          );
+        }
+      } catch (e) {
+        console.error('[assess/enqueue] pipeline health unreachable', base, e);
+        return NextResponse.json(
+          {
+            error:
+              `Cannot reach pipeline at ${base}/health. ` +
+              `Is uvicorn running? (${e instanceof Error ? e.message : 'network error'})`,
+          },
+          { status: 502 }
+        );
+      }
+
+      console.info('[assess/enqueue] POST', assessUrl);
+      const res = await fetch(assessUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -128,8 +180,19 @@ export async function POST(req: NextRequest) {
       try {
         data = text ? JSON.parse(text) : {};
       } catch {
+        const looksHtml =
+          /^\s*<!doctype/i.test(text) || /^\s*<html/i.test(text);
+        console.error('[assess/enqueue] non-JSON upstream', {
+          assessUrl,
+          status: res.status,
+          preview: text.slice(0, 200),
+        });
         return NextResponse.json(
-          { error: `Pipeline API invalid JSON (${res.status}): ${text.slice(0, 200)}` },
+          {
+            error: looksHtml
+              ? `PIPELINE_API_URL (${base}) returned HTML ${res.status} for /v1/jobs/assess — not FastAPI. Check port conflict or Render API URL.`
+              : `Pipeline API invalid JSON (${res.status}) from ${assessUrl}: ${text.slice(0, 200)}`,
+          },
           { status: 502 }
         );
       }

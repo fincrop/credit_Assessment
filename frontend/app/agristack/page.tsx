@@ -13,46 +13,15 @@ import WebhookResponses from '../components/sandbox/WebhookResponses';
 import { setToken, clearToken } from '../store/tokenSlice';
 import { ENDPOINTS, getEndpointConfigs } from '../config/endpoints';
 import { ingestFarmerData } from '../lib/assessmentClient';
-
-const AGRI_CREDS_KEY = 'agristack_session_creds';
-
-type AgriSessionCreds = {
-  username: string;
-  password: string;
-  client_id: string;
-};
-
-function readSessionCreds(): AgriSessionCreds | null {
-  try {
-    const raw = sessionStorage.getItem(AGRI_CREDS_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as AgriSessionCreds;
-    if (!parsed?.username || !parsed?.password) return null;
-    return {
-      username: String(parsed.username),
-      password: String(parsed.password),
-      client_id: String(parsed.client_id || 'registry_sandbox'),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeSessionCreds(creds: AgriSessionCreds) {
-  try {
-    sessionStorage.setItem(AGRI_CREDS_KEY, JSON.stringify(creds));
-  } catch {
-    /* ignore quota */
-  }
-}
-
-function clearSessionCreds() {
-  try {
-    sessionStorage.removeItem(AGRI_CREDS_KEY);
-  } catch {
-    /* ignore */
-  }
-}
+import {
+  AGRI_TOKEN_KEY,
+  readSessionCreds,
+  clearAgriStackSession,
+} from '../lib/agristackSession';
+import {
+  AgriStackLoginForm,
+  AgriStackLoginShell,
+} from '../components/AgriStackLoginForm';
 
 export default function AgristackPage() {
   const router = useRouter();
@@ -77,11 +46,6 @@ export default function AgristackPage() {
   });
   const [savedFarmerIds, setSavedFarmerIds] = useState<string[]>([]);
   const [sessionChecked, setSessionChecked] = useState(false);
-  const [agriUsername, setAgriUsername] = useState('');
-  const [agriPassword, setAgriPassword] = useState('');
-  const [agriClientId, setAgriClientId] = useState('registry_sandbox');
-  const [agriLoginError, setAgriLoginError] = useState('');
-  const [agriLoginLoading, setAgriLoginLoading] = useState(false);
 
   const isTokenUpdate = useRef(false);
   const prevEndpoint = useRef(activeEndpoint);
@@ -117,7 +81,7 @@ export default function AgristackPage() {
     if (tokenRestored.current) return;
     tokenRestored.current = true;
     try {
-      const raw = sessionStorage.getItem('agristack_access_token');
+      const raw = sessionStorage.getItem(AGRI_TOKEN_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as {
           access_token?: string;
@@ -135,7 +99,7 @@ export default function AgristackPage() {
         }
       }
     } catch {
-      sessionStorage.removeItem('agristack_access_token');
+      sessionStorage.removeItem(AGRI_TOKEN_KEY);
     } finally {
       setSessionChecked(true);
     }
@@ -146,12 +110,13 @@ export default function AgristackPage() {
     if (!sessionChecked) return;
     try {
       if (!accessToken) {
-        sessionStorage.removeItem('agristack_access_token');
-        clearSessionCreds();
+        // Do not clear credentials here — only drop the token mirror.
+        // Full clear happens on AgriStack / AgriCredit logout.
+        sessionStorage.removeItem(AGRI_TOKEN_KEY);
         return;
       }
       sessionStorage.setItem(
-        'agristack_access_token',
+        AGRI_TOKEN_KEY,
         JSON.stringify({
           access_token: accessToken,
           token_type: 'Bearer',
@@ -181,64 +146,11 @@ export default function AgristackPage() {
     }
   }, []);
 
-  const handleAgriLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAgriLoginError('');
-    setAgriLoginLoading(true);
-    try {
-      const username = agriUsername.trim();
-      const client_id = agriClientId.trim() || 'registry_sandbox';
-      const res = await fetch('/api/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          username,
-          password: agriPassword,
-          client_id,
-          grant_type: 'password',
-        }),
-      });
-      const result = await res.json();
-      const tokenData = result?.data as
-        | { access_token?: string; token_type?: string; expires_in?: number; refresh_token?: string }
-        | undefined;
-      if (result.success && tokenData?.access_token) {
-        // Keep session creds so the sandbox Token body can re-run without retyping
-        writeSessionCreds({ username, password: agriPassword, client_id });
-        dispatch(
-          setToken({
-            access_token: tokenData.access_token,
-            token_type: tokenData.token_type,
-            expires_in: tokenData.expires_in,
-            refresh_token: tokenData.refresh_token,
-          })
-        );
-        setAgriPassword('');
-        setActiveEndpoint('farmer-land-id');
-      } else {
-        setAgriLoginError(
-          result?.error?.message || 'Provide valid AgriStack credentials'
-        );
-      }
-    } catch {
-      setAgriLoginError('Could not reach AgriStack token service. Try again.');
-    } finally {
-      setAgriLoginLoading(false);
-    }
-  };
-
   const handleAgriLogout = () => {
-    clearSessionCreds();
-    try {
-      sessionStorage.removeItem('agristack_last_saved_farmers');
-    } catch {
-      /* ignore */
-    }
+    clearAgriStackSession();
     setSavedFarmerIds([]);
     setIngestStatus({ loading: false, message: null, success: null });
     dispatch(clearToken());
-    setAgriLoginError('');
   };
 
   useEffect(() => {
@@ -522,93 +434,25 @@ export default function AgristackPage() {
 
   if (!accessToken) {
     return (
-      <div className="min-h-screen bg-[#F5F2EB] text-stone-800 relative overflow-hidden flex items-center justify-center p-4">
-        <div
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              'radial-gradient(ellipse 70% 45% at 15% 0%, rgba(56,189,248,0.16), transparent 55%), linear-gradient(180deg, #F5F2EB 0%, #EFEBE3 100%)',
+      <AgriStackLoginShell>
+        <AgriStackLoginForm
+          title="Sign in to AgriStack"
+          subtitle="Enter your AgriStack sandbox credentials. These are separate from your AgriCredit account and are only kept for this browser session."
+          onSuccess={(_creds, token) => {
+            if (token.access_token) {
+              dispatch(
+                setToken({
+                  access_token: token.access_token,
+                  token_type: token.token_type,
+                  expires_in: token.expires_in,
+                  refresh_token: token.refresh_token,
+                })
+              );
+            }
+            setActiveEndpoint('farmer-land-id');
           }}
         />
-        <div className="relative z-10 w-full max-w-md">
-          <div className="mb-6 flex items-center justify-between">
-            <Link href="/" className="text-sm text-stone-500 hover:text-emerald-700 transition-colors">
-              ← Platform home
-            </Link>
-          </div>
-          <div className="bg-white/90 border border-[#E4DFD4] rounded-2xl p-8 shadow-sm">
-            <div className="mb-6">
-              <p className="text-[10px] font-mono text-sky-600 uppercase tracking-wider mb-1">AgriStack path</p>
-              <h1 className="text-2xl font-bold text-stone-900 tracking-tight">Sign in to AgriStack</h1>
-              <p className="text-sm text-stone-500 mt-2 leading-relaxed">
-                Enter your AgriStack sandbox credentials. These are separate from your AgriCredit account
-                and are only kept for this browser session.
-              </p>
-            </div>
-            {agriLoginError && (
-              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-5 text-sm text-red-700">
-                {agriLoginError}
-              </div>
-            )}
-            <form onSubmit={handleAgriLogin} className="space-y-4">
-              <div>
-                <label htmlFor="agri-username" className="block text-sm font-medium text-stone-700 mb-1.5">
-                  Username
-                </label>
-                <input
-                  id="agri-username"
-                  type="text"
-                  value={agriUsername}
-                  onChange={(e) => setAgriUsername(e.target.value)}
-                  required
-                  autoComplete="username"
-                  className="w-full px-4 py-2.5 rounded-lg border border-stone-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none text-stone-800"
-                />
-              </div>
-              <div>
-                <label htmlFor="agri-password" className="block text-sm font-medium text-stone-700 mb-1.5">
-                  Password
-                </label>
-                <input
-                  id="agri-password"
-                  type="password"
-                  value={agriPassword}
-                  onChange={(e) => setAgriPassword(e.target.value)}
-                  required
-                  autoComplete="current-password"
-                  className="w-full px-4 py-2.5 rounded-lg border border-stone-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none text-stone-800"
-                />
-              </div>
-              <div>
-                <label htmlFor="agri-client-id" className="block text-sm font-medium text-stone-700 mb-1.5">
-                  Client ID
-                </label>
-                <input
-                  id="agri-client-id"
-                  type="text"
-                  value={agriClientId}
-                  onChange={(e) => setAgriClientId(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg border border-stone-300 focus:border-sky-500 focus:ring-2 focus:ring-sky-200 outline-none text-stone-800 font-mono text-sm"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={agriLoginLoading}
-                className="w-full py-3 rounded-lg font-semibold text-white bg-sky-600 hover:bg-sky-500 disabled:bg-stone-400 transition-colors"
-              >
-                {agriLoginLoading ? 'Validating…' : 'Validate & continue'}
-              </button>
-            </form>
-            <p className="text-xs text-stone-500 mt-5 leading-relaxed">
-              No AgriStack account? Use the{' '}
-              <Link href="/farmer" className="text-emerald-700 font-medium hover:underline">
-                Farmer Assessment Journey
-              </Link>{' '}
-              instead — it does not require AgriStack credentials.
-            </p>
-          </div>
-        </div>
-      </div>
+      </AgriStackLoginShell>
     );
   }
 

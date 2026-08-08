@@ -1052,11 +1052,17 @@ class SatelliteDataCollector:
                 max_retries = 2  # Reduce retries to avoid overwhelming GEE
                 for attempt in range(max_retries):
                     try:
-                        # Add substantial delay between years to avoid rate limiting
+                        # Configurable pause between years (default 0 — was hardcoded 10s).
+                        # Set SATELLITE_INTER_YEAR_PAUSE_SEC if GEE rate-limits.
                         if year > d0.year and attempt == 0:
-                            inter_year_delay = 10.0  # Much longer delay between years
-                            logger.info(f"Waiting {inter_year_delay}s between year {year-1} and {year}")
-                            time.sleep(inter_year_delay)
+                            inter_year_delay = float(
+                                getattr(PipelineConfig, "SATELLITE_INTER_YEAR_PAUSE_SEC", 0) or 0
+                            )
+                            if inter_year_delay > 0:
+                                logger.info(
+                                    f"Waiting {inter_year_delay}s between year {year-1} and {year}"
+                                )
+                                time.sleep(inter_year_delay)
                         
                         if attempt > 0:
                             delay = 15.0 * (2 ** attempt)  # Much longer delays for retries

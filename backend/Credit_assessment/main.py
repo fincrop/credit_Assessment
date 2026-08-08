@@ -187,6 +187,19 @@ class SatelliteBasedCreditPipeline:
         }
 
     @staticmethod
+    def _bucket_cache_end_date(end_date: str) -> str:
+        """
+        Stabilize satellite cache keys within an ISO week so re-runs / multi-plot
+        jobs reuse cache instead of missing every calendar day.
+        """
+        try:
+            d = datetime.strptime(str(end_date)[:10], "%Y-%m-%d").date()
+        except Exception:
+            return str(end_date)[:10]
+        monday = d - timedelta(days=d.weekday())
+        return monday.strftime("%Y-%m-%d")
+
+    @staticmethod
     def _build_satellite_cache_key(
         farmer_id: str,
         latitude: Optional[float],
@@ -196,16 +209,18 @@ class SatelliteBasedCreditPipeline:
         interval_days: int,
         start_date: str,
         end_date: str,
+        plot_key: Optional[str] = None,
     ) -> str:
         raw = {
             'farmer_id': farmer_id,
+            'plot_key': (plot_key or '').strip() or None,
             'latitude': latitude,
             'longitude': longitude,
             'field_area_ha': field_area_ha,
             'geometry': geometry,
             'interval_days': interval_days,
             'start_date': start_date,
-            'end_date': end_date,
+            'end_date': SatelliteBasedCreditPipeline._bucket_cache_end_date(end_date),
             'provider': os.environ.get('SATELLITE_PROVIDER', 'gee').strip().lower() or 'gee',
             'pipeline_version': _VERSION,
         }
@@ -464,6 +479,7 @@ class SatelliteBasedCreditPipeline:
         save_to_db: bool = True,
         enable_crop_classification: bool = False,
         force_fresh_satellite: bool = False,
+        skip_ai_enrichment: bool = False,
     ) -> Dict:
         """
         Run the complete assessment pipeline
@@ -486,6 +502,8 @@ class SatelliteBasedCreditPipeline:
                 crop-specific paths.
             force_fresh_satellite: Skip satellite cache for this assessment only
                 (env SATELLITE_FORCE_FRESH remains a process-wide override).
+            skip_ai_enrichment: When True, skip STEP 8 (used for multi-farm per-plot
+                runs; enrichment can run once on the farmer aggregate).
             
         Returns:
             Complete assessment dictionary with all analysis results
@@ -498,7 +516,12 @@ class SatelliteBasedCreditPipeline:
         farm_md_raw = farm_metadata if isinstance(farm_metadata, dict) else {}
         farm_md = {
             k: farm_md_raw.get(k)
-            for k in ('state_lgd_code', 'district_lgd_code')
+            for k in (
+                'state_lgd_code',
+                'district_lgd_code',
+                'farm_id',
+                'plot_key',
+            )
             if farm_md_raw.get(k) not in (None, '')
         }
 
@@ -552,6 +575,7 @@ class SatelliteBasedCreditPipeline:
                 interval_days=interval_days,
                 start_date=snapped_start.strftime('%Y-%m-%d'),
                 end_date=today.strftime('%Y-%m-%d'),
+                plot_key=(farm_md.get("plot_key") or farm_md.get("farm_id")),
             )
 
             satellite_data = None
@@ -929,15 +953,18 @@ class SatelliteBasedCreditPipeline:
             # ============================================================
             # STEP 8: AI enrichment (SHAP / counterfactuals / optional LLM)
             # ============================================================
-            try:
-                from ai_integration.enrichment import enrich_assessment_with_ai
+            if not skip_ai_enrichment:
+                try:
+                    from ai_integration.enrichment import enrich_assessment_with_ai
 
-                logger.info("\nSTEP 8: AI enrichment (explainability)...")
-                if enrich_assessment_with_ai(assessment):
-                    assessment['pipeline_stages'].append('10_ai')
-                    logger.info("  [OK] AI enrichment attached (see assessment['ai_enrichment'])")
-            except ImportError:
-                pass
+                    logger.info("\nSTEP 8: AI enrichment (explainability)...")
+                    if enrich_assessment_with_ai(assessment):
+                        assessment['pipeline_stages'].append('10_ai')
+                        logger.info("  [OK] AI enrichment attached (see assessment['ai_enrichment'])")
+                except ImportError:
+                    pass
+            else:
+                logger.info("\nSTEP 8: AI enrichment skipped (skip_ai_enrichment=True)")
 
             # ============================================================
             # FINALIZE

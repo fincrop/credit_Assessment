@@ -102,7 +102,7 @@ export default function FarmBoundaryMapInner({
       try {
         const bounds = pendingLayer.getBounds();
         if (bounds.isValid()) {
-          map.fitBounds(bounds, { padding: [24, 24], maxZoom: 17 });
+          map.fitBounds(bounds, { padding: [48, 48], maxZoom: 14 });
         }
       } catch {
         /* ignore */
@@ -136,7 +136,7 @@ export default function FarmBoundaryMapInner({
 
     const map = L.map(containerRef.current, {
       center,
-      zoom: mapCenter ? 14 : 5,
+      zoom: mapCenter ? 12 : 5,
       zoomControl: true,
     });
 
@@ -208,7 +208,7 @@ export default function FarmBoundaryMapInner({
 
   useEffect(() => {
     if (mapCenter && mapRef.current) {
-      mapRef.current.setView([mapCenter.lat, mapCenter.lng], 14, { animate: true });
+      mapRef.current.setView([mapCenter.lat, mapCenter.lng], 12, { animate: true });
     }
   }, [mapCenter]);
 
@@ -256,7 +256,7 @@ export default function FarmBoundaryMapInner({
     setCoordError(null);
     const map = mapRef.current;
     if (!map) return;
-    map.setView([pair.lat, pair.lng], Math.max(map.getZoom(), 16), { animate: true });
+    map.setView([pair.lat, pair.lng], Math.max(map.getZoom(), 14), { animate: true });
     if (searchMarkerRef.current) {
       map.removeLayer(searchMarkerRef.current);
     }
@@ -283,7 +283,7 @@ export default function FarmBoundaryMapInner({
     setCoordQuery('');
     const map = mapRef.current;
     if (map) {
-      map.setView([pair.lat, pair.lng], Math.max(map.getZoom(), 15));
+      map.setView([pair.lat, pair.lng], Math.max(map.getZoom(), 13));
       L.circleMarker([pair.lat, pair.lng], { radius: 4, color: '#22c55e' }).addTo(map);
     }
   };

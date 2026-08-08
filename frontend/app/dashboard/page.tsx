@@ -1,18 +1,14 @@
 'use client';
 
-import { Suspense, useState, useEffect, FormEvent, useCallback, useMemo } from 'react';
+import { Suspense, useState, useEffect, FormEvent, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import type { AssessmentPayload, FarmAssessment, TriState } from '../types/assessment';
 import { runAssessmentJob, pollJobStatusSafe } from '../lib/assessmentClient';
 import { FarmerIdentityCard, type FarmInfoSummary } from './components/FarmerIdentityCard';
 import { RiskScoreCard } from './components/RiskScoreCard';
 import { StreamingFarmList } from './components/StreamingFarmList';
-import { IndexInsightsCard } from './components/IndexInsightsCard';
-import { CropCyclesSection } from './components/CropCyclesSection';
-import { CroppingSection } from './components/CroppingSection';
-import { PerformanceSection } from './components/PerformanceSection';
-import { WeatherSection } from './components/WeatherSection';
-import { AIEnrichmentSection } from './components/AIEnrichmentSection';
+import { FarmSelectPanel } from './components/FarmSelectPanel';
+import { PlotBoundaryMap } from './components/PlotBoundaryMap';
 import { AssessmentPrintReport } from './components/AssessmentPrintReport';
 import { useRiskView } from '../lib/useRiskView';
 import {
@@ -22,6 +18,14 @@ import {
 } from '../lib/streamFarms';
 import { assignPlotKeysClient } from '../lib/plotKey';
 import Link from 'next/link';
+import {
+  hasAgriStackSession,
+  readSessionCreds,
+} from '../lib/agristackSession';
+
+function plotKeyOf(f: Record<string, unknown>, i: number) {
+  return String(f.plot_key || f.farm_id || `plot_${i}`);
+}
 
 function TriStateSelect({
   label,
@@ -69,35 +73,64 @@ function DashboardPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [jobId, setJobId] = useState<string | null>(null);
-  const [status, setStatus] = useState<'IDLE' | 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED'>(
-    'IDLE'
-  );
+  const [status, setStatus] = useState<
+    'IDLE' | 'PREPARING' | 'SELECT' | 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'FAILED'
+  >('IDLE');
   const [loadingMsg, setLoadingMsg] = useState('');
   const [data, setData] = useState<AssessmentPayload | null>(null);
   const [partialFarms, setPartialFarms] = useState<FarmAssessment[]>([]);
   const [errorMsg, setErrorMsg] = useState('');
   const [farmInfo, setFarmInfo] = useState<FarmInfoSummary | null>(null);
   const [seedFarms, setSeedFarms] = useState<Record<string, unknown>[]>([]);
+  const [selectedPlotKeys, setSelectedPlotKeys] = useState<Set<string>>(new Set());
+  const [assessBusy, setAssessBusy] = useState(false);
+  const [focusedPlotKey, setFocusedPlotKey] = useState<string | null>(null);
 
   const [farmerId, setFarmerId] = useState('');
   const [pmKisanEnrolled, setPmKisanEnrolled] = useState<TriState>(null);
   const [hasCropInsurance, setHasCropInsurance] = useState<TriState>(null);
 
   const [historyLoading, setHistoryLoading] = useState(false);
+  const lastGoodDataRef = useRef<AssessmentPayload | null>(null);
+  const [agriSessionOk, setAgriSessionOk] = useState(false);
 
-  type TabId = 'overview' | 'cropPerf' | 'weather' | 'cycles' | 'ai';
-  const [activeTab, setActiveTab] = useState<TabId>('overview');
-
-  const TABS: { id: TabId; label: string }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'cropPerf', label: 'Crop & Performance' },
-    { id: 'weather', label: 'Weather' },
-    { id: 'cycles', label: 'Cycles' },
-    { id: 'ai', label: 'Explainability' },
-  ];
+  useEffect(() => {
+    setAgriSessionOk(hasAgriStackSession());
+  }, [status]);
 
   const riskView = useRiskView(data);
-  const showShell = status === 'QUEUED' || status === 'RUNNING' || status === 'SUCCESS' || (status === 'FAILED' && !!farmInfo);
+  const showShell =
+    status === 'QUEUED' ||
+    status === 'RUNNING' ||
+    status === 'SUCCESS' ||
+    (status === 'FAILED' && !!farmInfo);
+
+  const enterSelectWithFarms = useCallback(
+    (
+      farmsIn: Record<string, unknown>[],
+      info?: FarmInfoSummary | null,
+      id?: string
+    ) => {
+      const farms = assignPlotKeysClient(farmsIn);
+      setSeedFarms(farms);
+      if (info) setFarmInfo(info);
+      if (id) setFarmerId(id);
+      const keys = new Set(
+        farms
+          .map((f, i) => plotKeyOf(f, i))
+          .filter((k, i) => farms[i]?.included_in_assessment !== false)
+      );
+      // Default: all selected if none flagged
+      if (keys.size === 0) {
+        farms.forEach((f, i) => keys.add(plotKeyOf(f, i)));
+      }
+      setSelectedPlotKeys(keys);
+      setStatus('SELECT');
+      setErrorMsg('');
+      setLoadingMsg('');
+    },
+    []
+  );
 
   const syncJobToUrl = useCallback(
     (id: string | null, farmer?: string) => {
@@ -120,10 +153,10 @@ function DashboardPageContent() {
       if (!res.ok) {
         setFarmInfo(null);
         setSeedFarms([]);
-        return;
+        return null;
       }
       const fi = json.farm_info;
-      setFarmInfo({
+      const summary: FarmInfoSummary = {
         farmer_id: fi.farmer_id,
         name: fi.name,
         mobile: fi.mobile,
@@ -131,40 +164,17 @@ function DashboardPageContent() {
         district: fi.district,
         village: fi.village,
         farmer_benefits: fi.farmer_benefits,
-      });
+      };
+      setFarmInfo(summary);
       const farms = assignPlotKeysClient(
         Array.isArray(fi.farms) ? fi.farms : []
       );
       setSeedFarms(farms);
+      return { summary, farms };
     } catch {
       setFarmInfo(null);
       setSeedFarms([]);
-    }
-  }, []);
-
-  const loadLatestAssessment = useCallback(async (id: string) => {
-    setHistoryLoading(true);
-    setLoadingMsg('Loading last assessment…');
-    try {
-      const res = await fetch(
-        `/api/assessments/latest?farmer_id=${encodeURIComponent(id)}`,
-        { credentials: 'include', cache: 'no-store' }
-      );
-      const json = await res.json();
-      if (!res.ok || !json.assessment) return false;
-      const payload = json.assessment as AssessmentPayload;
-      setData(payload);
-      if (Array.isArray(payload.farm_assessments)) {
-        setPartialFarms(payload.farm_assessments);
-      }
-      setStatus('SUCCESS');
-      setLoadingMsg('');
-      return true;
-    } catch {
-      return false;
-    } finally {
-      setHistoryLoading(false);
-      setLoadingMsg('');
+      return null;
     }
   }, []);
 
@@ -174,19 +184,29 @@ function DashboardPageContent() {
 
     if (qFarmerId) {
       setFarmerId(qFarmerId);
-      void loadFarmInfo(qFarmerId);
     }
 
     if (qJobId && /^[a-f0-9]{24}$/i.test(qJobId) && !jobId) {
       setJobId(qJobId);
       setStatus('QUEUED');
       setLoadingMsg('Reconnecting to job…');
+      if (qFarmerId) void loadFarmInfo(qFarmerId);
       return;
     }
 
-    // Deep-link with farmer only → open stored results when available
+    // Deep-link with farmer only → open farm SELECT when farm_info exists
     if (qFarmerId && !qJobId) {
-      void loadLatestAssessment(qFarmerId);
+      void (async () => {
+        setHistoryLoading(true);
+        const loaded = await loadFarmInfo(qFarmerId);
+        setHistoryLoading(false);
+        if (loaded && loaded.farms.length > 0) {
+          enterSelectWithFarms(loaded.farms, loaded.summary, qFarmerId);
+          return;
+        }
+        // No farms yet — stay IDLE with ID prefilled (user can Prepare)
+        setStatus('IDLE');
+      })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -196,8 +216,12 @@ function DashboardPageContent() {
     setPartialFarms([]);
     setJobId(null);
     setErrorMsg('');
-    setStatus('IDLE');
     setLoadingMsg('');
+    if (seedFarms.length > 0) {
+      enterSelectWithFarms(seedFarms, farmInfo, farmerId.trim() || undefined);
+    } else {
+      setStatus('IDLE');
+    }
     const params = new URLSearchParams();
     if (farmerId.trim()) params.set('farmer_id', farmerId.trim());
     router.replace(params.toString() ? `/dashboard?${params}` : '/dashboard', { scroll: false });
@@ -217,7 +241,7 @@ function DashboardPageContent() {
 
     const tick = async () => {
       if (cancelled || inFlight) {
-        schedule(failStreak > 0 ? Math.min(10000, 2000 * (failStreak + 1)) : 2500);
+        schedule(failStreak > 0 ? Math.min(10000, 2000 * (failStreak + 1)) : 1500);
         return;
       }
       inFlight = true;
@@ -255,19 +279,30 @@ function DashboardPageContent() {
 
         if (job.status === 'SUCCESS' && job.result && !resultFailed) {
           setData(job.result);
+          lastGoodDataRef.current = job.result;
           if (job.result.farm_assessments) {
             setPartialFarms(job.result.farm_assessments);
           }
+          setErrorMsg('');
           return; // stop polling
         } else if (job.status === 'FAILED' || resultFailed) {
           const r = job.result as AssessmentPayload | undefined;
-          setStatus('FAILED');
-          setErrorMsg(
-            job.error ?? (r as { error?: string })?.error ?? 'Pipeline failed unexpectedly'
-          );
-          if (r) {
-            setData(r);
-            if (r.farm_assessments) setPartialFarms(r.farm_assessments);
+          const failMsg =
+            job.error ?? (r as { error?: string })?.error ?? 'Pipeline failed unexpectedly';
+          if (lastGoodDataRef.current) {
+            setData(lastGoodDataRef.current);
+            if (lastGoodDataRef.current.farm_assessments) {
+              setPartialFarms(lastGoodDataRef.current.farm_assessments);
+            }
+            setStatus('SUCCESS');
+            setErrorMsg(`Re-run failed: ${failMsg}. Showing previous assessment.`);
+          } else {
+            setStatus('FAILED');
+            setErrorMsg(failMsg);
+            if (r) {
+              setData(r);
+              if (r.farm_assessments) setPartialFarms(r.farm_assessments);
+            }
           }
           return;
         } else if (job.status === 'RUNNING') {
@@ -282,7 +317,7 @@ function DashboardPageContent() {
         } else {
           setLoadingMsg('Job queued. Waiting for worker…');
         }
-        schedule(2500);
+        schedule(1500);
       } finally {
         inFlight = false;
       }
@@ -323,42 +358,172 @@ function DashboardPageContent() {
     };
   }, [partialFarms, data, streamRows]);
 
-  const handleSubmit = async (e: FormEvent) => {
+  const portfolioMapPlots = useMemo(() => {
+    return seedFarms.map((f, i) => {
+      const key = plotKeyOf(f, i);
+      const c = f.centroid as { lat?: number; lng?: number } | undefined;
+      const geom = (f.geometry || f.boundary) as
+        | { type?: string; coordinates?: unknown }
+        | null
+        | undefined;
+      return {
+        plot_key: key,
+        label: String(f.farm_name || f.farm_id || key),
+        geometry: geom || null,
+        centroid:
+          c?.lat != null && c?.lng != null
+            ? { lat: Number(c.lat), lng: Number(c.lng) }
+            : null,
+      };
+    });
+  }, [seedFarms]);
+
+  // Keep map focus on a real plot when the farm list changes
+  useEffect(() => {
+    if (!portfolioMapPlots.length) {
+      setFocusedPlotKey(null);
+      return;
+    }
+    setFocusedPlotKey((prev) => {
+      if (prev && portfolioMapPlots.some((p) => p.plot_key === prev)) return prev;
+      return portfolioMapPlots[0].plot_key || null;
+    });
+  }, [portfolioMapPlots]);
+
+  const handlePrepare = async (e: FormEvent) => {
     e.preventDefault();
     if (!farmerId.trim()) return;
+
+    if (!hasAgriStackSession()) {
+      const next = `/dashboard${farmerId.trim() ? `?farmer_id=${encodeURIComponent(farmerId.trim())}` : ''}`;
+      router.push(`/agristack/connect?next=${encodeURIComponent(next)}`);
+      return;
+    }
+    const agriCreds = readSessionCreds();
+    if (!agriCreds) {
+      router.push('/agristack/connect?next=/dashboard');
+      return;
+    }
 
     setData(null);
     setPartialFarms([]);
     setErrorMsg('');
-    setStatus('QUEUED');
-    setLoadingMsg('Submitting job…');
-    await loadFarmInfo(farmerId.trim());
+    setJobId(null);
+    setStatus('PREPARING');
+    setLoadingMsg('Preparing farms (AgriStack token → seek → webhook)…');
+    syncJobToUrl(null, farmerId.trim());
 
     try {
+      const res = await fetch('/api/agristack/prepare-farmer', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          farmer_id: farmerId.trim(),
+          username: agriCreds.username,
+          password: agriCreds.password,
+          client_id: agriCreds.client_id,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json?.error || `Prepare failed (HTTP ${res.status})`);
+      }
+      const farms = Array.isArray(json.farms) ? json.farms : [];
+      if (!farms.length) {
+        throw new Error('No farm plots returned after prepare');
+      }
+      const summary: FarmInfoSummary | null = json.farm_info
+        ? {
+            farmer_id: json.farm_info.farmer_id,
+            name: json.farm_info.name,
+            mobile: json.farm_info.mobile,
+            state: json.farm_info.state,
+            district: json.farm_info.district,
+            village: json.farm_info.village,
+            farmer_benefits: json.farm_info.farmer_benefits,
+          }
+        : null;
+      enterSelectWithFarms(farms, summary, farmerId.trim());
+      setLoadingMsg(
+        json.skipped_seek
+          ? 'Loaded farms from database'
+          : 'Farms ready — select plots to assess'
+      );
+    } catch (err) {
+      setStatus('IDLE');
+      setErrorMsg(err instanceof Error ? err.message : 'Failed to prepare farms');
+      setLoadingMsg('');
+    }
+  };
+
+  const persistInclusionAndEnqueue = async (keys: Set<string>) => {
+    const id = farmerId.trim();
+    if (!id) return;
+    setAssessBusy(true);
+    setErrorMsg('');
+    try {
+      const patchRes = await fetch(`/api/farm-info/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ farm_ids_included: Array.from(keys) }),
+      });
+      const patchJson = await patchRes.json();
+      if (!patchRes.ok) {
+        throw new Error(patchJson?.error || 'Failed to save plot selection');
+      }
+      if (Array.isArray(patchJson.farms)) {
+        setSeedFarms(assignPlotKeysClient(patchJson.farms));
+      }
+
+      setPartialFarms([]);
+      setStatus('QUEUED');
+      setLoadingMsg('Submitting job…');
+      // Keep last successful payload visible until the new job finishes.
+
       const res = await runAssessmentJob({
-        farmerId,
+        farmerId: id,
         pmKisanEnrolled,
         hasCropInsurance,
       });
       setJobId(res.job_id);
-      setStatus(res.status as 'QUEUED' | 'RUNNING');
-      syncJobToUrl(res.job_id, farmerId.trim());
+      // Treat as RUNNING immediately — API claims the job before pipeline warm-up.
+      setStatus('RUNNING');
+      setLoadingMsg('Starting analysis…');
+      syncJobToUrl(res.job_id, id);
     } catch (err) {
-      setStatus('FAILED');
+      setStatus('SELECT');
       setErrorMsg(err instanceof Error ? err.message : 'Failed to enqueue assessment');
+    } finally {
+      setAssessBusy(false);
     }
+  };
+
+  const handleAssessSelected = () => {
+    void persistInclusionAndEnqueue(selectedPlotKeys);
+  };
+
+  const handleAssessAll = () => {
+    const all = new Set(seedFarms.map((f, i) => plotKeyOf(f, i)));
+    setSelectedPlotKeys(all);
+    void persistInclusionAndEnqueue(all);
   };
 
   const resetToIdle = () => {
     setStatus('IDLE');
     setData(null);
+    lastGoodDataRef.current = null;
     setPartialFarms([]);
     setJobId(null);
     setFarmInfo(null);
     setSeedFarms([]);
+    setSelectedPlotKeys(new Set());
     setFarmerId('');
     setPmKisanEnrolled(null);
     setHasCropInsurance(null);
+    setErrorMsg('');
+    setLoadingMsg('');
     syncJobToUrl(null);
   };
 
@@ -394,7 +559,7 @@ function DashboardPageContent() {
             </Link>
             <span className="text-[#E4DFD4]">|</span>
             <Link href="/agristack" className="text-stone-500 hover:text-emerald-700 font-medium transition-colors">
-              Data Acquisition
+              API sandbox
             </Link>
             <span className="text-[#E4DFD4]">|</span>
             <Link href="/farmer" className="text-stone-500 hover:text-emerald-700 font-medium transition-colors">
@@ -408,13 +573,46 @@ function DashboardPageContent() {
 
       <main className="p-6 max-w-7xl mx-auto w-full space-y-6 no-print">
         {historyLoading && status === 'IDLE' && !data && (
-          <p className="text-center text-sm text-stone-500 mt-16">Loading last assessment…</p>
+          <p className="text-center text-sm text-stone-500 mt-16">Loading farms…</p>
+        )}
+
+        {errorMsg && (status === 'IDLE' || status === 'SELECT' || status === 'PREPARING') && (
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 max-w-2xl mx-auto">
+            {errorMsg}
+          </div>
         )}
 
         {status === 'IDLE' && !data && !historyLoading && (
           <div className="bg-white border border-[#E4DFD4] rounded-xl p-8 max-w-2xl mx-auto mt-12 shadow-sm">
-            <h2 className="text-xl font-bold mb-6 text-stone-900">Run New Assessment</h2>
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <h2 className="text-xl font-bold mb-2 text-stone-900">Run New Assessment</h2>
+            <p className="text-sm text-stone-500 mb-6">
+              Enter a Farmer ID. We fetch AgriStack land records in the background, then you
+              choose which plots to score.
+            </p>
+            <div
+              className={`mb-5 rounded-lg px-3 py-2 text-xs ${
+                agriSessionOk
+                  ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                  : 'bg-amber-50 border border-amber-200 text-amber-900'
+              }`}
+            >
+              {agriSessionOk ? (
+                <>AgriStack session active for this browser tab.</>
+              ) : (
+                <>
+                  AgriStack credentials required.{' '}
+                  <Link
+                    href={`/agristack/connect?next=${encodeURIComponent(
+                      `/dashboard${farmerId.trim() ? `?farmer_id=${encodeURIComponent(farmerId.trim())}` : ''}`
+                    )}`}
+                    className="font-semibold underline underline-offset-2"
+                  >
+                    Sign in to AgriStack
+                  </Link>
+                </>
+              )}
+            </div>
+            <form onSubmit={handlePrepare} className="space-y-5">
               <div>
                 <label className="block text-sm font-semibold text-stone-700 mb-2">
                   Farmer ID (from Agristack / DB)
@@ -437,10 +635,45 @@ function DashboardPageContent() {
                 disabled={!farmerId.trim()}
                 className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-stone-200 disabled:text-stone-400 text-white font-bold py-3 px-4 rounded-lg transition-colors"
               >
-                Run Pipeline
+                Prepare farms
               </button>
             </form>
           </div>
+        )}
+
+        {status === 'PREPARING' && (
+          <div className="bg-white border border-[#E4DFD4] rounded-xl p-8 max-w-2xl mx-auto mt-12 shadow-sm text-center space-y-3">
+            <div className="mx-auto w-10 h-10 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+            <h2 className="text-lg font-bold text-stone-900">Preparing farms</h2>
+            <p className="text-sm text-stone-500">{loadingMsg || 'Working…'}</p>
+            <p className="text-xs text-stone-400 font-mono">{farmerId}</p>
+          </div>
+        )}
+
+        {status === 'SELECT' && (
+          <FarmSelectPanel
+            farms={seedFarms}
+            selectedKeys={selectedPlotKeys}
+            busy={assessBusy}
+            onToggle={(key) => {
+              setSelectedPlotKeys((prev) => {
+                const next = new Set(prev);
+                if (next.has(key)) next.delete(key);
+                else next.add(key);
+                return next;
+              });
+            }}
+            onSelectAll={() =>
+              setSelectedPlotKeys(new Set(seedFarms.map((f, i) => plotKeyOf(f, i))))
+            }
+            onClearAll={() => setSelectedPlotKeys(new Set())}
+            onAssessSelected={handleAssessSelected}
+            onAssessAll={handleAssessAll}
+            onBack={() => {
+              setStatus('IDLE');
+              setErrorMsg('');
+            }}
+          />
         )}
 
         {showShell && (
@@ -485,13 +718,19 @@ function DashboardPageContent() {
               </div>
             </div>
 
-            {status === 'FAILED' && (
-              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
-                {errorMsg || 'Assessment failed'}
+            {errorMsg && (
+              <div
+                className={`rounded-xl px-4 py-3 text-sm ${
+                  status === 'FAILED'
+                    ? 'bg-red-50 border border-red-200 text-red-700'
+                    : 'bg-amber-50 border border-amber-200 text-amber-900'
+                }`}
+              >
+                {errorMsg}
               </div>
             )}
 
-            <div className="grid lg:grid-cols-[35%_1fr] gap-5 items-stretch">
+            <div className="grid lg:grid-cols-[40%_1fr] gap-4 items-stretch">
               <FarmerIdentityCard
                 farmInfo={farmInfo}
                 farmerId={farmerId || farmInfo?.farmer_id || data?.farmer_id || '—'}
@@ -520,49 +759,33 @@ function DashboardPageContent() {
               />
             </div>
 
-            <StreamingFarmList
-              rows={streamRows}
-              jobId={jobId}
-              farmerId={farmerId || String(data?.farmer_id || '')}
-              doneCount={doneCounters.n_plots_done ?? 0}
-              totalCount={doneCounters.n_plots_total ?? streamRows.length}
-            />
-
-            {status === 'SUCCESS' && data && (
-              <>
-                <div className="flex bg-white border border-[#E4DFD4] rounded-lg p-1 gap-1 overflow-x-auto">
-                  {TABS.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setActiveTab(t.id)}
-                      className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${
-                        activeTab === t.id
-                          ? 'bg-emerald-600 text-white shadow-sm'
-                          : 'text-stone-500 hover:text-stone-800 hover:bg-[#F5F2EB]'
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
+            <div className="grid lg:grid-cols-2 gap-5 items-stretch min-h-[520px]">
+              <StreamingFarmList
+                rows={streamRows}
+                jobId={jobId}
+                farmerId={farmerId || String(data?.farmer_id || '')}
+                doneCount={doneCounters.n_plots_done ?? 0}
+                totalCount={doneCounters.n_plots_total ?? streamRows.length}
+                className="min-h-[520px] max-h-[640px]"
+                selectedPlotKey={focusedPlotKey}
+                onSelectPlot={setFocusedPlotKey}
+              />
+              <div className="bg-white rounded-xl border border-[#E4DFD4] p-3 shadow-sm flex flex-col min-h-[520px] max-h-[640px]">
+                <p className="text-xs font-medium text-stone-500 mb-2 px-1 shrink-0">
+                  {focusedPlotKey
+                    ? `Focused · ${focusedPlotKey}`
+                    : `All farms · ${portfolioMapPlots.length} plot(s)`}
+                </p>
+                <div className="flex-1 min-h-0">
+                  <PlotBoundaryMap
+                    plots={portfolioMapPlots}
+                    selectedPlotKey={focusedPlotKey}
+                    onSelectPlot={setFocusedPlotKey}
+                    minHeight={480}
+                  />
                 </div>
-
-                {activeTab === 'overview' && (
-                  <div className="space-y-6">
-                    <IndexInsightsCard view={riskView} />
-                  </div>
-                )}
-                {activeTab === 'cropPerf' && (
-                  <div className="space-y-6">
-                    <CroppingSection data={data} />
-                    <PerformanceSection data={data} />
-                  </div>
-                )}
-                {activeTab === 'weather' && <WeatherSection data={data} />}
-                {activeTab === 'cycles' && <CropCyclesSection data={data} />}
-                {activeTab === 'ai' && <AIEnrichmentSection data={data} />}
-              </>
-            )}
+              </div>
+            </div>
           </div>
         )}
       </main>

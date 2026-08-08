@@ -13,6 +13,7 @@ import {
 } from '../../lib/formatRisk';
 import { SubIndexBars } from './SubIndexBars';
 import { formatNumber } from '../../lib/format';
+import { toKbsScore, kbsBandForScore, KBS_MAX } from '../../lib/kbsScore';
 
 /** Screen-hidden; shown only via @media print (same document). */
 export function AssessmentPrintReport({ data }: { data: AssessmentPayload }) {
@@ -21,14 +22,16 @@ export function AssessmentPrintReport({ data }: { data: AssessmentPayload }) {
   const cycles = data.crop_cycles?.cycles ?? [];
   const seasons = data.performance_analysis?.seasonal_performance ?? [];
   const narrative = data.ai_enrichment?.english_narrative ?? view.narrative;
+  const kbs = view.insufficientData ? null : toKbsScore(view.score);
+  const band = kbsBandForScore(kbs);
 
   return (
     <div className="print-only assessment-print-report" aria-hidden>
       <header className="print-section">
-        <h1>Agronomic Risk Index Report</h1>
+        <h1>Krishi Bhoomi Score (KBS) Report</h1>
         <p className="muted">
-          Expert-weighted field-health index — not a loan amount, credit limit, or probability of
-          default. Weights are provisional.
+          Field-health index, scored 300–900. Reflects land and crop condition only — not a credit
+          score, loan amount, or default probability.
         </p>
       </header>
 
@@ -60,10 +63,12 @@ export function AssessmentPrintReport({ data }: { data: AssessmentPayload }) {
       </section>
 
       <section className="print-section">
-        <h2>Index</h2>
+        <h2>Krishi Bhoomi Score</h2>
         <p className="index-line">
-          <strong>{view.insufficientData ? '—' : formatScoreWhole(view.score)}</strong>
-          {view.category ? <> · {String(view.category)}</> : null}
+          <strong>
+            {kbs == null ? '—' : `${kbs} / ${KBS_MAX}`}
+          </strong>
+          {band ? <> · {band.name} ({band.riskLabel} risk)</> : null}
           {view.indexVersion ? <> · {view.indexVersion}</> : null}
           {view.nPlotsScored != null && view.nPlotsTotal != null ? (
             <> · {view.nPlotsScored}/{view.nPlotsTotal} plots</>
@@ -71,7 +76,8 @@ export function AssessmentPrintReport({ data }: { data: AssessmentPayload }) {
         </p>
         {!view.insufficientData && (
           <p className="muted">
-            Raw {formatScoreOne(view.rawIndex)} · Gate {formatGateMultiplier(view.gate)}
+            Internal index {formatScoreWhole(view.score)} · Raw {formatScoreOne(view.rawIndex)} ·
+            Gate {formatGateMultiplier(view.gate)}
           </p>
         )}
         {!view.insufficientData && <SubIndexBars view={view} compact />}

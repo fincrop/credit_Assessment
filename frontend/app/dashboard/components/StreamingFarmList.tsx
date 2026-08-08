@@ -47,22 +47,30 @@ export function StreamingFarmList({
   farmerId,
   doneCount,
   totalCount,
+  className = '',
+  selectedPlotKey = null,
+  onSelectPlot,
 }: {
   rows: StreamFarmRow[];
   jobId: string | null;
   farmerId: string;
   doneCount: number;
   totalCount: number;
+  className?: string;
+  selectedPlotKey?: string | null;
+  onSelectPlot?: (plotKey: string) => void;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-[#E4DFD4] overflow-hidden">
-      <div className="px-5 py-4 border-b border-[#E4DFD4] flex items-center justify-between gap-3 flex-wrap">
+    <div
+      className={`bg-white rounded-xl border border-[#E4DFD4] overflow-hidden flex flex-col ${className}`}
+    >
+      <div className="px-5 py-4 border-b border-[#E4DFD4] flex items-center justify-between gap-3 flex-wrap shrink-0">
         <div>
           <h3 className="text-sm font-bold text-stone-900 uppercase tracking-wider">
             Farms
           </h3>
           <p className="text-xs text-stone-500 mt-0.5">
-            Scores appear as each plot finishes. Order stays fixed during the run.
+            Click a farm to focus it on the map. Open Details for plot insights.
           </p>
         </div>
         <p className="text-sm font-mono text-stone-600">
@@ -70,11 +78,12 @@ export function StreamingFarmList({
         </p>
       </div>
 
-      <ul className="divide-y divide-[#E4DFD4]">
+      <ul className="divide-y divide-[#E4DFD4] overflow-y-auto flex-1 min-h-0">
         {rows.map((row) => {
           const badge = statusBadge(row.status);
           const a = row.assessment;
           const key = plotKeyOf(row);
+          const selected = selectedPlotKey === key;
           const detailHref = `/dashboard/farm/${encodeURIComponent(key)}?farmer_id=${encodeURIComponent(farmerId)}${
             jobId ? `&job_id=${encodeURIComponent(jobId)}` : ''
           }`;
@@ -86,7 +95,20 @@ export function StreamingFarmList({
           return (
             <li
               key={key}
-              className="px-5 py-3.5 flex flex-wrap items-center justify-between gap-3"
+              role="button"
+              tabIndex={0}
+              onClick={() => onSelectPlot?.(key)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelectPlot?.(key);
+                }
+              }}
+              className={`px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 cursor-pointer transition-colors ${
+                selected
+                  ? 'bg-amber-50/80 border-l-4 border-l-amber-400'
+                  : 'hover:bg-[#F5F2EB]/70 border-l-4 border-l-transparent'
+              }`}
             >
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-stone-900 font-mono truncate">
@@ -129,6 +151,7 @@ export function StreamingFarmList({
                 {canOpenDetails ? (
                   <Link
                     href={detailHref}
+                    onClick={(e) => e.stopPropagation()}
                     className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 px-3 py-1.5 rounded-lg hover:bg-emerald-50 transition-colors"
                   >
                     Details

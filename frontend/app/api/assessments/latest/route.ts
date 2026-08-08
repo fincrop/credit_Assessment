@@ -6,7 +6,7 @@ import { ownerFilter } from '../../../lib/ownerScope';
 const TARGET_DB = process.env.MONGODB_DATABASE || process.env.MONGODB_DB || 'agristack';
 
 /**
- * GET /api/assessments/latest?farmer_id= — latest credit_assessments history for deep-link fallback.
+ * GET /api/assessments/latest?farmer_id= — latest successful credit_assessments for deep-link fallback.
  */
 export async function GET(req: NextRequest) {
   const token = req.cookies.get('auth-token')?.value;
@@ -31,12 +31,26 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
-    const doc = await db
+    // Prefer SUCCESS so a failed re-run does not hide the last good score.
+    let doc = await db
       .collection('credit_assessments')
-      .find({ farmer_id: farmerId })
+      .find({ farmer_id: farmerId, status: 'SUCCESS' })
       .sort({ assessment_date: -1, updated_at: -1, created_at: -1 })
       .limit(1)
       .next();
+
+    if (!doc) {
+      doc = await db
+        .collection('credit_assessments')
+        .find({
+          farmer_id: farmerId,
+          status: { $nin: ['FAILED', 'failed'] },
+          'farmer_level.index_score': { $exists: true, $ne: null },
+        })
+        .sort({ assessment_date: -1, updated_at: -1, created_at: -1 })
+        .limit(1)
+        .next();
+    }
 
     if (doc) {
       const { _id, ...rest } = doc;

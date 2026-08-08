@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { useRouter } from 'next/navigation';
 import { useAppDispatch } from '../../hooks/useRedux';
 import { clearToken } from '../../store/tokenSlice';
+import { clearAgriStackSession } from '../../lib/agristackSession';
 
 export interface AuthUser {
     id: string;
@@ -30,15 +31,6 @@ const AuthContext = createContext<AuthContextType>({
 
 export function useAuth() {
     return useContext(AuthContext);
-}
-
-function clearAgriStackSession() {
-    try {
-        sessionStorage.removeItem('agristack_access_token');
-        sessionStorage.removeItem('agristack_session_creds');
-    } catch {
-        /* ignore */
-    }
 }
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {

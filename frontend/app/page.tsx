@@ -129,14 +129,14 @@ export default function HomePage() {
             Choose your journey
           </h1>
           <p className="text-stone-500 text-base leading-relaxed">
-            Acquire official AgriStack land data (requires AgriStack credentials), or register a farm
-            yourself and run an AI-powered credit assessment.
+            Pull official AgriStack land records by Farmer ID and run a credit assessment, or register a
+            farm yourself for an AI-powered score.
           </p>
         </div>
 
         <div className="grid md:grid-cols-2 gap-6">
           <Link
-            href="/agristack"
+            href="/agristack/connect?next=/dashboard"
             className="group relative rounded-2xl border border-[#E4DFD4] bg-white/80 backdrop-blur-md p-8 hover:border-emerald-400 hover:bg-emerald-50 transition-all duration-300 animate-slide-in"
             style={{ animationDelay: '0.05s' }}
           >
@@ -148,11 +148,11 @@ export default function HomePage() {
               🛰️
             </div>
             <h2 className="text-xl font-bold text-stone-900 mb-2 group-hover:text-emerald-300 transition-colors">
-              AgriStack Data Acquisition
+              AgriStack Assessment
             </h2>
             <p className="text-sm text-stone-500 leading-relaxed mb-6">
-              Sign in with your AgriStack credentials, then fetch &amp; explore official government
-              farmer land data.
+              Sign in with your AgriStack credentials, then enter a Farmer ID to fetch land records
+              and choose plots to score.
             </p>
             <span className="inline-flex items-center gap-2 text-sm font-semibold text-sky-400 group-hover:gap-3 transition-all">
               Connect AgriStack

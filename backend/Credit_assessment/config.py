@@ -159,8 +159,11 @@ class PipelineConfig:
     SATELLITE_STAC_YEAR_SEARCH_WORKERS = 4   # parallel year searches (1 = sequential)
     SATELLITE_STAC_SEARCH_RETRIES = 2        # retry failed year search (API timeouts)
     SATELLITE_STAC_SEARCH_RETRY_DELAY_SEC = 2.0
-    # Pause between calendar-year STAC segments (when split-by-year search is used).
-    SATELLITE_INTER_YEAR_PAUSE_SEC = 0.0
+    # Pause between calendar-year GEE/STAC segments. 0 = fastest (was hardcoded 10s on GEE).
+    # Override with env SATELLITE_INTER_YEAR_PAUSE_SEC if Earth Engine throttles.
+    SATELLITE_INTER_YEAR_PAUSE_SEC = float(
+        __import__("os").environ.get("SATELLITE_INTER_YEAR_PAUSE_SEC", "0") or "0"
+    )
 
     # Fallback detection threshold (overridden per region by RegionalConfig)
     CROP_DETECTION_NDVI_THRESHOLD = 0.20

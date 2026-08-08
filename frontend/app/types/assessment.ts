@@ -396,6 +396,17 @@ export interface FarmAssessment {
   sub_indices: Record<string, number>;
   reason_codes?: ReasonCode[];
   skipped_reason?: string;
+  /** Compact plot analysis for farm detail tabs (multi-farm slim payload). */
+  detail?: {
+    cropping_analysis?: CroppingAnalysis;
+    performance_analysis?: PerformanceAnalysis;
+    weather_analysis?: WeatherAnalysis;
+    weather_intervals?: WeatherInterval[];
+    crop_cycles?: CropCyclesBlock;
+    continuous_data_stats?: ContinuousDataStats;
+    location?: AssessmentPayload['location'];
+    ai_enrichment?: AiEnrichment;
+  };
 }
 
 /** Mid-run progress — partial_result never includes farmer_level. */

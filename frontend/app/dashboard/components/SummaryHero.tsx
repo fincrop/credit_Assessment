@@ -26,11 +26,11 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
   return (
     <div className="bg-white rounded-xl border border-[#E4DFD4] p-6">
       <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-1">
-        Agronomic Risk Index
+        Krishi Bhoomi Score (KBS)
       </h2>
       <p className="text-xs text-stone-500 mb-5 leading-relaxed max-w-2xl">
-        Expert-weighted field-health index (0–100). This is <strong>not</strong> a loan amount,
-        credit limit, or probability of default.
+        Field-health index, scored 300–900. Reflects land and crop condition only — not a credit
+        score, loan amount, or default probability.
         {view.source === 'farmer_level' && ' Farmer-level aggregate across owned plots.'}
       </p>
 

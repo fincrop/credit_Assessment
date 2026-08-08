@@ -206,13 +206,36 @@ class MultiFarmAssessor:
             warnings.append(f"scored {scored_count}/{n_total}, {n_failed} failed")
         if score is None or category == "INSUFFICIENT_DATA":
             farmer_result["status"] = "FAILED"
-            farmer_result["error"] = (
-                fl.get("reason_codes") or [{}]
-            )[0].get("message") or "No scorable plots"
+            plot_errs = [
+                str(r.get("skipped_reason") or "").removeprefix("error:").strip()
+                for r in per_farm
+                if str(r.get("skipped_reason") or "").startswith("error:")
+            ]
+            if plot_errs and scored_count == 0:
+                farmer_result["error"] = (
+                    f"All plots failed analysis: {plot_errs[0]}"
+                    + (f" (+{len(plot_errs) - 1} more)" if len(plot_errs) > 1 else "")
+                )
+            else:
+                farmer_result["error"] = (
+                    fl.get("reason_codes") or [{}]
+                )[0].get("message") or "No scorable plots"
         else:
             farmer_result["status"] = "SUCCESS"
         if warnings:
             farmer_result["warnings"] = warnings
+
+        # One AI enrichment on the farmer aggregate (per-plot runs skip STEP 8).
+        try:
+            from ai_integration.enrichment import enrich_assessment_with_ai
+
+            if enrich_assessment_with_ai(farmer_result):
+                stages = list(farmer_result.get("pipeline_stages") or [])
+                if "10_ai" not in stages:
+                    stages.append("10_ai")
+                farmer_result["pipeline_stages"] = stages
+        except Exception as e:
+            logger.debug("farmer-level AI enrichment skipped: %s", e)
 
         if save_to_db:
             self._persist(farmer_id, farmer_result)
@@ -308,6 +331,7 @@ class MultiFarmAssessor:
             },
             save_to_db=False,
             enable_crop_classification=False,
+            skip_ai_enrichment=True,
         )
 
     @staticmethod
@@ -342,7 +366,7 @@ class MultiFarmAssessor:
             "tenure_factor": round(float(tenure_factor), 3),
             "included": True,
             "is_ror_owner": farm.get("is_ror_owner"),
-            "crop": farm.get("primary_crop"),
+            "crop": farm.get("primary_crop") or assessment.get("crop_hint"),
             "district": farm.get("district_lgd_code"),
             "season_types": season_types,
             "index_score": ra.get("index_score", cr.get("credit_score")),
@@ -350,11 +374,59 @@ class MultiFarmAssessor:
             "risk_category": ra.get("risk_category", cr.get("risk_category")),
             "confidence_gate": ra.get("confidence_gate"),
             "sub_indices": self._sub_scalars(assessment),
-            "reason_codes": (ra.get("reason_codes") or [])[:4],
+            "reason_codes": (ra.get("reason_codes") or [])[:8],
         }
+        detail = self._plot_detail_for_ui(assessment)
+        if detail:
+            rec["detail"] = detail
         if self.keep_full:
             rec["full_assessment"] = assessment
         return rec
+
+    @staticmethod
+    def _plot_detail_for_ui(assessment: Dict) -> Dict:
+        """
+        Compact per-plot analysis blocks for the farm detail UI.
+        Omits bulky satellite scene arrays; keeps cropping / weather / cycles / performance.
+        """
+        detail: Dict[str, Any] = {}
+
+        ca = assessment.get("cropping_analysis")
+        if isinstance(ca, dict) and ca:
+            ca2 = dict(ca)
+            seasons = ca2.get("season_results")
+            if isinstance(seasons, list):
+                trimmed = []
+                for s in seasons[:16]:
+                    if not isinstance(s, dict):
+                        continue
+                    s2 = {k: v for k, v in s.items() if k != "interval_indices"}
+                    intervals = s.get("interval_indices")
+                    if isinstance(intervals, list) and intervals:
+                        step = max(1, len(intervals) // 36)
+                        s2["interval_indices"] = intervals[::step][:36]
+                    trimmed.append(s2)
+                ca2["season_results"] = trimmed
+            detail["cropping_analysis"] = ca2
+
+        for key in (
+            "performance_analysis",
+            "weather_analysis",
+            "crop_cycles",
+            "continuous_data_stats",
+            "location",
+            "weather_intervals",
+        ):
+            val = assessment.get(key)
+            if val is not None and val != {} and val != []:
+                detail[key] = val
+
+        # Plot-level AI block when present (often only on farmer aggregate)
+        ai = assessment.get("ai_enrichment")
+        if isinstance(ai, dict) and ai:
+            detail["ai_enrichment"] = ai
+
+        return detail
 
     @staticmethod
     def _skipped_record(farm: Dict, tenure_factor: float, reason: str) -> Dict:

@@ -7,16 +7,32 @@ import type { AssessmentPayload, FarmAssessment } from '../../../types/assessmen
 import { pollJobStatusSafe } from '../../../lib/assessmentClient';
 import { plotKeyOf, assignPlotKeysClient } from '../../../lib/plotKey';
 import { rowStatusFromAssessment } from '../../../lib/streamFarms';
-import { formatScoreWhole } from '../../../lib/formatRisk';
-import { riskBgClass } from '../../../lib/format';
 import { PlotBoundaryMap } from '../../components/PlotBoundaryMap';
-import { SubIndexBars } from '../../components/SubIndexBars';
+import { FarmKbsPanel } from '../../components/FarmKbsPanel';
+import {
+  IndexInsightsCard,
+  FarmSlimFallbackCard,
+} from '../../components/IndexInsightsCard';
 import { CropCyclesSection } from '../../components/CropCyclesSection';
+import { CroppingSection } from '../../components/CroppingSection';
 import { PerformanceSection } from '../../components/PerformanceSection';
 import { WeatherSection } from '../../components/WeatherSection';
 import { AIEnrichmentSection } from '../../components/AIEnrichmentSection';
 import { useRiskView } from '../../../lib/useRiskView';
-import type { ReasonCode } from '../../../types/assessment';
+import {
+  buildFarmPlotPayload,
+  plotHasAnalysisDetail,
+} from '../../../lib/farmPlotPayload';
+
+type TabId = 'overview' | 'cropPerf' | 'weather' | 'cycles' | 'ai';
+
+const TABS: { id: TabId; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'cropPerf', label: 'Crop & Performance' },
+  { id: 'weather', label: 'Weather' },
+  { id: 'cycles', label: 'Cycles' },
+  { id: 'ai', label: 'Explainability' },
+];
 
 export default function FarmDetailPage() {
   return (
@@ -48,6 +64,7 @@ function FarmDetailContent() {
   } | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<TabId>('overview');
 
   useEffect(() => {
     let cancelled = false;
@@ -62,7 +79,7 @@ function FarmDetailContent() {
             const polled = await pollJobStatusSafe(jobId);
             if (polled.ok && polled.job.result) payload = polled.job.result;
           } catch {
-            /* fall through to history */
+            /* fall through */
           }
         }
 
@@ -95,7 +112,9 @@ function FarmDetailContent() {
           const fiJson = await fiRes.json();
           if (fiRes.ok && Array.isArray(fiJson.farm_info?.farms)) {
             const farms = assignPlotKeysClient(fiJson.farm_info.farms);
-            const match = farms.find((f) => plotKeyOf(f as { plot_key?: string; farm_id?: string }) === plotKey);
+            const match = farms.find(
+              (f) => plotKeyOf(f as { plot_key?: string; farm_id?: string }) === plotKey
+            );
             if (match && !cancelled) {
               const c = match.centroid as { lat?: number; lng?: number } | undefined;
               setFarmGeom({
@@ -126,13 +145,14 @@ function FarmDetailContent() {
 
   const farmRow: FarmAssessment | null = useMemo(() => {
     if (!data?.farm_assessments) return null;
-    return (
-      data.farm_assessments.find((f) => plotKeyOf(f) === plotKey) || null
-    );
+    return data.farm_assessments.find((f) => plotKeyOf(f) === plotKey) || null;
   }, [data, plotKey]);
 
   const rowStatus = rowStatusFromAssessment(farmRow);
+  const hasDetail = plotHasAnalysisDetail(farmRow);
+
   const showWeather =
+    hasDetail ||
     data?.farmer_level?.weather_shared === true ||
     (data?.farmer_level?.weather_shared == null &&
       (data?.farmer_level?.diversification?.n_districts ?? 1) <= 1);
@@ -141,24 +161,12 @@ function FarmDetailContent() {
     farmerId || String(data?.farmer_id || '')
   )}${jobId ? `&job_id=${encodeURIComponent(jobId)}` : ''}`;
 
-  // Synthetic payload for SubIndexBars on farm score
-  const farmViewPayload = useMemo(() => {
-    if (!farmRow || farmRow.index_score == null) return null;
-    return {
-      farmer_id: data?.farmer_id,
-      farmer_level: {
-        index_score: farmRow.index_score,
-        raw_index: farmRow.raw_index,
-        risk_category: (farmRow.risk_category || 'MEDIUM') as never,
-        confidence_gate: farmRow.confidence_gate ?? null,
-        sub_indices: farmRow.sub_indices || {},
-        weights: {},
-        reason_codes: farmRow.reason_codes,
-      },
-    } as AssessmentPayload;
-  }, [farmRow, data]);
+  const plotPayload = useMemo(() => {
+    if (!data) return null;
+    return buildFarmPlotPayload(data, farmRow);
+  }, [data, farmRow]);
 
-  const farmView = useRiskView(farmViewPayload);
+  const farmView = useRiskView(plotPayload);
 
   if (loading) {
     return (
@@ -168,7 +176,7 @@ function FarmDetailContent() {
     );
   }
 
-  if (error === 'unavailable' || !data) {
+  if (error === 'unavailable' || !data || !plotPayload) {
     return (
       <div className="min-h-screen bg-[#F5F2EB] p-6">
         <div className="max-w-lg mx-auto mt-20 bg-white border border-[#E4DFD4] rounded-xl p-8 text-center">
@@ -187,6 +195,8 @@ function FarmDetailContent() {
     );
   }
 
+  const scored = rowStatus === 'scored' && farmRow?.index_score != null;
+
   return (
     <div className="min-h-screen bg-[#F5F2EB] text-stone-800">
       <header className="bg-white border-b border-[#E4DFD4] sticky top-0 z-20">
@@ -198,122 +208,191 @@ function FarmDetailContent() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto p-6 space-y-6">
-        <div className="grid lg:grid-cols-2 gap-5">
-          <div className="bg-white rounded-xl border border-[#E4DFD4] p-5">
-            <p className="text-[10px] uppercase tracking-wider text-stone-400 font-semibold">Farm</p>
-            <h1 className="text-xl font-bold text-stone-900 mt-1 font-mono">
+      <main className="max-w-7xl mx-auto p-6 space-y-5">
+        {/* Hero: farm identity + map | KBS */}
+        <div className="grid lg:grid-cols-[38%_1fr] gap-4 items-stretch">
+          <div className="bg-white rounded-xl border border-[#E4DFD4] p-4 flex flex-col">
+            <p className="text-[10px] uppercase tracking-wider text-stone-400 font-semibold">
+              Farm
+            </p>
+            <h1 className="text-lg font-bold text-stone-900 mt-0.5 font-mono truncate">
               {farmGeom?.farm_name || farmRow?.farm_id || plotKey}
             </h1>
-            <p className="text-sm text-stone-500 mt-2">
+            <p className="text-xs text-stone-500 mt-1">
               {farmGeom?.area_ha != null
                 ? `${farmGeom.area_ha.toFixed(2)} ha`
                 : farmRow?.area_ha != null
                   ? `${farmRow.area_ha.toFixed(2)} ha`
                   : '—'}
               {farmRow?.crop ? ` · ${farmRow.crop}` : ''}
+              {farmRow?.is_ror_owner === false
+                ? ' · Leased / joint'
+                : farmRow?.is_ror_owner === true
+                  ? ' · Owned'
+                  : ''}
             </p>
-          </div>
-
-          <div className="bg-white rounded-xl border border-[#E4DFD4] p-5">
-            {!farmRow ? (
-              <div>
-                <h2 className="text-sm font-bold text-stone-900 mb-2">Not in this assessment run</h2>
-                <p className="text-sm text-stone-500">
-                  This plot exists in farm records but has no row in the assessment result.
-                </p>
-              </div>
-            ) : rowStatus === 'scored' && farmRow.index_score != null ? (
-              <div>
-                <div className="flex items-center gap-3 mb-3">
-                  <span className="text-3xl font-bold text-stone-900 font-mono">
-                    {formatScoreWhole(farmRow.index_score)}
-                  </span>
-                  {farmRow.risk_category && (
-                    <span
-                      className={`inline-flex px-2.5 py-1 rounded-full text-xs font-bold border ${riskBgClass(
-                        farmRow.risk_category
-                      )}`}
-                    >
-                      {farmRow.risk_category}
-                    </span>
-                  )}
-                </div>
-                {farmViewPayload && (
-                  <SubIndexBars view={farmView} hideGate />
-                )}
-                {(farmRow.reason_codes?.length ?? 0) > 0 && (
-                  <ul className="mt-3 space-y-1">
-                    {farmRow.reason_codes!.slice(0, 4).map((r: ReasonCode, i: number) => (
-                      <li key={i} className="text-xs text-stone-600">
-                        • {r.message || r.code}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            ) : (
-              <div>
-                <h2 className="text-sm font-bold text-amber-900 mb-2">
-                  Not scored
-                  {rowStatus === 'failed' ? ' (failed)' : ''}
-                </h2>
-                <p className="text-sm text-stone-600">
-                  {farmRow.skipped_reason
-                    ? String(farmRow.skipped_reason).replace(/^error:/, 'Error: ')
-                    : 'This plot was not included in the scored aggregate.'}
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="grid lg:grid-cols-2 gap-5">
-          <div>
-            <h2 className="text-sm font-bold text-stone-700 mb-2 uppercase tracking-wider">
-              Satellite map
-            </h2>
-            <PlotBoundaryMap
-              geometry={farmGeom?.geometry}
-              centroid={farmGeom?.centroid}
-              label={String(farmGeom?.farm_name || plotKey)}
-            />
-          </div>
-          <div className="space-y-4">
-            <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-              {showWeather
-                ? 'Farmer-level context (representative of this area).'
-                : 'Weather is hidden for this farm — plots span multiple districts. Open the farmer overview for portfolio weather.'}
+            <div className="mt-3 flex-1 min-h-[220px]">
+              <PlotBoundaryMap
+                geometry={farmGeom?.geometry}
+                centroid={farmGeom?.centroid}
+                label={String(farmGeom?.farm_name || plotKey)}
+                minHeight={220}
+              />
             </div>
-            <CropCyclesSection data={data} />
-            <PerformanceSection data={data} />
           </div>
+
+          <FarmKbsPanel
+            view={scored ? farmView : null}
+            fallbackMessage={
+              !farmRow
+                ? 'This plot has no row in the assessment result.'
+                : farmRow.skipped_reason
+                  ? String(farmRow.skipped_reason).replace(/^error:/, 'Error: ')
+                  : 'This plot was not scored in this run.'
+            }
+          />
         </div>
 
-        {showWeather ? (
-          <div>
-            <p className="text-xs text-stone-500 mb-2">
-              Farmer-level context (representative of this area).
-            </p>
-            <WeatherSection data={data} />
-          </div>
-        ) : (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-950">
-            Weather not shown on this farm page because <code className="font-mono">weather_shared</code> is
-            false (dispersed districts).{' '}
-            <Link href={backHref} className="font-semibold underline">
-              View farmer overview
-            </Link>
+        {!hasDetail && farmRow && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+            This assessment was saved without full plot detail. Overview still uses plot scores;
+            Crop / Weather / Cycles need a <strong>re-run</strong> to populate enhanced panels.
           </div>
         )}
 
-        <div>
-          <p className="text-xs text-stone-500 mb-2">
-            Explainability is farmer-level (not plot-specific).
-          </p>
-          <AIEnrichmentSection data={data} />
+        <div className="flex bg-white border border-[#E4DFD4] rounded-lg p-1 gap-1 overflow-x-auto">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setActiveTab(t.id)}
+              className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${
+                activeTab === t.id
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-stone-500 hover:text-stone-800 hover:bg-[#F5F2EB]'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
+
+        {activeTab === 'overview' && (
+          <div className="space-y-4">
+            {scored ? (
+              <IndexInsightsCard view={farmView} scopeLabel="plot" />
+            ) : (
+              <div className="bg-white rounded-xl border border-[#E4DFD4] p-6 text-sm text-stone-500">
+                Plot-level index insights appear when this farm is scored.
+              </div>
+            )}
+            {farmRow && !hasDetail && <FarmSlimFallbackCard farm={farmRow} />}
+          </div>
+        )}
+
+        {activeTab === 'cropPerf' && (
+          <div className="space-y-4">
+            {hasDetail ||
+            plotPayload.cropping_analysis ||
+            plotPayload.performance_analysis ||
+            plotPayload.continuous_data_stats ? (
+              <>
+                <CroppingSection data={plotPayload} />
+                <PerformanceSection data={plotPayload} />
+              </>
+            ) : farmRow ? (
+              <FarmSlimFallbackCard farm={farmRow} />
+            ) : (
+              <EmptyTab
+                title="Crop & performance"
+                body="No cropping or performance analysis is available for this plot."
+              />
+            )}
+          </div>
+        )}
+
+        {activeTab === 'weather' &&
+          (showWeather ? (
+            plotPayload.weather_analysis ? (
+              <div className="space-y-2">
+                {!hasDetail && data.weather_analysis && (
+                  <p className="text-xs text-stone-500">
+                    Showing holding-area weather (shared across plots in this assessment).
+                  </p>
+                )}
+                <WeatherSection data={plotPayload} />
+              </div>
+            ) : farmRow ? (
+              <div className="space-y-4">
+                <WeatherSubIndexFallback farm={farmRow} />
+                {!hasDetail && <FarmSlimFallbackCard farm={farmRow} />}
+              </div>
+            ) : (
+              <EmptyTab title="Weather" body="No weather analysis in this payload." />
+            )
+          ) : (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-950">
+              Weather is hidden for this farm — plots span multiple districts.{' '}
+              <Link href={backHref} className="font-semibold underline">
+                Back to assessment overview
+              </Link>
+            </div>
+          ))}
+
+        {activeTab === 'cycles' &&
+          (plotPayload.crop_cycles ? (
+            <CropCyclesSection data={plotPayload} />
+          ) : farmRow ? (
+            <FarmSlimFallbackCard farm={farmRow} />
+          ) : (
+            <EmptyTab title="Cycles" body="No crop_cycles block in payload." />
+          ))}
+
+        {activeTab === 'ai' && (
+          <div className="space-y-2">
+            <p className="text-xs text-stone-500">
+              {farmRow?.detail?.ai_enrichment
+                ? 'Plot-level explainability from this assessment.'
+                : 'Showing reason codes for this plot; narrative AI may be holding-level when present.'}
+            </p>
+            <AIEnrichmentSection data={plotPayload} />
+          </div>
+        )}
       </main>
+    </div>
+  );
+}
+
+function EmptyTab({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="bg-white rounded-xl border border-[#E4DFD4] p-6">
+      <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-2">
+        {title}
+      </h2>
+      <p className="text-sm text-stone-400">{body}</p>
+    </div>
+  );
+}
+
+function WeatherSubIndexFallback({ farm }: { farm: FarmAssessment }) {
+  const w = farm.sub_indices?.weather;
+  return (
+    <div className="bg-white rounded-xl border border-[#E4DFD4] p-5 space-y-3">
+      <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider">
+        Weather resilience
+      </h2>
+      <p className="text-xs text-stone-500">
+        Detailed weather intervals are not in this saved job. Plot weather sub-index from scoring:
+      </p>
+      {w != null ? (
+        <div className="rounded-lg border border-[#E4DFD4] bg-[#F5F2EB]/50 p-4 max-w-xs">
+          <p className="text-[10px] text-stone-400 uppercase font-semibold">Weather sub-index</p>
+          <p className="text-2xl font-bold font-mono text-stone-900 mt-1">{Number(w).toFixed(1)}</p>
+          <p className="text-[11px] text-stone-500 mt-1">Scale 0–100 (pillar score)</p>
+        </div>
+      ) : (
+        <p className="text-sm text-stone-400">No weather sub-index on this plot row.</p>
+      )}
     </div>
   );
 }

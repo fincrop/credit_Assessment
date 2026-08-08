@@ -36,8 +36,13 @@ export function buildStreamRows(opts: {
     const assessment = byKey.get(key) || null;
     let status = rowStatusFromAssessment(assessment);
     if (!assessment && running) {
-      if (firstPending) {
-        status = opts.jobStatus === 'RUNNING' ? 'analyzing' : 'pending';
+      // Mark the next unfinished plot Analyzing as soon as Assess is clicked
+      // (QUEUED or RUNNING) — not only after the worker flips to RUNNING.
+      if (opts.analyzingPlotKey && key === opts.analyzingPlotKey) {
+        status = 'analyzing';
+        firstPending = false;
+      } else if (firstPending) {
+        status = 'analyzing';
         firstPending = false;
       } else {
         status = 'pending';

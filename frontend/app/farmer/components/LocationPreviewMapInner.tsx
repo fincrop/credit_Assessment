@@ -41,7 +41,7 @@ export default function LocationPreviewMapInner({ center, label }: Props) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !center) return;
-    map.setView([center.lat, center.lng], 12, { animate: true });
+    map.setView([center.lat, center.lng], 11, { animate: true });
     if (markerRef.current) {
       markerRef.current.setLatLng([center.lat, center.lng]);
       if (label) markerRef.current.bindTooltip(label);
