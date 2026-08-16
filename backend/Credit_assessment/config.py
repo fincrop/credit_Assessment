@@ -260,6 +260,16 @@ class PipelineConfig:
     SAVGOL_WINDOW = 7
     SAVGOL_POLYORDER = 2
 
+    # Scenes fetched per calendar year from GEE before binning.
+    #
+    # Was a hardcoded 50 applied WITHOUT a sort, so it took the chronologically
+    # first 50 and discarded the rest of the year — the source of the 240-day
+    # "cloud gaps" that pushed real farms into INSUFFICIENT_DATA. Downstream
+    # keeps at most one scene per 10-day bin (~37/year), so this only needs to
+    # sit comfortably above that to give every bin a candidate. Higher values
+    # cost GEE aggregations; lower values silently lose coverage.
+    GEE_MAX_SCENES_PER_YEAR = 120
+
     CLOUD_MASK_VERSION = "csplus_scl_v2"
     USE_CLOUD_SCORE_PLUS = True
     CLOUD_SCORE_PLUS_BAND = "cs_cdf"

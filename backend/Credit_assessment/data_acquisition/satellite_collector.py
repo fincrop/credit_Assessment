@@ -1176,13 +1176,37 @@ class SatelliteDataCollector:
                             logger.warning(f"Year {year} GEE retry {attempt + 1}/{max_retries}, waiting {delay:.1f}s")
                             time.sleep(delay)
                         
-                        # Simplify: limit collection to fewer scenes to reduce aggregations
+                        # Scene budget per year.
+                        #
+                        # ⚠ This was `.limit(50)` with NO sort. An ee.ImageCollection
+                        # is ordered by acquisition time, so an unsorted limit takes
+                        # the chronologically FIRST 50 scenes and silently discards
+                        # the rest of the year. Sentinel-2 delivers 70-140 usable
+                        # acquisitions annually over India, so the cap bound every
+                        # single year — the logs showed "extracted 50 scenes" for
+                        # 2023, 2024, 2025 and 2026 alike — and everything after
+                        # roughly May was thrown away.
+                        #
+                        # That is where the 240-day "cloud gaps" came from. They were
+                        # not cloud: they were our own truncation, and they pushed
+                        # real farms into INSUFFICIENT_DATA for want of data we had
+                        # chosen not to fetch.
+                        #
+                        # Sorting by cloud cover makes the budget select the CLEAREST
+                        # scenes across the whole year instead of an arbitrary early
+                        # slice. Downstream keeps at most one scene per 10-day bin
+                        # (~37/year), so the budget only needs to be comfortably
+                        # above that to give every bin a candidate.
+                        max_scenes = int(
+                            getattr(PipelineConfig, "GEE_MAX_SCENES_PER_YEAR", 120)
+                        )
                         year_coll = (
                             ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
                             .filterBounds(aoi)
                             .filterDate(year_start.strftime("%Y-%m-%d"), year_end.strftime("%Y-%m-%d"))
                             .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", cloud_cap))
-                            .limit(50)  # Limit scenes to reduce processing load
+                            .sort("CLOUDY_PIXEL_PERCENTAGE")
+                            .limit(max_scenes)
                         )
                         # Pillar 1: link Cloud Score+ (cs_cdf) so _scene_to_feature can
                         # mask thin/haze clouds SCL misses. Guarded: if the linked
@@ -1202,7 +1226,25 @@ class SatelliteDataCollector:
                         
                         year_features = year_coll.map(_scene_to_feature).getInfo().get("features", [])
                         features.extend(year_features)
-                        logger.info(f"Year {year}: extracted {len(year_features)} scenes")
+                        # Report the DATE SPAN, not just the count. A count alone
+                        # hid the truncation for as long as it existed: "50 scenes"
+                        # looks healthy whether they span twelve months or four.
+                        _dates = sorted(
+                            str((f.get("properties") or {}).get("date") or "")
+                            for f in year_features
+                        )
+                        _dates = [d for d in _dates if d]
+                        _span = f"{_dates[0]} to {_dates[-1]}" if _dates else "none"
+                        logger.info(
+                            "Year %s: extracted %d scenes covering %s",
+                            year, len(year_features), _span,
+                        )
+                        if len(year_features) >= max_scenes:
+                            logger.warning(
+                                "Year %s hit the scene budget (%d). Coverage may be "
+                                "incomplete — raise GEE_MAX_SCENES_PER_YEAR if bins "
+                                "are being left empty.", year, max_scenes,
+                            )
                         break  # Success, move to next year
                         
                     except Exception as e:
