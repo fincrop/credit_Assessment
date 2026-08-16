@@ -102,6 +102,8 @@ from typing import Dict, List, Optional
 from pymongo import ASCENDING, DESCENDING, MongoClient
 from pymongo.errors import ConnectionFailure, DuplicateKeyError, OperationFailure
 
+from utils.mongo_encoding import as_utc, to_mongo, utc_now
+
 logger = logging.getLogger(__name__)
 
 # Secrets: set MONGODB_URI in the environment (see .env). Never commit credentials.
@@ -110,6 +112,10 @@ _FARM_COLLECTION       = "farm_info"
 _ASSESSMENT_COLLECTION = "credit_assessments"
 _SAT_CACHE_COLLECTION  = "satellite_stats_cache"
 _WEATHER_CACHE_COLLECTION = "weather_power_cache"
+# Durable observational record behind each score, and the flat trend rows.
+# See assessment/evidence_snapshot.py for why these exist.
+_EVIDENCE_COLLECTION   = "assessment_evidence"
+_SCORE_HISTORY_COLLECTION = "score_history"
 
 # Fallback only. The pipeline stamps its own version on every assessment; this is
 # used solely when a caller hands us a payload with no version at all. Do NOT
@@ -667,6 +673,9 @@ class MongoDBHelper:
         # Job queue. Written and polled by api/app.py, worker.py and
         # api/job_runner.py directly; held here so its indexes get created.
         self.jobs = None
+        # Phase 5: durable evidence + trend history.
+        self.evidence = None
+        self.score_history = None
         self._connect()
 
     # ── Connection ────────────────────────────────────────────────────────
@@ -685,6 +694,8 @@ class MongoDBHelper:
             self.index_versions = self.db["index_versions"]
             self.cohort_stats = self.db["cohort_stats"]
             self.jobs = self.db["jobs"]
+            self.evidence = self.db[_EVIDENCE_COLLECTION]
+            self.score_history = self.db[_SCORE_HISTORY_COLLECTION]
             self._ensure_indexes()
             logger.info("✅ MongoDB connected  (pipeline v5.0 schema / index_v5)")
         except ConnectionFailure as e:
@@ -864,6 +875,31 @@ class MongoDBHelper:
                 [('index_version', ASCENDING)],
                 unique=True,
                 name='index_version_unique',
+            )
+
+            # ── assessment_evidence / score_history ──────────────────────
+            self._create_index_safe(
+                self.evidence,
+                [('farmer_id', ASCENDING), ('plot_key', ASCENDING),
+                 ('created_at', DESCENDING)],
+                name='evidence_farmer_plot',
+            )
+            self._create_index_safe(
+                self.evidence,
+                [('assessment_id', ASCENDING)],
+                name='evidence_assessment',
+            )
+            self._create_index_safe(
+                self.score_history,
+                [('farmer_id', ASCENDING), ('scope', ASCENDING),
+                 ('assessment_date', DESCENDING)],
+                name='score_history_farmer',
+            )
+            self._create_index_safe(
+                self.score_history,
+                [('farmer_id', ASCENDING), ('plot_key', ASCENDING),
+                 ('assessment_date', DESCENDING)],
+                name='score_history_plot',
             )
 
             logger.debug("MongoDB indexes verified")
@@ -1079,7 +1115,11 @@ class MongoDBHelper:
         a failed write indistinguishable from a successful one.
         """
         try:
-            doc    = AssessmentSchema.build(raw_assessment)
+            # to_mongo coerces numpy scalars, maps NaN/Inf to None (missing, not
+            # zero) and normalises datetimes to aware UTC. Without it a single
+            # unwrapped np.float64 anywhere in the payload raises InvalidDocument
+            # and loses the whole assessment.
+            doc    = to_mongo(AssessmentSchema.build(raw_assessment))
             result = self.assessments.insert_one(doc)
             db_id  = str(result.inserted_id)
             logger.info(
@@ -1094,6 +1134,97 @@ class MongoDBHelper:
                 raw_assessment.get('farmer_id', 'UNKNOWN'), e,
             )
             raise
+
+    # ── Evidence & score history (Phase 5) ────────────────────────────────
+
+    def save_evidence(self, evidence_doc: Optional[Dict]) -> Optional[str]:
+        """
+        Persist the observational record behind a score.
+
+        Non-fatal by design: a missing evidence document degrades explainability
+        and future validation, but must not fail an otherwise-good assessment.
+        The failure is logged at ERROR so it is not invisible (contrast with the
+        old save_assessment, which swallowed everything at DEBUG).
+        """
+        if evidence_doc is None or self.evidence is None:
+            return None
+        try:
+            res = self.evidence.insert_one(evidence_doc)
+            logger.info(
+                "Evidence saved  farmer=%s plot=%s bins=%s observed=%s",
+                evidence_doc.get('farmer_id'),
+                evidence_doc.get('plot_key') or '-',
+                (evidence_doc.get('window') or {}).get('n_bins'),
+                (evidence_doc.get('provenance') or {}).get('observed_fraction'),
+            )
+            return str(res.inserted_id)
+        except Exception as e:
+            logger.error(
+                "save_evidence failed for farmer=%s plot=%s: %s",
+                evidence_doc.get('farmer_id'), evidence_doc.get('plot_key'), e,
+            )
+            return None
+
+    def save_score_history(self, entry: Optional[Dict]) -> Optional[str]:
+        """Append one trend row. Non-fatal, same rationale as save_evidence."""
+        if entry is None or self.score_history is None:
+            return None
+        try:
+            res = self.score_history.insert_one(entry)
+            return str(res.inserted_id)
+        except Exception as e:
+            logger.error(
+                "save_score_history failed for farmer=%s: %s",
+                entry.get('farmer_id'), e,
+            )
+            return None
+
+    def get_score_history(
+        self,
+        farmer_id: str,
+        plot_key: Optional[str] = None,
+        limit: int = 24,
+    ) -> List[Dict]:
+        """
+        Trend points oldest -> newest for a farmer, or for a single plot.
+
+        Unlike get_farmer_score_trend (which reads credit_assessments and
+        therefore breaks on multi-farm documents), this reads the flat
+        score_history rows and works for both shapes.
+        """
+        if self.score_history is None:
+            return []
+        try:
+            criteria: Dict = {'farmer_id': farmer_id}
+            criteria['plot_key'] = plot_key if plot_key else None
+            docs = list(
+                self.score_history.find(criteria, {'_id': 0})
+                .sort('assessment_date', DESCENDING)
+                .limit(limit)
+            )
+            docs.reverse()
+            return docs
+        except Exception as e:
+            logger.error("get_score_history(%s): %s", farmer_id, e)
+            return []
+
+    def get_latest_evidence(
+        self, farmer_id: str, plot_key: Optional[str] = None
+    ) -> Optional[Dict]:
+        """Most recent evidence document for a farmer / plot."""
+        if self.evidence is None:
+            return None
+        try:
+            criteria: Dict = {'farmer_id': farmer_id}
+            if plot_key is not None:
+                criteria['plot_key'] = plot_key
+            doc = self.evidence.find_one(criteria, sort=[('created_at', DESCENDING)])
+            if doc:
+                doc['_id'] = str(doc['_id'])
+            return doc
+        except Exception as e:
+            logger.error("get_latest_evidence(%s): %s", farmer_id, e)
+            return None
 
     def upsert_latest_assessment(self, raw_assessment: Dict) -> Optional[str]:
         """
@@ -1435,10 +1566,40 @@ class MongoDBHelper:
             logger.debug("save_multi_farm_assessment: no assessments collection")
             return None
         try:
-            doc = dict(farmer_result)
+            doc = to_mongo(dict(farmer_result))
             doc["farmer_id"] = farmer_id
             doc["assessment_type"] = "multi_farm"
-            doc["created_at"] = datetime.now(timezone.utc)
+            doc["created_at"] = utc_now()
+
+            # ── Denormalise to the single-farm field names ────────────────
+            # Multi-farm documents previously carried the score only inside
+            # farmer_level, and assessment_date only as an ISO string. Every
+            # analytics aggregation in this module and the frontend's $group
+            # therefore silently mis-handled multi-plot farmers: they bucketed
+            # under _id: null and sorted a string against a Date.
+            #
+            # These fields are copies, not a second source of truth —
+            # farmer_level remains authoritative.
+            fl = farmer_result.get("farmer_level") or {}
+            index_score = fl.get("index_score")
+            doc["index_score"] = index_score
+            doc["credit_score"] = index_score          # single-farm field name
+            doc["risk_category"] = fl.get("risk_category", "UNKNOWN")
+            doc["confidence_gate"] = fl.get("confidence_gate")
+            doc["credit_method"] = farmer_result.get("method", "multi_farm_aggregate_v5")
+            doc["field_area_ha"] = fl.get("total_scored_area_ha")
+            doc["component_scores"] = {
+                k: v for k, v in (fl.get("sub_indices") or {}).items()
+                if isinstance(v, (int, float))
+            }
+            doc["weak_components"] = fl.get("weak_sub_indices") or []
+            doc.setdefault("status", farmer_result.get("status", "SUCCESS"))
+
+            # Date-typed, so it sorts against single-farm documents.
+            doc["assessment_date"] = (
+                as_utc(farmer_result.get("assessment_date")) or doc["created_at"]
+            )
+
             res = self.assessments.insert_one(doc)
             return str(res.inserted_id)
         except Exception as e:

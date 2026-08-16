@@ -155,6 +155,7 @@ def process_assessment_job(
                 MultiFarmAssessor,
                 assign_plot_keys,
                 counters_from_farm_assessments,
+                persist_plot_keys,
             )
 
             multi_on = bool(getattr(PipelineConfig, "MULTI_FARM_ENABLED", True))
@@ -173,6 +174,9 @@ def process_assessment_job(
                 max_plots = int(getattr(PipelineConfig, "MULTI_FARM_MAX_PLOTS", 12) or 12)
                 keyed_farms = assign_plot_keys(list(farm_copy.get("farms") or []))
                 farm_copy["farms"] = keyed_farms
+                # Make the keys durable so per-plot history stays joinable
+                # across runs even if a re-ingest reorders farms[].
+                persist_plot_keys(mongo, farmer_id, keyed_farms)
                 n_expected = len(keyed_farms)
                 logger.info(
                     "[JOB %s] Multi-farm path (%d plots, cap=%d) — sequential stream",

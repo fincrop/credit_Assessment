@@ -75,6 +75,10 @@ from crop_analysis.land_utilization_analyzer import LandUtilizationAnalyzer
 from crop_analysis.performance_analyzer import CropPerformanceAnalyzer
 from assessment.risk_index_engine import RiskIndexEngine, INDEX_VERSION
 from assessment.legacy_credit_shim import legacy_credit_shim
+from assessment.evidence_snapshot import (
+    build_evidence_document,
+    build_score_history_entry,
+)
 from utils.peer_benchmark import PeerBenchmark
 from config import PipelineConfig
 from utils.farmer_benefits import merge_farmer_benefits, normalize_farmer_benefits
@@ -1001,7 +1005,34 @@ class SatelliteBasedCreditPipeline:
             if save_to_db and self.use_mongodb:
                 try:
                     logger.info("\nSTEP 9: Saving to MongoDB...")
-                    self.db.save_assessment(assessment)
+                    assessment_id = self.db.save_assessment(assessment)
+                    # None on the single-farm path; the multi-farm assessor
+                    # passes a stable plot key through farm_metadata.
+                    plot_key = (farm_metadata or {}).get('plot_key')
+
+                    # Durable evidence record + trend row.
+                    #
+                    # Everything below this point was previously discarded: the
+                    # per-bin index series survived only in a 30-day cache blob,
+                    # and the phenology / stress-event / weather-indicator
+                    # detail only in jobs.result. Both are non-fatal — a missing
+                    # evidence document must not fail a good assessment — but
+                    # both are logged loudly if they fail.
+                    self.db.save_evidence(
+                        build_evidence_document(
+                            assessment,
+                            assessment_id=assessment_id,
+                            plot_key=plot_key,
+                        )
+                    )
+                    self.db.save_score_history(
+                        build_score_history_entry(
+                            assessment,
+                            assessment_id=assessment_id,
+                            plot_key=plot_key,
+                        )
+                    )
+
                     # Feature snapshot for future cohort / calibration jobs
                     cal = (risk_assessment.get('calibration') or {})
                     seasonal = (performance_analysis.get('seasonal_performance') or [])

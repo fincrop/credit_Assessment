@@ -11,10 +11,12 @@ job progress.partial_result (farm_assessments only — never farmer_level).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
+from .evidence_snapshot import build_evidence_document, build_score_history_entry
 from .farmer_aggregator import FarmerAggregator, INDEX_VERSION
 
 logger = logging.getLogger(__name__)
@@ -32,36 +34,135 @@ except Exception:  # pragma: no cover
     _SHAPELY_OK = False
 
 
+def _plot_fingerprint(farm: Dict) -> str:
+    """
+    Short, order-independent fingerprint of a parcel's identity.
+
+    Derived from what physically identifies the parcel — survey numbers, area,
+    centroid — so it is stable if farms[] is reordered by a re-ingest. Position
+    in the array is deliberately NOT an input.
+    """
+    centroid = farm.get("centroid") or {}
+
+    def _round(v, nd):
+        try:
+            return round(float(v), nd)
+        except (TypeError, ValueError):
+            return None
+
+    basis = "|".join(
+        str(p) for p in (
+            str(farm.get("survey_number") or "").strip(),
+            str(farm.get("sub_survey_number") or "").strip(),
+            str(farm.get("village_lgd_code") or "").strip(),
+            _round(farm.get("area_ha"), 4),
+            _round(centroid.get("lat"), 6),
+            _round(centroid.get("lng"), 6),
+        )
+    )
+    return hashlib.sha1(basis.encode("utf-8")).hexdigest()[:10]
+
+
 def assign_plot_keys(farms: List[Dict]) -> List[Dict]:
     """
-    Guarantee a unique plot_key on each farm dict (mutates copies).
-    Key = farm_id || survey_sub || plot_{i}, with _{i} suffix on collisions.
+    Guarantee a unique, STABLE plot_key on each farm dict (mutates copies).
+
+    Precedence:
+      1. An already-persisted ``plot_key`` — always reused, so a key never
+         changes once a parcel has been assessed under it.
+      2. ``farm_id``, then ``survey_number[_sub_survey_number]``.
+      3. A content fingerprint (see _plot_fingerprint).
+
+    Collisions are disambiguated with the fingerprint, not the array index.
+
+    WHY: the previous implementation fell back to ``plot_{i}`` and suffixed
+    collisions with ``_{i}``, both keyed on array position. Because plot_key was
+    also never written back to farm_info, a re-ingest that reordered farms[]
+    silently reassigned keys — breaking per-plot history, since the evidence and
+    score_history rows for a parcel would then be split across two identities.
     """
-    seen: Dict[str, int] = {}
+    seen: set = set()
     out: List[Dict] = []
-    for i, farm in enumerate(farms):
+    for farm in farms:
         f = dict(farm)
-        raw = (
-            str(f.get("farm_id") or "").strip()
-            or "_".join(
-                p
-                for p in (
-                    str(f.get("survey_number") or "").strip(),
-                    str(f.get("sub_survey_number") or "").strip(),
+
+        existing = str(f.get("plot_key") or "").strip()
+        if existing:
+            key = existing
+        else:
+            key = (
+                str(f.get("farm_id") or "").strip()
+                or "_".join(
+                    p
+                    for p in (
+                        str(f.get("survey_number") or "").strip(),
+                        str(f.get("sub_survey_number") or "").strip(),
+                    )
+                    if p
                 )
-                if p
+                or f"plot_{_plot_fingerprint(f)}"
             )
-            or f"plot_{i}"
-        )
-        key = raw
+
+        # Disambiguate by content fingerprint, never by array index. Two rows
+        # that collide even after fingerprinting are byte-identical parcels —
+        # a data-quality problem, so flag it rather than resolving it silently.
         if key in seen:
-            key = f"{raw}_{i}"
-        seen[key] = 1
+            fingerprint = _plot_fingerprint(f)
+            candidate = f"{key}_{fingerprint}"
+            n = 1
+            while candidate in seen:
+                n += 1
+                candidate = f"{key}_{fingerprint}_{n}"
+            key = candidate
+            f["plot_key_collision"] = True
+
+        seen.add(key)
         f["plot_key"] = key
         if not f.get("farm_id"):
             f["farm_id"] = key
         out.append(f)
     return out
+
+
+def persist_plot_keys(mongo, farmer_id: str, keyed_farms: List[Dict]) -> bool:
+    """
+    Write assigned plot_keys back onto farm_info.farms[].
+
+    Makes the keys durable so subsequent runs take the "already-persisted"
+    branch above and per-plot history stays joinable. Best-effort: failing to
+    persist a key must not fail an assessment, but it is logged, because silent
+    failure here reintroduces exactly the instability this fixes.
+    """
+    if mongo is None or not hasattr(mongo, "farms") or mongo.farms is None:
+        return False
+    if not keyed_farms:
+        return False
+    try:
+        stored = mongo.get_farm_by_id(farmer_id) or {}
+        existing = stored.get("farms") or []
+        if not existing:
+            return False
+
+        # Match by farm_id, which assign_plot_keys guarantees is populated.
+        by_id = {str(f.get("farm_id") or ""): f.get("plot_key") for f in keyed_farms}
+        changed = False
+        for row in existing:
+            fid = str(row.get("farm_id") or "")
+            key = by_id.get(fid)
+            if key and not row.get("plot_key"):
+                row["plot_key"] = key
+                changed = True
+
+        if not changed:
+            return False
+        mongo.farms.update_one(
+            {"farmer_id": farmer_id}, {"$set": {"farms": existing}}
+        )
+        logger.info("Persisted plot_keys for farmer=%s", farmer_id)
+        return True
+    except Exception as e:
+        logger.warning("persist_plot_keys(%s) failed: %s", farmer_id, e)
+        return False
 
 
 def counters_from_farm_assessments(rows: List[Dict]) -> Dict[str, int]:
@@ -175,6 +276,11 @@ class MultiFarmAssessor:
                     _emit()
                     continue
                 per_farm.append(self._slim_farm_result(assessment, farm, tf))
+                # Per-plot evidence. _assess_one runs with save_to_db=False, so
+                # without this the richest per-plot data — index series,
+                # phenology, stress events, weather indicators — would exist
+                # nowhere durable for multi-plot farmers, who are the majority.
+                self._persist_plot_evidence(assessment, farm)
                 scored_count += 1
                 _emit()
             except Exception as e:
@@ -334,6 +440,28 @@ class MultiFarmAssessor:
             skip_ai_enrichment=True,
         )
 
+    def _persist_plot_evidence(self, assessment: Dict, farm: Dict) -> None:
+        """
+        Write the durable evidence + trend row for one scored plot.
+
+        Best-effort: an evidence write must never fail a plot that scored fine.
+        """
+        mongo = getattr(self.pipeline, "db", None) or getattr(
+            self.pipeline, "mongo_helper", None
+        )
+        if mongo is None or not hasattr(mongo, "save_evidence"):
+            return
+        plot_key = farm.get("plot_key") or farm.get("farm_id")
+        try:
+            mongo.save_evidence(
+                build_evidence_document(assessment, plot_key=plot_key)
+            )
+            mongo.save_score_history(
+                build_score_history_entry(assessment, plot_key=plot_key)
+            )
+        except Exception as e:
+            logger.warning("Plot evidence persist failed (%s): %s", plot_key, e)
+
     @staticmethod
     def _sub_scalars(assessment: Dict) -> Dict[str, float]:
         ra = assessment.get("risk_assessment") or {}
@@ -447,11 +575,48 @@ class MultiFarmAssessor:
         mongo = getattr(self.pipeline, "db", None) or getattr(
             self.pipeline, "mongo_helper", None
         )
-        if mongo is not None and hasattr(mongo, "save_multi_farm_assessment"):
+        if mongo is None:
+            return
+
+        assessment_id = None
+        if hasattr(mongo, "save_multi_farm_assessment"):
             try:
-                mongo.save_multi_farm_assessment(farmer_id, farmer_result)
+                assessment_id = mongo.save_multi_farm_assessment(
+                    farmer_id, farmer_result
+                )
             except Exception as e:
                 logger.warning("save_multi_farm_assessment failed: %s", e)
 
+        # Farmer-level trend row. Per-plot rows are written as each plot scores
+        # (_persist_plot_evidence); this is the roll-up point that the dashboard
+        # and report trend tile read. Without it a multi-plot farmer — the
+        # common case — would have no farmer-level history at all.
+        if hasattr(mongo, "save_score_history"):
+            fl = farmer_result.get("farmer_level") or {}
+            entry = build_score_history_entry(
+                {
+                    "farmer_id": farmer_id,
+                    "assessment_date": farmer_result.get("assessment_date"),
+                    "index_version": farmer_result.get("index_version"),
+                    "field_area_ha": fl.get("total_scored_area_ha"),
+                    # build_score_history_entry reads risk_assessment; the
+                    # aggregator's farmer_level carries the same field names.
+                    "risk_assessment": fl,
+                },
+                assessment_id=assessment_id,
+            )
+            if entry is not None:
+                entry["n_plots_scored"] = farmer_result.get("n_plots_scored")
+                entry["n_plots_total"] = farmer_result.get("n_plots_total")
+                try:
+                    mongo.save_score_history(entry)
+                except Exception as e:
+                    logger.warning("farmer-level score history failed: %s", e)
 
-__all__ = ["MultiFarmAssessor", "assign_plot_keys", "counters_from_farm_assessments"]
+
+__all__ = [
+    "MultiFarmAssessor",
+    "assign_plot_keys",
+    "persist_plot_keys",
+    "counters_from_farm_assessments",
+]
