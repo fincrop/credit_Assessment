@@ -75,6 +75,55 @@ unassessable parcels into the distribution.
 
 The drift run also caught three defects that unit tests had missed — see §0.5.
 
+### 0.45 Is it correct today? — an honest assessment
+
+The pipeline is **defensible**, not **verified**. That distinction is the whole
+answer, so it is worth stating precisely.
+
+**Verified on real parcels** (evidence in the drift runs and inspectors):
+
+| Capability | Status | Evidence |
+|---|---|---|
+| Rejects open water | ✅ | NDVI negative throughout (−0.36 to −0.03), MNDWI positive in 90% of 89 observations. Physically unambiguous. |
+| Rejects built-up | ✅ | NDBI positive in 99% of 90 observations, NDVI never above 0.17. |
+| Does not reject fallow farmland | ✅ | Asserted in fixtures; no false rejection observed on a clean parcel. |
+| Detects perennials | ✅ | A real orchard: 3 production years, land utilisation 90.7%, index 75.5. Previously returned zero cycles and scored as abandoned land. |
+| Detects continuously-cropped land | ⚠️ **fix shipped, not re-run** | Was returning zero cycles on a western-UP wheat–rice farm with NDVI amplitude 0.41. |
+| Refuses unmeasurable parcels | ✅ | 4 parcels correctly refused at 4–9 pixels against a 15-pixel floor. |
+| Distinguishes "not farmland" / "cannot see" / "scored" | ✅ | Three terminal states, each with its own evidence block. |
+
+**Not verified, and cannot be without field data:**
+
+* Whether a score of 61 means the *right* thing. We have shown scores are
+  coherent, physically grounded and no longer inflated — not that they predict
+  anything. That needs F-7/F-8.
+* Cycle *dates*. SOS/EOS are plausible and internally consistent; nothing has
+  checked them against an actual sowing record.
+* Any accuracy figure. None should be quoted.
+
+**Known live gaps, in order of how much they matter:**
+
+1. **AgriStack ingest** (§0.3). Only 1 of 106 parcels from that source is
+   cleanly usable. This caps everything downstream and is not a backend fix.
+2. **Crop-specific analysis never runs.** Classification is quarantined, so
+   `predicted_crop` is `None`, which means the per-stage weather analysis
+   contributes exactly zero and ~1150 lines of ICAR reference data stay dead.
+   R4 addresses this.
+3. **Peer benchmarking is cold** and will stay cold until parcel volume
+   improves — a percentile needs ≥20 assessed plots per zone and there are
+   currently 7 viable parcels in total.
+4. **LLM narratives are not persisted**, so text shown to a loan officer has no
+   audit trail. R2.
+5. **SAR-dependent records are scored** but the SAR→VS mapping is fitted only
+   on clear-season bins and extrapolated onto monsoon radar (D-15). Reliance is
+   now visible (`n_sar_only_bins`, `any_signal_fraction`); its accuracy is not
+   established.
+
+**What would make it verified:** a manual review queue over rejections and
+zero-cycle outcomes. Every parcel a human eyeballs is a ground-truth sample we
+did not have, and it is the cheapest route out of Constraint A. Start it with
+the first operational batch.
+
 ### 0.5 What the drift run caught that tests did not
 
 Worth recording, because it is the argument for running this before every release:
