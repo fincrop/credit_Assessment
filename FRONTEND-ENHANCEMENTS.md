@@ -20,7 +20,7 @@ Ordered so each item is shippable on its own and nothing depends on a later one.
 | 3 | Show what we refused to score | ✅ Done |
 | 4 | Wire up the report data | ✅ Done |
 | 5 | Show *why* the score is that number | ✅ Done |
-| 6 | Show the field we actually saw | Not started ⭐ most persuasive |
+| 6 | Show the field we actually saw | ✅ Done |
 | 7 | Make the map a remote-sensing map | Not started |
 | 8 | The report | Not started |
 | 9 | Rebuild the dashboard around its reader | Not started |
@@ -98,7 +98,20 @@ index     = clip(raw_index × gate)
 
 Nine assertions added to `npm run smoke` pinning the arithmetic against the engine's, including that four all-100 drivers reach exactly 100 — otherwise the tracks imply unreachable headroom. Writing them caught that my first expected value was wrong (57.4 vs the correct 57.5); the worked example in §7.3 had it right.
 
-**⑥ Show the field we actually saw.** The NDVI trajectory with per-point provenance, and an observation calendar of which weeks we could see. The pipeline's most persuasive artefact, currently not on screen at all. §7.3.
+**⑥ Show the field we actually saw.** ✅ **Done.**
+
+**A contract bug surfaced first, and it mattered.** `signal_source` is a **per-bin column** (`optical | fused | sar | imputed`), stored parallel to `dates` by `evidence_snapshot.py` — not a single label for the series. Item ④'s type declared it `string`, and the contract test passed only because the fixture I wrote invented a scalar. Fixed, and the fixture regenerated from a realistic evidence block. Had this shipped, the trajectory would have rendered every point as equally observed — losing exactly the information that makes the chart honest.
+
+- `NdviTrajectory` — three rules, each load-bearing:
+  - **Gaps stay gaps.** No line across a bin with no observation; the blind span gets a hatched band and a count instead. A line through a cloudy fortnight asserts a measurement that was never taken.
+  - **Provenance is texture, not hue.** Optical solid, fused dashed, radar dash-dot, reconstructed dotted. Same quantity, different confidence — a hue change would imply a different measurement. Hue stays reserved for magnitude.
+  - **Markers only on directly-observed bins.** A dot asserts "we saw this", so reconstructed values do not get one.
+  - No synthesised district median; `comparison_note` is rendered instead.
+  - The y-domain is floored at 0 rather than at the series minimum, which would exaggerate small variation into a dramatic curve.
+- `ObservationCalendar` — one cell per bin, coloured by provenance, plus the sufficiency figures. **When per-bin provenance is absent it shows the totals and says so**, rather than arranging a plausible-looking grid: "41 of 52 observed" does not tell you *which* eleven were blind, and inventing that in the one panel whose purpose is honesty about absence would be self-defeating.
+- `useReport` — evidence lives in the `evidence` collection, not the job result, so it arrives via item ④'s endpoint. `not-found` and `not-configured` are deliberately not surfaced as errors: a farmer with no stored evidence is ordinary, and an unset `PIPELINE_API_URL` is a deployment fact a loan officer cannot act on. Panels degrade to their own empty state rather than blocking the page.
+
+Eighteen assertions added on the chart primitives, aimed at the properties that fail *silently*: a gap must produce a second `M` rather than an `L`, an area must close to the baseline rather than to the previous point, `NaN` must count as no observation. These are one character away from being wrong and look fine on screen when they are. One real bug fixed: `ticks()` accumulated floats and emitted `0.6000000000000001`, which reaches an axis as a label unless every caller remembers to format it.
 
 **⑦ Make the map a remote-sensing map.** Satellite base, NDVI raster overlay tied to the chart cursor, declared-vs-measured footprint drawn as two polygons, permanent legend, scale bar, Copernicus attribution. §11.
 

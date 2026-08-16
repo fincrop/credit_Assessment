@@ -11,6 +11,7 @@
  */
 import { terminalStateOf, terminalStateOfFarm, landCoverLabel } from '../app/lib/terminalState';
 import { bandForIndex, scoreColor, bandForRiskCategory, toKbsScore } from '../app/lib/kbsScore';
+import { linePath, segments, linearScale, ticks, areaPath } from '../app/lib/chart';
 
 let failures = 0;
 const t = (name: string, got: unknown, want: unknown) => {
@@ -114,6 +115,48 @@ t('all-100 reaches the index ceiling',
   contribution(100, W.landuse) + contribution(100, W.vigor) +
     contribution(100, W.stability) + contribution(100, W.weather), 100);
 t('index 100 maps to KBS max', toKbsScore(100), 900);
+
+/* -- Chart primitives: the rules that keep the trajectory honest ---------
+   A line drawn across a bin with no observation asserts a measurement that
+   was never taken. This is the single most important property of the NDVI
+   chart, and it is one `M` vs `L` away from being silently wrong. */
+const withGap = [
+  { x: 0, y: 10 },
+  { x: 10, y: 20 },
+  { x: 20, y: null },
+  { x: 30, y: 40 },
+];
+const d = linePath(withGap);
+t('gap starts a new subpath, not a bridge', (d.match(/M/g) || []).length, 2);
+t('no segment spans the gap', d.includes('L30.00'), false);
+t('all-null series draws nothing', linePath([{ x: 0, y: null }]), '');
+t('NaN counts as no observation', linePath([{ x: 0, y: NaN }, { x: 1, y: 5 }]).startsWith('M1.00'), true);
+
+t('segments splits on the gap', segments(withGap).length, 2);
+t('segments drop the null', segments(withGap).flat().length, 3);
+t('empty in, empty out', segments([]).length, 0);
+
+/* An area fill must close to the baseline, never to the previous point --
+   otherwise the shaded region implies coverage across a gap. */
+const ap = areaPath([{ x: 0, y: 10 }, { x: 10, y: 20 }], 100);
+t('area closes to baseline', ap.endsWith('Z'), true);
+t('area returns along the baseline', ap.includes('L10.00 100.00'), true);
+
+/* Scales */
+const sc = linearScale([0, 100], [0, 200]);
+t('scale maps domain start', sc(0), 0);
+t('scale maps domain end', sc(100), 200);
+t('scale is linear', sc(25), 50);
+t('scale inverts', sc.invert(50), 25);
+t('inverted range works (y axis)', linearScale([0, 1], [200, 0])(1), 0);
+t('zero-width domain does not divide by zero', Number.isFinite(linearScale([5, 5], [0, 10])(5)), true);
+
+// Float accumulation used to emit 0.6000000000000001 here, which reaches an
+// axis as a label unless every caller remembers to format it.
+t('ticks land on round numbers', ticks([0, 1], 4).join(','), '0,0.2,0.4,0.6,0.8,1');
+t('ticks handle a flat domain', ticks([3, 3]).length, 1);
+t('ticks cover an integer domain', ticks([0, 100], 5).join(','), '0,20,40,60,80,100');
+t('ticks respect a non-zero start', ticks([12, 30], 3).join(','), '15,20,25,30');
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

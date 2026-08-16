@@ -97,10 +97,17 @@ export function ticks(domain: [number, number], count = 5): number[] {
   const mag = Math.pow(10, Math.floor(Math.log10(rough)));
   const norm = rough / mag;
   const step = (norm >= 5 ? 5 : norm >= 2 ? 2 : 1) * mag;
+  // Accumulating `v += step` in floating point yields values like
+  // 0.6000000000000001, which reach the axis as labels unless every caller
+  // remembers to format them. Index from the start and round to the step's
+  // own precision instead, so the helper returns the numbers it promises.
+  const decimals = Math.max(0, -Math.floor(Math.log10(step)));
   const start = Math.ceil(d0 / step) * step;
   const out: number[] = [];
-  for (let v = start; v <= d1 + step * 1e-6; v += step) {
-    out.push(Math.round(v / step) * step);
+  for (let i = 0; ; i++) {
+    const v = Number((start + i * step).toFixed(decimals));
+    if (v > d1 + step * 1e-6) break;
+    out.push(v);
   }
   return out;
 }

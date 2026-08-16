@@ -15,6 +15,9 @@ import {
 } from '../../components/IndexInsightsCard';
 import { RefusalPanel } from '../../components/RefusalPanel';
 import { ScoreWaterfall } from '../../components/ScoreWaterfall';
+import { NdviTrajectory } from '../../components/NdviTrajectory';
+import { ObservationCalendar } from '../../components/ObservationCalendar';
+import { useReport } from '../../../lib/useReport';
 import { ConfidenceStrip } from '../../components/ConfidenceBadge';
 import { terminalStateOfFarm } from '../../../lib/terminalState';
 import { CropCyclesSection } from '../../components/CropCyclesSection';
@@ -176,6 +179,11 @@ function FarmDetailContent() {
   // resolves from the farm row rather than from a full payload.
   const plotRefusal = useMemo(() => terminalStateOfFarm(farmRow), [farmRow]);
 
+  const { report } = useReport(farmerId || String(data?.farmer_id || ''), {
+    plotKey,
+    enabled: !!data,
+  });
+
   if (loading) {
     return (
       <div className="min-h-screen bg-paper flex items-center justify-center text-sm text-stone-500">
@@ -304,6 +312,28 @@ function FarmDetailContent() {
                 footprint={plotPayload?.risk_assessment?.footprint}
                 scopeLabel="plot"
               />
+            )}
+            {/* Evidence lives in the `evidence` collection, not on the job
+                result, so it arrives via the report endpoint. Both panels
+                render their own empty state when it is absent — an older
+                assessment with no evidence record is ordinary, and its score
+                is still valid. */}
+            {scored && (
+              <>
+                <NdviTrajectory
+                  trajectory={report?.ndvi_trajectory}
+                  windowLabel={
+                    plotPayload?.continuous_data_stats?.date_range?.start &&
+                    plotPayload?.continuous_data_stats?.date_range?.end
+                      ? `${plotPayload.continuous_data_stats.date_range.start} → ${plotPayload.continuous_data_stats.date_range.end}`
+                      : undefined
+                  }
+                />
+                <ObservationCalendar
+                  sufficiency={plotPayload?.data_sufficiency ?? report?.data_sufficiency}
+                  trajectory={report?.ndvi_trajectory}
+                />
+              </>
             )}
             {scored ? (
               <IndexInsightsCard view={farmView} scopeLabel="plot" />

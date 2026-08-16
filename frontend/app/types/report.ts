@@ -104,10 +104,21 @@ export interface ReportDataConfidence {
  * `comparison_note` carries the reason. A synthesised district median would be
  * a fabrication in the most visually persuasive part of the report.
  */
+/** Per-bin provenance. `optical`/`fused` are observed; the rest are not. */
+export type SignalSource = 'optical' | 'fused' | 'sar' | 'imputed' | string;
+
 export interface ReportNdviTrajectory {
   dates: string[];
+  /** `null` means no observation in that bin. Never interpolate across one. */
   ndvi: (number | null)[];
-  signal_source?: string | null;
+  /**
+   * PER-BIN, parallel to `dates` — not a single label for the series.
+   * `evidence_snapshot.py` stores the whole `signal_source` column, so a
+   * consumer never has to guess whether a given value was measured or
+   * reconstructed. Rendering this as one series-level string would throw away
+   * exactly the information that makes the chart honest.
+   */
+  signal_source?: (SignalSource | null)[] | null;
   /** Points actually observed, vs total grid slots. The gap is the story. */
   n_present?: number | null;
   n_total?: number | null;
