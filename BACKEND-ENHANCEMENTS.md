@@ -866,8 +866,7 @@ Today: one golden test file covering score bounds, tri-state benefits, shim shap
 
 ### 8.2a Remaining backend work, in priority order
 
-R1–R5 are **done** (commits `23bfbc1d`, `a3237563`). R6 is frontend rendering
-and is parked with the ingest fix.
+R1–R5 are **done** (commits `23bfbc1d`, `a3237563`). R6 is **done**: `/report/[farmer_id]` renders the report contract; the dashboard print path that reformatted the live page has been removed.
 
 | # | Item | State | Where |
 |---|---|---|---|
@@ -876,7 +875,7 @@ and is parked with the ingest fix.
 | **R3** | **Per-sub-index driver captions** (§6.4) | ✅ done | `assessment/driver_captions.py` → `risk_assessment.driver_captions` |
 | **R4** | **Declared-crop phenology gate** (task 4.4) | ✅ done | `crop_analysis/crop_verification.py` |
 | **R5** | **Report payload endpoint** (Phase 7) | ✅ done | `api/report_payload.py`, `GET /v1/report/{farmer_id}` |
-| **R6** | **Report document** (Phase 8) | ⏸ parked | frontend rendering; contract is ready |
+| **R6** | **Report document** (Phase 8) | ✅ done | `frontend/app/report/[farmer_id]/page.tsx` |
 
 **R1 is built but cold, and that distinction matters.** The aggregation job runs
 and is correct; no cohort has reached the 20-farmer minimum, so `PeerBenchmark`

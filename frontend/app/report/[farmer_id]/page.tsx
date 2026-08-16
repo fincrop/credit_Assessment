@@ -2,10 +2,12 @@
 
 import { Suspense, use, useMemo } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useReport } from '../../lib/useReport';
 import { hasSection } from '../../lib/reportClient';
 import { riskViewFromReport, captionsFromReport } from '../../lib/reportView';
 import { bandForIndex, NO_BAND } from '../../lib/kbsScore';
+import { terminalStateOfReport } from '../../lib/terminalState';
 import { ScoreWaterfall } from '../../dashboard/components/ScoreWaterfall';
 import { NdviTrajectory } from '../../dashboard/components/NdviTrajectory';
 import { ObservationCalendar } from '../../dashboard/components/ObservationCalendar';
@@ -14,6 +16,7 @@ import { LandCoverPanel } from '../../dashboard/components/LandCoverPanel';
 import { CropVerificationPanel } from '../../dashboard/components/CropVerificationPanel';
 import { ScoreTrendSparkline } from '../../dashboard/components/ScoreTrendSparkline';
 import { FootprintBanner } from '../../dashboard/components/ConfidenceBadge';
+import { RefusalPanel } from '../../dashboard/components/RefusalPanel';
 import type { ReportPayload } from '../../types/report';
 
 /**
@@ -90,15 +93,15 @@ function ScoreHeader({ report }: { report: ReportPayload }) {
 function ReportBody({ report }: { report: ReportPayload }) {
   const view = useMemo(() => riskViewFromReport(report), [report]);
   const captions = useMemo(() => captionsFromReport(report), [report]);
-  const refused = report.status !== 'SUCCESS';
+  const refusal = useMemo(() => terminalStateOfReport(report), [report]);
 
   return (
     <div className="space-y-4">
       <FootprintBanner footprint={report.footprint} />
 
-      {hasSection(report, 'score') && !refused ? (
+      {refusal.scorable ? (
         <ScoreHeader report={report} />
-      ) : (
+      ) : refusal.state === 'PENDING' ? (
         <section className="rounded-xl border border-rule bg-paper/60 px-5 py-4">
           <p className="text-[10px] font-bold uppercase tracking-widest text-accent-gold">
             No score produced
@@ -108,6 +111,8 @@ function ReportBody({ report }: { report: ReportPayload }) {
             No Krishi Bhoomi Score was produced, and none should be inferred.
           </p>
         </section>
+      ) : (
+        <RefusalPanel verdict={refusal} />
       )}
 
       {hasSection(report, 'narrative') && (
@@ -116,15 +121,23 @@ function ReportBody({ report }: { report: ReportPayload }) {
           <p className="text-[13px] text-ink-2 mt-2 leading-relaxed whitespace-pre-line">
             {report.narrative.text}
           </p>
+          {report.narrative.translated && (
+            <p className="text-[13px] text-ink-2 mt-3 leading-relaxed whitespace-pre-line border-t border-rule pt-3">
+              {report.narrative.translated}
+            </p>
+          )}
           {report.narrative.source && (
             <p className="text-[10px] text-ink-muted mt-2 font-mono">
               narrative source: {report.narrative.source}
+              {report.narrative.translation_language
+                ? ` · translated: ${report.narrative.translation_language}`
+                : ''}
             </p>
           )}
         </section>
       )}
 
-      {hasSection(report, 'sub_indices') && !refused && (
+      {hasSection(report, 'sub_indices') && refusal.scorable && (
         <ScoreWaterfall view={view} captions={captions} footprint={report.footprint} scopeLabel="parcel" />
       )}
 
@@ -172,7 +185,9 @@ function ReportBody({ report }: { report: ReportPayload }) {
 }
 
 function ReportContent({ farmerId }: { farmerId: string }) {
-  const { report, loading, problem } = useReport(farmerId);
+  const searchParams = useSearchParams();
+  const plotKey = searchParams.get('plot_key')?.trim() || undefined;
+  const { report, loading, problem } = useReport(farmerId, { plotKey });
 
   if (loading) {
     return <p className="text-sm text-ink-muted">Loading report…</p>;
@@ -218,6 +233,7 @@ function ReportContent({ farmerId }: { farmerId: string }) {
             </h1>
             <p className="text-[11px] text-ink-muted font-mono mt-0.5">
               {report.report_id} · farmer {report.farmer_id}
+              {plotKey ? ` · plot ${plotKey}` : ''}
             </p>
           </div>
           <div className="flex items-center gap-2 no-print">

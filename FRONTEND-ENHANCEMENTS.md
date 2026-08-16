@@ -132,7 +132,7 @@ Verified: `tsc` (which also checks every Leaflet call against `@types/leaflet`),
 - **Farmer identity is absent, and the header says so** rather than leaving a gap: *"The masking policy for personal data is not settled, so the assessment service does not emit it and this page does not fetch it."* An empty slot reads as an oversight and invites someone to fill it from `farm_info` before FD-6 is decided.
 - Refusals, the footprint banner, and every `omitted{}` entry render inside the report, so a dossier that reaches a credit committee carries the same refusals the screen does.
 - Print-first CSS: `@page A4`, `break-inside: avoid` per section (a section split across a page break separates a figure from its qualifier — which is how a number gets quoted without its caveat), and `print-color-adjust: exact` so band tints survive the printer.
-- `AssessmentPrintReport` is superseded; its CSS block is marked legacy pending removal.
+- `AssessmentPrintReport` and its print-override CSS are removed. Dashboard "Open report" and the farm-detail header both go to `/report/[farmer_id]` (plot-scoped via `?plot_key=`). Print lives only on that page.
 
 **Two real bugs, both caught by tests rather than by reading:**
 

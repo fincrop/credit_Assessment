@@ -22,6 +22,7 @@ import type {
   DataSufficiency,
   ParcelViability,
 } from '../types/assessment';
+import type { ReportPayload } from '../types/report';
 
 export type TerminalState = 'SCORED' | 'NOT_FARMLAND' | 'UNOBSERVED' | 'FAILED' | 'PENDING';
 
@@ -98,6 +99,71 @@ export function terminalStateOf(
   const hasScore =
     typeof data.risk_assessment?.index_score === 'number' ||
     typeof data.farmer_level?.index_score === 'number';
+
+  return {
+    state: hasScore ? 'SCORED' : 'PENDING',
+    reason: null,
+    landCover,
+    dataSufficiency,
+    parcelViability,
+    scorable: hasScore,
+  };
+}
+
+/**
+ * Same decision for the report contract. The report page used to collapse every
+ * non-SUCCESS status into "No score produced", which hid NOT_FARMLAND vs
+ * UNOBSERVED — the distinction the refusal screens exist to keep.
+ */
+export function terminalStateOfReport(
+  report: ReportPayload | null | undefined
+): TerminalVerdict {
+  if (!report) return EMPTY;
+
+  const status = String(report.status || '').toUpperCase();
+  const landCover = report.land_cover ?? null;
+  const dataSufficiency = report.data_sufficiency ?? null;
+  const parcelViability = report.parcel_viability ?? null;
+
+  if (status === 'REJECTED_NOT_AGRICULTURAL') {
+    return {
+      state: 'NOT_FARMLAND',
+      reason: landCover?.reason ?? null,
+      landCover,
+      dataSufficiency,
+      parcelViability,
+      scorable: false,
+    };
+  }
+
+  if (status === 'INSUFFICIENT_DATA') {
+    return {
+      state: 'UNOBSERVED',
+      reason:
+        dataSufficiency?.reason ??
+        parcelViability?.reason ??
+        null,
+      landCover,
+      dataSufficiency,
+      parcelViability,
+      scorable: false,
+    };
+  }
+
+  if (status === 'FAILED') {
+    return {
+      state: 'FAILED',
+      reason: null,
+      landCover,
+      dataSufficiency,
+      parcelViability,
+      scorable: false,
+    };
+  }
+
+  const hasScore =
+    typeof report.score?.kbs === 'number' ||
+    typeof report.score?.index_score === 'number';
 
   return {
     state: hasScore ? 'SCORED' : 'PENDING',

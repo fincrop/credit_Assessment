@@ -9,7 +9,6 @@ import { RiskScoreCard } from './components/RiskScoreCard';
 import { StreamingFarmList } from './components/StreamingFarmList';
 import { FarmSelectPanel } from './components/FarmSelectPanel';
 import { PlotBoundaryMap } from './components/PlotBoundaryMap';
-import { AssessmentPrintReport } from './components/AssessmentPrintReport';
 import { RefusalPanel } from './components/RefusalPanel';
 import { ScoreWaterfall } from './components/ScoreWaterfall';
 import { LandCoverPanel } from './components/LandCoverPanel';
@@ -697,15 +696,6 @@ function DashboardPageContent() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                {status === 'SUCCESS' && data && (
-                  <button
-                    type="button"
-                    onClick={() => window.print()}
-                    className="bg-white hover:bg-paper border border-rule text-stone-700 px-4 py-2 rounded-lg text-sm font-medium"
-                  >
-                    Print / PDF
-                  </button>
-                )}
                 {status === 'SUCCESS' && farmerId.trim() && (
                   <>
                     <Link
@@ -836,8 +826,6 @@ function DashboardPageContent() {
           </div>
         )}
       </main>
-
-      {data && status === 'SUCCESS' && <AssessmentPrintReport data={data} />}
     </div>
   );
 }

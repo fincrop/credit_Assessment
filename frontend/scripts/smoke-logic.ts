@@ -9,7 +9,7 @@
  * the colour of a given index. Both were real defects; both are cheap to
  * re-break. Exits non-zero on any failure so CI can gate on it.
  */
-import { terminalStateOf, terminalStateOfFarm, landCoverLabel } from '../app/lib/terminalState';
+import { terminalStateOf, terminalStateOfFarm, terminalStateOfReport, landCoverLabel } from '../app/lib/terminalState';
 import { bandForIndex, scoreColor, bandForRiskCategory, toKbsScore } from '../app/lib/kbsScore';
 import { linePath, segments, linearScale, ticks, areaPath } from '../app/lib/chart';
 
@@ -38,6 +38,14 @@ t('failed -> FAILED', terminalStateOf({ status: 'FAILED', error: 'boom' } as nev
 t('scored -> SCORED',
   terminalStateOf({ status: 'SUCCESS', risk_assessment: { index_score: 61 } } as never).state, 'SCORED');
 t('success w/o score -> PENDING', terminalStateOf({ status: 'SUCCESS' } as never).state, 'PENDING');
+t('report reject -> NOT_FARMLAND',
+  terminalStateOfReport({ status: 'REJECTED_NOT_AGRICULTURAL',
+    land_cover: { class: 'WATER', reason: 'open water' } } as never).state, 'NOT_FARMLAND');
+t('report insufficient -> UNOBSERVED',
+  terminalStateOfReport({ status: 'INSUFFICIENT_DATA',
+    parcel_viability: { reason: '5 px' } } as never).state, 'UNOBSERVED');
+t('report scored -> SCORED',
+  terminalStateOfReport({ status: 'SUCCESS', score: { kbs: 592, index_score: 48.7 } } as never).state, 'SCORED');
 t('null -> PENDING', terminalStateOf(null).state, 'PENDING');
 t('refusal is never scorable',
   terminalStateOf({ status: 'INSUFFICIENT_DATA' } as never).scorable, false);

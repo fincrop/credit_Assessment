@@ -321,6 +321,10 @@ textarea:focus-visible {
 }
 
 @media print {
+  .no-print {
+    display: none !important;
+  }
+
   .report-sheet {
     max-width: none;
     font-size: 10.5pt;
@@ -347,73 +351,3 @@ textarea:focus-visible {
   }
 }
 
-/* =========================================================
-   Assessment print report (LEGACY — superseded by /report/[farmer_id])
-
-   Kept while the old dashboard print path is still reachable. Remove with
-   AssessmentPrintReport.tsx.
-   ========================================================= */
-.print-only {
-  display: none;
-}
-
-@media print {
-  .no-print {
-    display: none !important;
-  }
-
-  .print-only {
-    display: block !important;
-  }
-
-  body {
-    background: #fff !important;
-    color: #1c1917 !important;
-  }
-
-  .assessment-print-report {
-    padding: 12mm 14mm;
-    font-size: 11pt;
-    line-height: 1.45;
-    color: #1c1917;
-  }
-
-  .assessment-print-report h1 {
-    font-size: 18pt;
-    margin: 0 0 6pt;
-  }
-
-  .assessment-print-report h2 {
-    font-size: 12pt;
-    margin: 0 0 6pt;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #57534e;
-  }
-
-  .assessment-print-report .print-section {
-    break-inside: avoid;
-    margin-bottom: 14pt;
-    padding-bottom: 8pt;
-    border-bottom: 1px solid #e4dfd4;
-  }
-
-  .assessment-print-report .muted {
-    color: #78716c;
-    font-size: 9.5pt;
-  }
-
-  .assessment-print-report .mono {
-    font-family: ui-monospace, monospace;
-  }
-
-  .assessment-print-report .index-line {
-    font-size: 16pt;
-    margin: 0 0 4pt;
-  }
-
-  .assessment-print-report ul {
-    margin: 0;
-    padding-left: 1.1rem;
-  }
-}

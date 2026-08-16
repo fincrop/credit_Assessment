@@ -224,7 +224,17 @@ function FarmDetailContent() {
           <Link href={backHref} className="text-sm text-stone-500 hover:text-emerald-700">
             ← Assessment overview
           </Link>
-          <p className="text-xs font-mono text-ink-muted truncate max-w-[40%]">{plotKey}</p>
+          <div className="flex items-center gap-3 min-w-0">
+            {(farmerId || data?.farmer_id) && (
+              <Link
+                href={`/report/${encodeURIComponent(farmerId || String(data?.farmer_id || ''))}?plot_key=${encodeURIComponent(plotKey)}`}
+                className="text-[12px] font-semibold text-ink-2 border border-rule rounded-md px-2.5 py-1.5 hover:bg-paper transition-colors shrink-0"
+              >
+                Open report
+              </Link>
+            )}
+            <p className="text-xs font-mono text-ink-muted truncate max-w-[40%]">{plotKey}</p>
+          </div>
         </div>
       </header>
 
