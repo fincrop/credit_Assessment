@@ -287,6 +287,26 @@ class MultiFarmAssessor:
                     _emit()
                     continue
 
+                if status == "INSUFFICIENT_DATA":
+                    # Also a skip, not a failure. Nothing broke — we could not
+                    # observe this plot well enough to say anything about it,
+                    # which must not drag down the farmer's aggregate as though
+                    # it were a bad plot.
+                    ds = assessment.get("data_sufficiency") or {}
+                    rec = self._skipped_record(farm, tf, "insufficient_observation")
+                    rec["data_sufficiency"] = {
+                        "reason": assessment.get("insufficient_reason"),
+                        "observed_fraction": (ds.get("evidence") or {}).get(
+                            "observed_fraction"
+                        ),
+                        "largest_blind_gap_days": (ds.get("evidence") or {}).get(
+                            "largest_blind_gap_days"
+                        ),
+                    }
+                    per_farm.append(rec)
+                    _emit()
+                    continue
+
                 if status and status != "SUCCESS":
                     err = assessment.get("error") or (
                         (assessment.get("errors") or ["pipeline_non_success"])[0]

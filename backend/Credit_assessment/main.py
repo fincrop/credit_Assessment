@@ -85,6 +85,7 @@ from assessment.evidence_snapshot import (
     build_evidence_document,
     build_score_history_entry,
 )
+from assessment.data_sufficiency import INSUFFICIENT, assess_data_sufficiency
 from utils.peer_benchmark import PeerBenchmark
 from config import PipelineConfig
 from utils.farmer_benefits import merge_farmer_benefits, normalize_farmer_benefits
@@ -868,6 +869,41 @@ class SatelliteBasedCreditPipeline:
                     )
                 _meta = getattr(self.crop_cycle_detector, 'last_detection_meta', None)
                 assessment['cycle_detection_diag'] = dict(_meta or {})
+
+                # ── DATA SUFFICIENCY ─────────────────────────────────────
+                # Did we see this parcel well enough to make any claim?
+                #
+                # Zero cycles is only a finding if we were actually looking.
+                # A contiguous blind stretch longer than a crop cycle could
+                # have hidden an entire season, and scoring that parcel
+                # VERY_HIGH would deny a farmer credit on the strength of the
+                # satellite's cloud luck rather than on their land.
+                if bool(getattr(PipelineConfig, 'DATA_SUFFICIENCY_ENABLED', True)):
+                    sufficiency = assess_data_sufficiency(
+                        continuous_data,
+                        n_cycles=len(crop_cycles or []),
+                        field_area_ha=assessment.get('field_area_ha'),
+                    )
+                    assessment['data_sufficiency'] = sufficiency
+
+                    if sufficiency['outcome'] == INSUFFICIENT:
+                        assessment['status'] = 'INSUFFICIENT_DATA'
+                        assessment['insufficient_reason'] = sufficiency['reason']
+                        assessment['processing_time_seconds'] = (
+                            datetime.now() - start_time
+                        ).total_seconds()
+                        logger.warning(
+                            "Assessment stopped: %s", sufficiency['reason']
+                        )
+                        if save_to_db and self.use_mongodb:
+                            try:
+                                self.db.save_assessment(assessment)
+                            except Exception as e:
+                                logger.error(
+                                    "Could not persist insufficient-data result: %s", e
+                                )
+                        gc.collect()
+                        return assessment
 
                 if crop_cycles:
                     logger.info(f"  [OK] Detected {len(crop_cycles)} crop cycles")

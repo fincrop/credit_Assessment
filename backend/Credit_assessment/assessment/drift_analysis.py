@@ -54,6 +54,7 @@ __all__ = [
 RiskBand = ("VERY_HIGH", "HIGH", "MEDIUM", "LOW")
 
 REJECTED_STATUS = "REJECTED_NOT_AGRICULTURAL"
+INSUFFICIENT_STATUS = "INSUFFICIENT_DATA"
 
 # Movement larger than this is called out individually rather than only counted.
 LARGE_MOVE_POINTS = 15.0
@@ -228,6 +229,23 @@ def compare_one(farmer_id: str, baseline: Optional[Dict], current: Optional[Dict
         })
         return result
 
+    if current_status == INSUFFICIENT_STATUS:
+        # Not a score and not a rejection: we could not observe the parcel well
+        # enough to say anything. Excluded from the delta distribution for the
+        # same reason rejections are — there is no new score to compare.
+        ds = (current or {}).get("data_sufficiency") or {}
+        ev = ds.get("evidence") or {}
+        result.update({
+            "outcome": "now_insufficient_data" if baseline else "insufficient_no_baseline",
+            "delta": None,
+            "insufficient_reason": (
+                ds.get("reason") or (current or {}).get("insufficient_reason")
+            ),
+            "observed_fraction": ev.get("observed_fraction"),
+            "largest_blind_gap_days": ev.get("largest_blind_gap_days"),
+        })
+        return result
+
     if result["baseline_score"] is None:
         # Rule P-1: no baseline is not a baseline of zero.
         result.update({"outcome": "no_baseline", "delta": None})
@@ -319,6 +337,9 @@ def summarise(comparisons: List[Dict]) -> Dict:
         if d:
             driver_counts[d] = driver_counts.get(d, 0) + 1
 
+    insufficient = [
+        c for c in comparisons if c.get("outcome") == "now_insufficient_data"
+    ]
     rejected = [c for c in comparisons if c.get("outcome") == "newly_rejected"]
     rejection_classes: Dict[str, int] = {}
     for c in rejected:
@@ -350,6 +371,7 @@ def summarise(comparisons: List[Dict]) -> Dict:
         "primary_drivers": dict(sorted(driver_counts.items(), key=lambda kv: -kv[1])),
         "n_newly_rejected": len(rejected),
         "rejection_classes": dict(sorted(rejection_classes.items(), key=lambda kv: -kv[1])),
+        "n_now_insufficient": len(insufficient),
         "n_newly_perennial": sum(1 for c in comparisons if c.get("now_perennial")),
     }
 
@@ -439,6 +461,20 @@ def format_report(comparisons: List[Dict], summary: Dict, top_n: int = 15) -> st
             for note in (c.get("rejection_notes") or [])[:3]:
                 add(f"      - {note}")
             add("")
+
+    if summary.get("n_now_insufficient"):
+        add("-- Now reported as insufficiently observed " + "-" * 25)
+        add(f"  {summary['n_now_insufficient']} parcel(s) previously scored cannot")
+        add("  honestly be assessed: no cycles were found, but the record has a")
+        add("  blind stretch long enough to have hidden an entire season.")
+        add("  Scoring these would deny credit on the satellite's cloud luck.")
+        add("")
+        for c in [x for x in comparisons
+                  if x.get("outcome") == "now_insufficient_data"][:top_n]:
+            add(f"    {c['farmer_id']:24s} was {c['baseline_score']:.1f}")
+            add(f"      observed          : {c.get('observed_fraction')}")
+            add(f"      largest blind gap : {c.get('largest_blind_gap_days')} days")
+        add("")
 
     if summary["n_newly_perennial"]:
         add(f"-- Newly detected as perennial: {summary['n_newly_perennial']} parcel(s)")

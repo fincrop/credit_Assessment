@@ -344,6 +344,20 @@ class PipelineConfig:
     # Each corresponds to a documented surface behaviour, and the temporal
     # stream (which needs no external calibration) carries the decisions that
     # spectral evidence alone cannot support.
+    # ── Data sufficiency ─────────────────────────────────────────────────
+    # Can we make any claim about this parcel? See assessment/data_sufficiency.py.
+    #
+    # Only bites when NO cycles were detected. The reasoning is physical, not
+    # tuned: a contiguous unobserved stretch longer than the shortest crop cycle
+    # could have hidden an entire season, so "no cycles" from such a record is
+    # ignorance, not a finding. Reporting VERY_HIGH there denies a farmer credit
+    # on the strength of the satellite's cloud luck.
+    DATA_SUFFICIENCY_ENABLED = True
+    # 0 = derive from CROP_CYCLE_MIN_DURATION_DAYS (the honest default: a gap
+    # long enough to hide a whole cycle).
+    DATA_SUFFICIENCY_BLIND_GAP_DAYS = 0
+    DATA_SUFFICIENCY_MIN_OBSERVED_FRACTION = 0.35
+
     LANDCOVER_GATE_ENABLED = True
 
     # Minimum usable observations before a verdict is attempted. Below this the

@@ -283,6 +283,11 @@ def process_assessment_job(
         # timed out", so the UI cannot explain either one.
         rejected = raw_status == "REJECTED_NOT_AGRICULTURAL"
 
+        # Nor is "we could not see it well enough to say". Three distinct
+        # outcomes, three distinct statuses — collapsing them loses exactly the
+        # information a loan officer needs to act.
+        insufficient = raw_status == "INSUFFICIENT_DATA"
+
         if pipeline_ok:
             job_status, err_msg = "SUCCESS", None
             warns = raw_result.get("warnings") or []
@@ -302,6 +307,19 @@ def process_assessment_job(
             logger.info(
                 "[JOB %s] Rejected as non-agricultural: %s",
                 job_id, raw_result.get("rejection_reason"),
+            )
+        elif insufficient:
+            job_status = "INSUFFICIENT_DATA"
+            err_msg = None
+            slim_result.setdefault(
+                "data_sufficiency", raw_result.get("data_sufficiency")
+            )
+            slim_result.setdefault(
+                "insufficient_reason", raw_result.get("insufficient_reason")
+            )
+            logger.info(
+                "[JOB %s] Insufficient observation: %s",
+                job_id, raw_result.get("insufficient_reason"),
             )
         else:
             job_status = "FAILED"
