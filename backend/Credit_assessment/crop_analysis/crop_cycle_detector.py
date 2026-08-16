@@ -194,9 +194,19 @@ def _parse_sowing_hint(sowing_date_hint: Optional[str]) -> Optional[datetime]:
         return None
 
 
-# Soft peak-CVI floor clamp when agro / eco priors nudge detection
-_SOFT_PEAK_CVI_LO = 0.20
-_SOFT_PEAK_CVI_HI = 0.35
+# How far an agro/eco prior may move the configured peak threshold.
+#
+# ⚠ These were ABSOLUTE bounds of [0.20, 0.35], written for signal_v1's
+# per-parcel rank scale. Under signal_v2's absolute scale 0.35 is BARE SOIL, so
+# the prior silently dragged the configured 0.55 gate down to bare-soil level —
+# re-creating the very threshold inversion signal_v2 removed, and causing real
+# farms to return zero cycles. Observed in the field: "Soft agro prior →
+# peak_cvi 0.550 → 0.350" followed by "Found 0 crop cycle(s)".
+#
+# The bound is now RELATIVE to whatever the configured threshold is, so it
+# cannot go stale when the scale changes again. A regional prior should nudge
+# detection, never redefine what counts as vegetation.
+_SOFT_PEAK_ADJUST_MAX_FRAC = 0.20   # prior may move the gate by at most ±20%
 _SOW_HINT_WINDOW_DAYS = 21
 _ECO_PEAK_FLOOR_REF = 0.15  # typical cycle_min_peak_floor in india_geo_context
 
@@ -219,12 +229,17 @@ def _soft_apply_agro_profile(
 
     Recognises explicit keys (peak_cvi_floor, min_peak_cvi, expected_cycles_per_year)
     and india_geo_context eco keys (ndvi_threshold_delta, cycle_min_peak_floor).
-    Peak floor is clamped to [_SOFT_PEAK_CVI_LO, _SOFT_PEAK_CVI_HI].
+
+    The adjusted floor is bounded RELATIVE to the incoming configured threshold
+    (±_SOFT_PEAK_ADJUST_MAX_FRAC), and additionally never allowed at or below
+    the bare-soil baseline. A regional prior may nudge detection; it may not
+    redefine what counts as vegetation.
     """
     applied: Dict[str, Any] = {}
     if not agro_profile:
         return peak_cvi, expected_cycles_per_year, applied
 
+    configured = float(peak_cvi)
     p = peak_cvi
     exp = expected_cycles_per_year
 
@@ -244,9 +259,19 @@ def _soft_apply_agro_profile(
     if delta_raw is not None:
         try:
             delta = float(delta_raw)
-            # Same sign as CropDetector's regional NDVI gate (humid → slightly lower peak floor)
-            p = p + delta
+            # Same sign as CropDetector's regional NDVI gate (humid -> slightly
+            # lower peak floor). NOTE: this delta is on the raw NDVI scale but is
+            # being applied to a VS-scale threshold — a unit mismatch. Scaled by
+            # the NDVI span so the nudge is proportionate rather than assuming
+            # the two scales are interchangeable.
+            ndvi_lo, ndvi_hi = getattr(
+                PipelineConfig, "INDEX_PHYSICAL_RANGES", {}
+            ).get("NDVI", (-0.20, 0.90))
+            span = float(ndvi_hi) - float(ndvi_lo)
+            scaled = delta / span if span > 0 else delta
+            p = p + scaled
             applied['ndvi_threshold_delta'] = round(delta, 4)
+            applied['ndvi_threshold_delta_scaled'] = round(scaled, 4)
         except (TypeError, ValueError):
             pass
 
@@ -269,8 +294,17 @@ def _soft_apply_agro_profile(
             pass
 
     if applied:
-        p = float(np.clip(p, _SOFT_PEAK_CVI_LO, _SOFT_PEAK_CVI_HI))
+        # Bound relative to the configured threshold, and never at or below the
+        # bare-soil baseline — otherwise a regional prior can make bare ground
+        # qualify as a crop peak.
+        lo = configured * (1.0 - _SOFT_PEAK_ADJUST_MAX_FRAC)
+        hi = configured * (1.0 + _SOFT_PEAK_ADJUST_MAX_FRAC)
+        baseline = float(getattr(PipelineConfig, "CROP_CYCLE_MIN_BASELINE_CVI", 0.35))
+        lo = max(lo, baseline * 1.10)
+        p = float(np.clip(p, min(lo, hi), max(lo, hi)))
+        applied['peak_cvi_before'] = round(configured, 4)
         applied['peak_cvi_after'] = round(p, 4)
+        applied['peak_cvi_bounds'] = [round(lo, 4), round(hi, 4)]
         if 'narrative' in agro_profile and agro_profile.get('narrative'):
             applied['narrative'] = str(agro_profile['narrative'])[:120]
 

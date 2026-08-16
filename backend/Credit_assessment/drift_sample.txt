@@ -1,0 +1,45 @@
+# generated 2026-08-16T07:35:34.978034+00:00
+
+========================================================================
+SCORE DRIFT REPORT
+========================================================================
+
+Farmers examined        : 3
+Directly comparable     : 1
+  newly_rejected        : 2
+
+!! SMALL SAMPLE (1). Treat the
+   distribution below as indicative, not representative.
+
+-- Score movement (n=1) ------------------------------
+  mean              -40.1
+  median            -40.1
+  p10 / p90         -40.1 /   -40.1
+  largest rise      -40.1
+  largest fall      -40.1
+  improved / worsened / unchanged : 0 / 1 / 0
+  moves >= 15 points : 1
+
+-- Risk band migration ---------------------------------------------
+  LOW->HIGH                       1  <-- changed
+  bands improved / worsened : 0 / 1
+
+-- What drove the movement -----------------------------------------
+  landuse                         1 farmer(s)
+
+-- Newly rejected as non-agricultural ------------------------------
+  2 parcel(s) previously scored are now refused.
+    BARREN                        1
+    WATER                         1
+  These are excluded from the movement statistics above:
+  they have no new score, and counting them as a large fall
+  would corrupt the distribution.
+
+    6a7e2e8b06e485e13f575fb2 was 55.2 -> BARREN (confidence 0.95)
+    6a7e300006e485e13f575fb3 was 48.9 -> WATER (confidence 0.912)
+
+-- Largest movements (top 1) ----------------------------------
+  farmer                     before    after    delta  driver
+  12520694333                  71.2     31.1    -40.1  landuse (-74.6)
+
+========================================================================

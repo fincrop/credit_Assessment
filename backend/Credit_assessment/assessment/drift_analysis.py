@@ -218,6 +218,13 @@ def compare_one(farmer_id: str, baseline: Optional[Dict], current: Optional[Dict
             "rejection_class": lc.get("class") or (current or {}).get("rejection_class"),
             "rejection_confidence": _num(lc.get("confidence")),
             "rejection_reason": lc.get("reason") or (current or {}).get("rejection_reason"),
+            # The raw index statistics the verdict rested on. A rejection that
+            # cannot be audited is not usable: it either refuses a real farmer
+            # or hides a broken gate, and there is no way to tell which without
+            # the numbers.
+            "rejection_evidence": lc.get("evidence"),
+            "rejection_streams": lc.get("streams"),
+            "rejection_notes": lc.get("notes"),
         })
         return result
 
@@ -412,11 +419,26 @@ def format_report(comparisons: List[Dict], summary: Dict, top_n: int = 15) -> st
         add("  they have no new score, and counting them as a large fall")
         add("  would corrupt the distribution.")
         add("")
+        add("  EVERY rejection below should be eyeballed against imagery before")
+        add("  this is trusted. A false rejection refuses a real farmer.")
+        add("")
         for c in [x for x in comparisons if x.get("outcome") == "newly_rejected"][:top_n]:
             add(f"    {c['farmer_id']:24s} was {c['baseline_score']:.1f} "
                 f"-> {c.get('rejection_class')} "
                 f"(confidence {c.get('rejection_confidence')})")
-        add("")
+            ev = c.get("rejection_evidence") or {}
+            if ev:
+                add(f"      NDVI p10/p50/p90 : {ev.get('ndvi_p10')} / "
+                    f"{ev.get('ndvi_p50')} / {ev.get('ndvi_p90')}")
+                add(f"      NDVI amplitude   : {ev.get('ndvi_amplitude')}")
+                add(f"      water+ fraction  : {ev.get('water_frac_positive')} "
+                    f"({ev.get('water_index_source')})")
+                add(f"      built-up+ frac   : {ev.get('ndbi_frac_positive')}   "
+                    f"BSI p50: {ev.get('bsi_p50')}")
+                add(f"      observations     : {ev.get('n_obs')}")
+            for note in (c.get("rejection_notes") or [])[:3]:
+                add(f"      - {note}")
+            add("")
 
     if summary["n_newly_perennial"]:
         add(f"-- Newly detected as perennial: {summary['n_newly_perennial']} parcel(s)")
