@@ -352,12 +352,24 @@ class PipelineConfig:
     # pixels and 24 under FIVE. At four pixels the AOI mean is mostly the
     # neighbouring field or road, whatever the boundary says.
     #
-    # HARD floor: below this nothing meaningful can be computed, so we decline
-    # rather than return a confident number about land we did not measure.
-    PARCEL_MIN_PIXELS_HARD = 5           # 0.05 ha
-    # RELIABLE floor: measurable, but the signal carries neighbouring land.
-    # Scored with a flag and a confidence discount.
-    PARCEL_MIN_PIXELS_RELIABLE = 20      # 0.20 ha
+    # HARD floor = the minimum FUNDABLE plot size, set by lending policy at
+    # 0.15 ha (15 pixels). Below this we decline rather than spend quota and
+    # return a confident number about a plot nobody would lend against anyway.
+    # This is a BUSINESS threshold; change it when the lending policy changes.
+    PARCEL_MIN_PIXELS_HARD = 15          # 0.15 ha — fundable floor
+    #
+    # RELIABLE floor is a PHYSICAL threshold, and the two are different things.
+    # For a roughly square parcel of N pixels the boundary ring is about
+    # 4*sqrt(N)-4 pixels, and Sentinel-2 geolocation error is itself ~10 m — so
+    # boundary pixels are contaminated by whatever is next door:
+    #     15 px  -> ~11 boundary px  (~73% of the parcel)
+    #     50 px  -> ~24 boundary px  (~48%)
+    #    150 px  -> ~45 boundary px  (~30%)
+    # There is no size at which this vanishes for smallholder plots at 10 m.
+    # 50 px is where it stops dominating, so between the fundable floor and
+    # here a parcel is scored but flagged and confidence-discounted, rather
+    # than presented as though it were cleanly measured.
+    PARCEL_MIN_PIXELS_RELIABLE = 50      # 0.50 ha
     PARCEL_MARGINAL_GATE_PENALTY = 0.85
 
     # Polygon area vs registered area. Among AgriStack-ingested parcels only 7

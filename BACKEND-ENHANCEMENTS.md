@@ -1,9 +1,96 @@
-# Backend Enhancements — v6 Plan
+# Backend Enhancements — v6
 
-**Status:** Proposal, pending decisions in §7
-**Date:** 2026-08-15
+**Status:** Backend work complete. Blocked on an ingest defect (§0.3) before pilot.
+**Date:** 2026-08-16
 **Scope:** `backend/Credit_assessment/` only. Frontend and integrations follow in a separate pass.
 **Supersedes:** `backend/Credit_assessment/Backend_enhancements.md` (which documents *intended* v5 behaviour, much of which was never wired — see §1.2).
+
+---
+
+## 0. Status
+
+### 0.1 What shipped
+
+Seven commits, `e8943ef9` → `669a9344`. Tests: **6 → 214**.
+
+| # | Item | Status | Commit |
+|---|---|---|---|
+| 1 | Fix silently-wrong persisted data | ✅ | `e8943ef9` |
+| 2 | Refuse to score non-agricultural land | ✅ | `ddf2cd3b` |
+| 3 | Physically meaningful vegetation signal | ✅ | `53ed4a71` |
+| 4 | Perennials, seasons, detection hygiene | ✅ | `e385adb2` |
+| 5 | Use the crop name safely | ⬜ **not started** | — |
+| 6 | Persist the evidence behind a score | ✅ | `0ce4bf4f` |
+| 7 | Honest explanations | ◐ **half** — overclaiming removed; peer cohort, narrative persistence and driver captions remain | `e8943ef9` |
+| 8 | Report backend | ⬜ **not started** | — |
+| + | Score drift harness | ✅ | `023cf693` |
+| + | INSUFFICIENT_DATA outcome | ✅ | `b023f600` |
+| + | Parcel viability gate | ✅ | `669a9344` |
+
+### 0.2 Three terminal states, deliberately distinct
+
+Collapsing these loses exactly the information a loan officer needs:
+
+| Status | Meaning |
+|---|---|
+| `SUCCESS` | We looked; here is the score. |
+| `REJECTED_NOT_AGRICULTURAL` | We looked; it is not farmland. |
+| `INSUFFICIENT_DATA` | We could not see it well enough to say — too small, too cloud-gapped, or an untrustworthy boundary. |
+
+Previously every non-success collapsed to `FAILED`, so *"we refuse to score a lake"* was indistinguishable from *"Earth Engine timed out"*.
+
+### 0.3 ⚠ The binding constraint is now the AgriStack ingest, not the backend
+
+A geometry audit over the live database (19 farms, 113 parcels) found the parcel
+records themselves are unusable, and the split by source is total:
+
+| Source | Parcels | Area ratio in tolerance | Median size | Viable at 0.15 ha |
+|---|---|---|---|---|
+| App-drawn (UUID ids) | 7 | **7 / 7** | 1.59 ha | **6 viable, 1 marginal, 0 refused** |
+| AgriStack (`UP*` ids) | 106 | **7 / 106** | 0.11 ha | **1 viable, 51 marginal, 54 refused** |
+
+Polygon-vs-registered area ratios span **0.022 to 1841 in both directions**
+(log₁₀ stdev 0.92). A unit error would cluster on one constant; this scatter
+means the polygon and the registered area describe **different parcels**. Worst
+observed: `UP119312246830`, registered 0.0036 ha against a 6.63 ha polygon.
+
+**No amount of backend work fixes this.** The scoring pipeline can now detect and
+refuse these parcels — which is why the problem is finally visible — but it
+cannot repair the pairing. That belongs in the AgriStack ingest path
+(`frontend/app/lib/ingestAgriStack.ts` and the Lambda), which is outside the
+scope agreed for this pass.
+
+### 0.4 Drift measured on real data
+
+10 farmers re-assessed against their stored pre-cutover scores:
+
+| Group | n | Mean change |
+|---|---|---|
+| Cycles detected | 5 | **−8.6** |
+| Zero cycles | 3 | −50.5 → now correctly `INSUFFICIENT_DATA` |
+| Non-agricultural | 2 | rejected (BARREN, WATER — both with clean geometry) |
+
+**−8.6 is the honest drift figure.** The −24.3 headline from the first run mixed
+unassessable parcels into the distribution.
+
+The drift run also caught three defects that unit tests had missed — see §0.5.
+
+### 0.5 What the drift run caught that tests did not
+
+Worth recording, because it is the argument for running this before every release:
+
+1. **The agro prior was dragging the peak gate to bare soil.** Its clamp was an
+   absolute `[0.20, 0.35]`, written for the old scale, where 0.35 is now bare
+   soil — silently re-creating the threshold inversion Phase 2 removed. Bounds
+   are now relative to the configured threshold.
+2. **NDBI/BSI/MNDWI never reached the gate.** A hand-written key list in the GEE
+   binning step dropped every index added after it. Now driven by `INDEX_KEYS`.
+3. **The no-evidence floor never fired.** `test_no_evidence_scoring` asserted it
+   and passed — because the fixture omitted the key the real analyzer always
+   supplies. A test that only exercises the shape it invented is not a test of
+   the pipeline.
+
+---
 
 ---
 
@@ -664,6 +751,13 @@ Everything here is **blocked on data we do not have**, not on engineering effort
 
 These change the design; I don't want to guess.
 
+### 7.0 Decided (2026-08-16)
+
+| # | Decision | Resolution | Consequence |
+|---|---|---|---|
+| **D-10** | Minimum fundable plot size | **0.15 ha** (15 Sentinel-2 pixels) | Becomes `PARCEL_MIN_PIXELS_HARD`. Below it the pipeline returns `INSUFFICIENT_DATA` before pulling imagery, so no quota is spent on plots nobody would lend against. **48% of current parcels fall below this — 54 of 55 are AgriStack-sourced.** Note this is a *business* threshold; `PARCEL_MIN_PIXELS_RELIABLE` (0.50 ha) is a separate *physical* one, marking where boundary-pixel contamination stops dominating. Between the two a parcel is scored but flagged and confidence-discounted. |
+| **D-7** | Crop classification | ML classifier quarantined; declared crop gated on phenology consistency | Task 4.4 remains unimplemented — see §0.1 item 5. |
+
 ### 7.1 Decided (2026-08-15)
 
 | # | Decision | Resolution | Consequence for the plan |
@@ -710,6 +804,40 @@ Today: one golden test file covering score bounds, tri-state benefits, shim shap
 4. Persistence round-trip: numpy, NaN, timezone, tri-state survival
 5. Schema contract: every field the report needs is present and correctly typed
 6. Multi-farm aggregation with mixed skip/fail/success plots
+
+### 8.2a Remaining backend work, in priority order
+
+Everything below is scoped and unblocked; none of it is a prerequisite for the
+ingest fix, which should run in parallel.
+
+| # | Item | Why it matters | Size |
+|---|---|---|---|
+| **R1** | **Warm the peer cohort** (§6.1) | `feature_store` is already accumulating the inputs on every run. Once a zone has ≥20 assessed plots, `peer_nirv` fires and the peer language becomes true rather than removed. Needs no ground truth — a percentile among our own assessed parcels is a real, self-referential fact. | ~1 wk |
+| **R2** | **Persist LLM narratives + model snapshot** (D-62) | Text shown to a loan officer currently vanishes after the HTTP response. No audit trail. The prompt hash is already computed and then discarded. | ~2 d |
+| **R3** | **Per-sub-index driver captions** (§6.4) | Deterministic templates citing computed metrics. Required by the report, and the honest alternative to letting an LLM produce the numbers. | ~3 d |
+| **R4** | **Declared-crop phenology gate** (task 4.4) | Compare observed duration/curve against `CROP_DURATIONS` and `EXPECTED_NDVI_CURVES`. Unlocks ~1150 lines of dead ICAR config, revives per-stage weather analysis, and produces the first crop-label signal we have ever collected — which feeds F-1. | ~1 wk |
+| **R5** | **Report payload endpoint** (Phase 7) | Assemble what §7 lists as available. Blocked on R1–R3 for completeness, not for a first cut. | ~1 wk |
+| **R6** | **Report document** (Phase 8) | KBS as the gauge, 300–900 / 4 bands per D-3. Materially thinner than the mockup — the "Suggested action" panel is dropped (F-12). | 1–2 wk |
+
+Deliberately NOT scheduled: anything in §6.9. Those need field data, not effort.
+
+### 8.2b Operational runbook
+
+```bash
+# Before any release: what moved, for whom, driven by what.
+python scripts/devtools/score_drift.py --plan          # free, no imagery
+python scripts/devtools/score_drift.py --limit 10 --out drift
+
+# Data quality, no quota:
+python scripts/devtools/audit_geometry.py --only-flagged
+
+# Audit a single verdict against imagery:
+python scripts/devtools/inspect_land_cover.py <farmer_id>
+python scripts/devtools/inspect_assessment.py <farmer_id>
+```
+
+Run the drift report before every release. It caught three defects that the unit
+tests missed (§0.5), including two I introduced.
 
 ### 8.3 Metrics to watch during rollout
 

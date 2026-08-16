@@ -16,9 +16,17 @@ from __future__ import annotations
 
 import pytest
 
+from config import PipelineConfig as P
 from assessment.parcel_viability import (
-    MARGINAL, NOT_VIABLE, VIABLE, assess_parcel_viability, viability_gate_penalty,
+    MARGINAL, NOT_VIABLE, PIXEL_HA, VIABLE,
+    assess_parcel_viability, viability_gate_penalty,
 )
+
+# Derived from config, never hardcoded: these are POLICY values (the fundable
+# floor is a lending decision) and they have already changed once. A test that
+# pins them would fail on every policy change rather than on a real regression.
+HARD_HA = P.PARCEL_MIN_PIXELS_HARD * PIXEL_HA
+RELIABLE_HA = P.PARCEL_MIN_PIXELS_RELIABLE * PIXEL_HA
 
 
 # ── size ──────────────────────────────────────────────────────────────────
@@ -41,16 +49,36 @@ def test_a_one_pixel_parcel_is_not_viable():
     assert v["outcome"] == NOT_VIABLE
 
 
-def test_a_small_but_measurable_parcel_is_marginal_not_refused():
-    """0.0994 ha, about 9 pixels — measurable, but the signal is impure."""
-    v = assess_parcel_viability(registered_ha=0.0994, geometry_ha=0.0994)
+def test_a_parcel_between_the_two_floors_is_marginal_not_refused():
+    """Fundable, but small enough that the signal carries neighbouring land."""
+    midpoint = (HARD_HA + RELIABLE_HA) / 2
+    v = assess_parcel_viability(registered_ha=midpoint, geometry_ha=midpoint)
     assert v["outcome"] == MARGINAL
     assert "neighbouring land" in v["reason"]
 
 
-def test_the_boundary_between_marginal_and_viable_is_the_reliable_floor():
-    assert assess_parcel_viability(geometry_ha=0.19)["outcome"] == MARGINAL
-    assert assess_parcel_viability(geometry_ha=0.25)["outcome"] == VIABLE
+def test_the_fundable_floor_is_the_hard_boundary():
+    """Just below the lending floor is refused; just above is not."""
+    assert assess_parcel_viability(
+        geometry_ha=HARD_HA - PIXEL_HA)["outcome"] == NOT_VIABLE
+    assert assess_parcel_viability(
+        geometry_ha=HARD_HA + PIXEL_HA)["outcome"] != NOT_VIABLE
+
+
+def test_the_reliable_floor_separates_marginal_from_viable():
+    assert assess_parcel_viability(
+        geometry_ha=RELIABLE_HA - PIXEL_HA)["outcome"] == MARGINAL
+    assert assess_parcel_viability(
+        geometry_ha=RELIABLE_HA + PIXEL_HA)["outcome"] == VIABLE
+
+
+def test_the_fundable_floor_sits_below_the_reliable_floor():
+    """
+    They measure different things — one is lending policy, one is physics — but
+    an inverted pair would make the marginal band empty and silently disable the
+    flag-and-discount behaviour.
+    """
+    assert P.PARCEL_MIN_PIXELS_HARD < P.PARCEL_MIN_PIXELS_RELIABLE
 
 
 # ── boundary trust ────────────────────────────────────────────────────────
@@ -110,8 +138,9 @@ def test_registered_area_alone_is_usable():
 # ── confidence discount ───────────────────────────────────────────────────
 
 def test_marginal_parcels_carry_a_confidence_discount():
-    marginal = assess_parcel_viability(geometry_ha=0.10)
+    marginal = assess_parcel_viability(geometry_ha=(HARD_HA + RELIABLE_HA) / 2)
     clean = assess_parcel_viability(registered_ha=1.6, geometry_ha=1.6)
+    assert marginal["outcome"] == MARGINAL
     assert viability_gate_penalty(marginal) < 1.0
     assert viability_gate_penalty(clean) == 1.0
 
