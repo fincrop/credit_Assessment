@@ -233,16 +233,30 @@ def compare_one(farmer_id: str, baseline: Optional[Dict], current: Optional[Dict
         # Not a score and not a rejection: we could not observe the parcel well
         # enough to say anything. Excluded from the delta distribution for the
         # same reason rejections are — there is no new score to compare.
+        # INSUFFICIENT_DATA arrives from two different gates with different
+        # evidence, and conflating them printed empty fields: a parcel refused
+        # for SIZE has no observation record at all, because it was stopped
+        # before any imagery was pulled.
         ds = (current or {}).get("data_sufficiency") or {}
-        ev = ds.get("evidence") or {}
+        pv = (current or {}).get("parcel_viability") or {}
+        ds_ev = ds.get("evidence") or {}
+        pv_ev = pv.get("evidence") or {}
         result.update({
             "outcome": "now_insufficient_data" if baseline else "insufficient_no_baseline",
             "delta": None,
+            "insufficient_cause": "parcel_size" if pv_ev else "observation_coverage",
             "insufficient_reason": (
-                ds.get("reason") or (current or {}).get("insufficient_reason")
+                ds.get("reason")
+                or pv.get("reason")
+                or (current or {}).get("insufficient_reason")
             ),
-            "observed_fraction": ev.get("observed_fraction"),
-            "largest_blind_gap_days": ev.get("largest_blind_gap_days"),
+            # Observation coverage (only when imagery was actually collected)
+            "observed_fraction": ds_ev.get("observed_fraction"),
+            "largest_blind_gap_days": ds_ev.get("largest_blind_gap_days"),
+            # Parcel size (only when the size gate stopped it)
+            "approx_pixels": pv_ev.get("approx_pixels"),
+            "effective_ha": pv_ev.get("effective_ha"),
+            "area_ratio": pv_ev.get("area_ratio"),
         })
         return result
 
@@ -471,9 +485,18 @@ def format_report(comparisons: List[Dict], summary: Dict, top_n: int = 15) -> st
         add("")
         for c in [x for x in comparisons
                   if x.get("outcome") == "now_insufficient_data"][:top_n]:
-            add(f"    {c['farmer_id']:24s} was {c['baseline_score']:.1f}")
-            add(f"      observed          : {c.get('observed_fraction')}")
-            add(f"      largest blind gap : {c.get('largest_blind_gap_days')} days")
+            cause = c.get("insufficient_cause")
+            add(f"    {c['farmer_id']:24s} was {c['baseline_score']:.1f}   "
+                f"[{cause or 'unknown'}]")
+            if cause == "parcel_size":
+                add(f"      effective area    : {c.get('effective_ha')} ha "
+                    f"(~{c.get('approx_pixels')} pixels)")
+                if c.get("area_ratio") is not None:
+                    add(f"      polygon/registered: {c.get('area_ratio')}x")
+                add("      (stopped before imagery — no observation record)")
+            else:
+                add(f"      observed          : {c.get('observed_fraction')}")
+                add(f"      largest blind gap : {c.get('largest_blind_gap_days')} days")
         add("")
 
     if summary["n_newly_perennial"]:

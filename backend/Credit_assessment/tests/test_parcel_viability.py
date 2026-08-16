@@ -153,3 +153,53 @@ def test_evidence_states_the_thresholds():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# ── the polygon must win over the registered claim ────────────────────────
+
+def test_polygon_area_rescues_a_parcel_the_registered_area_would_refuse():
+    """
+    REGRESSION. The viability check read the polygon area off the geometry
+    object with getattr(geometry, 'area_ha') — which Shapely does not have — so
+    it always fell back to the REGISTERED area. That is precisely the figure the
+    geometry audit showed cannot be trusted, and it produced a real false
+    rejection: 14322905350 refused at 0.1409 ha / 14 px when its actual polygon
+    is 0.4517 ha / 45 px.
+    """
+    refused = assess_parcel_viability(registered_ha=0.1409, geometry_ha=None)
+    correct = assess_parcel_viability(registered_ha=0.1409, geometry_ha=0.4517)
+    assert refused["outcome"] == NOT_VIABLE
+    assert correct["outcome"] != NOT_VIABLE
+    assert correct["evidence"]["approx_pixels"] == 45
+
+
+def test_polygon_area_can_also_refuse_what_the_registered_area_would_pass():
+    """The precedence holds in both directions — it is not a one-way rescue."""
+    v = assess_parcel_viability(registered_ha=1.5, geometry_ha=0.02)
+    assert v["outcome"] == NOT_VIABLE
+    assert v["evidence"]["effective_ha"] == 0.02
+
+
+def test_geometry_area_helper_matches_a_known_square():
+    """A helper that silently returns None reintroduces the bug above."""
+    import math
+    from shapely.geometry import Polygon
+    from utils.geometry_utils import GeometryUtils
+
+    lat, lon, target_ha = 29.0, 77.0, 0.45
+    side = math.sqrt(target_ha * 10_000)
+    dlat = side / 110_540.0
+    dlon = side / (111_320.0 * math.cos(math.radians(lat)))
+    poly = Polygon([(lon, lat), (lon + dlon, lat),
+                    (lon + dlon, lat + dlat), (lon, lat + dlat), (lon, lat)])
+    assert GeometryUtils.polygon_area_ha(poly) == pytest.approx(target_ha, rel=0.02)
+
+
+def test_geometry_area_helper_accepts_geojson_and_degrades_safely():
+    from utils.geometry_utils import GeometryUtils
+    gj = {"type": "Polygon", "coordinates": [[[77.0, 29.0], [77.001, 29.0],
+                                              [77.001, 29.001], [77.0, 29.001],
+                                              [77.0, 29.0]]]}
+    assert GeometryUtils.polygon_area_ha(gj) > 0
+    assert GeometryUtils.polygon_area_ha(None) is None
+    assert GeometryUtils.polygon_area_ha("not a geometry") is None

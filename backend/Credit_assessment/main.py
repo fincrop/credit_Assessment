@@ -608,7 +608,11 @@ class SatelliteBasedCreditPipeline:
             # of four pixels, where the AOI mean is mostly the neighbouring field.
             viability = assess_parcel_viability(
                 registered_ha=field_area_ha,
-                geometry_ha=(geometry.area_ha if hasattr(geometry, 'area_ha') else None),
+                # Computed here, not read off the geometry object — Shapely has
+                # no .area_ha, so the previous `getattr` always yielded None and
+                # the check silently fell back to the REGISTERED area, which is
+                # the figure the geometry audit showed cannot be trusted.
+                geometry_ha=GeometryUtils.polygon_area_ha(geometry),
                 farmer_id=farmer_id,
             )
             assessment['parcel_viability'] = viability

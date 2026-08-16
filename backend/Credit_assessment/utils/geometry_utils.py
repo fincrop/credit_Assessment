@@ -37,6 +37,46 @@ class GeometryUtils:
     EARTH_RADIUS_KM = 6371.0
     KM_PER_DEGREE_LAT = 111.0
 
+    @staticmethod
+    def polygon_area_ha(geometry: Any) -> Optional[float]:
+        """
+        Area of a polygon in hectares, from a Shapely geometry or GeoJSON dict.
+
+        Needed BEFORE the satellite pull. The collector also derives an area,
+        but only as a side effect of collection — too late for anything that
+        must decide whether collection is worth doing at all.
+
+        That gap caused a real false rejection: the parcel-viability check fell
+        back to the REGISTERED area (0.1409 ha, 14 px -> refused) for a parcel
+        whose actual polygon is 0.4517 ha (45 px, comfortably viable). The
+        registered figure is precisely the one the geometry audit showed cannot
+        be trusted, so falling back to it inverted the intended precedence.
+
+        Uses an equirectangular approximation with a latitude correction —
+        accurate well within a percent at field scale, and avoids a projection
+        dependency on a hot path.
+        """
+        if geometry is None:
+            return None
+        try:
+            geom = geometry
+            if isinstance(geometry, dict):
+                from shapely.geometry import shape
+                geom = shape(geometry)
+            if geom.is_empty:
+                return None
+
+            # Degrees^2 -> m^2 at the geometry's own latitude.
+            lat0 = float(geom.centroid.y)
+            kx = 111_320.0 * float(np.cos(np.radians(lat0)))
+            ky = 110_540.0
+            area_m2 = float(geom.area) * kx * ky
+            area_ha = area_m2 / 10_000.0
+            return area_ha if area_ha > 0 else None
+        except Exception as e:  # never let a measurement helper break a run
+            logger.debug("polygon_area_ha failed: %s", e)
+            return None
+
     @classmethod
     def adaptive_buffer_km(cls, field_area_ha: float) -> float:
         """

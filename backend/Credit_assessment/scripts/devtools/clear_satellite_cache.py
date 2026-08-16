@@ -11,12 +11,23 @@ Run from the package root (backend/Credit_assessment).
 
 import os
 import sys
+from pathlib import Path
 
 # Package root is three levels up from scripts/devtools/
-sys.path.insert(
-    0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-)
+_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ROOT))
+
+# Load .env, as the other devtools do. Without this the script died with
+# "MONGODB_URI is not configured" — and because it was chained with `;` before
+# the next command, the failure scrolled past and the cache was NOT cleared,
+# so a subsequent re-run silently reused the stale satellite series it was
+# supposed to invalidate.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(_ROOT / ".env")
+except Exception:  # pragma: no cover
+    pass
 
 from mongodb_helper import MongoDBHelper  # noqa: E402
 
