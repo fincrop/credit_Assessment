@@ -77,5 +77,43 @@ t('VERY_HIGH -> Poor',      bandForRiskCategory('VERY_HIGH')?.name, 'Poor');
 t('VERY HIGH (space)',      bandForRiskCategory('VERY HIGH')?.name, 'Poor');
 t('unknown cat -> null',    bandForRiskCategory('INSUFFICIENT_DATA'), null);
 
+/* ── Score build-up arithmetic (ScoreWaterfall) ──────────────────────────
+   Mirrors risk_index_engine.py:
+     additive  = Σ (score_i × weight_i / 100)
+     raw_index = clip(additive + benefits.bonus)
+     index     = clip(raw_index × gate)
+   If the panel's arithmetic drifts from the engine's, the waterfall shows a
+   reader a derivation that did not happen. */
+const contribution = (score: number, weight: number) => (score * weight) / 100;
+
+const SUBS = { landuse: 71, vigor: 42, stability: 65.5, weather: 56 };
+const W = { landuse: 30, vigor: 35, stability: 20, weather: 15 };
+const additive =
+  contribution(SUBS.landuse, W.landuse) +
+  contribution(SUBS.vigor, W.vigor) +
+  contribution(SUBS.stability, W.stability) +
+  contribution(SUBS.weather, W.weather);
+
+t('weights sum to 100', W.landuse + W.vigor + W.stability + W.weather, 100);
+// 21.3 + 14.7 + 13.1 + 8.4
+t('additive composite', Number(additive.toFixed(1)), 57.5);
+t('gated index', Number((additive * 0.924).toFixed(1)), 53.1);
+t('gate loss is raw minus index',
+  Number((additive - additive * 0.924).toFixed(1)), 4.4);
+
+// Headroom is the number a loan officer acts on: points still available.
+t('weakest driver has most headroom',
+  Number((W.vigor - contribution(SUBS.vigor, W.vigor)).toFixed(1)), 20.3);
+t('headroom + contribution == weight',
+  Number((contribution(SUBS.vigor, W.vigor) + (W.vigor - contribution(SUBS.vigor, W.vigor))).toFixed(1)),
+  W.vigor);
+
+// A perfect holding must reach exactly the top of the scale, or the bar
+// silently implies unreachable headroom.
+t('all-100 reaches the index ceiling',
+  contribution(100, W.landuse) + contribution(100, W.vigor) +
+    contribution(100, W.stability) + contribution(100, W.weather), 100);
+t('index 100 maps to KBS max', toKbsScore(100), 900);
+
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

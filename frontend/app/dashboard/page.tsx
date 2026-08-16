@@ -11,6 +11,7 @@ import { FarmSelectPanel } from './components/FarmSelectPanel';
 import { PlotBoundaryMap } from './components/PlotBoundaryMap';
 import { AssessmentPrintReport } from './components/AssessmentPrintReport';
 import { RefusalPanel } from './components/RefusalPanel';
+import { ScoreWaterfall } from './components/ScoreWaterfall';
 import { ConfidenceStrip } from './components/ConfidenceBadge';
 import { useRiskView } from '../lib/useRiskView';
 import { terminalStateOf } from '../lib/terminalState';
@@ -771,6 +772,13 @@ function DashboardPageContent() {
                 </div>
               )}
             </div>
+
+            {/* Why this number. Holding level carries no driver captions —
+                the aggregator does not emit them, only the per-plot engine
+                does — so none are passed rather than invented. */}
+            {status === 'SUCCESS' && refusal.state === 'SCORED' && (
+              <ScoreWaterfall view={riskView} scopeLabel="holding" />
+            )}
 
             <div className="grid lg:grid-cols-2 gap-5 items-stretch min-h-[520px]">
               <StreamingFarmList

@@ -1,17 +1,18 @@
 'use client';
 
 import type { RiskView } from '../../lib/useRiskView';
-import {
-  formatScoreOne,
-  formatGateMultiplier,
-  polarityIcon,
-  polarityBgClass,
-  subIndexLabel,
-} from '../../lib/formatRisk';
-import { toKbsScore, kbsBandForScore, KBS_MAX } from '../../lib/kbsScore';
+import { formatScoreOne, polarityIcon, polarityBgClass } from '../../lib/formatRisk';
 import type { FarmAssessment } from '../../types/assessment';
 
-/** Overview tab — KBS metrics + reason codes for a plot or holding. */
+/**
+ * Reason codes for a plot or holding.
+ *
+ * The KBS / raw / gate figures that used to head this card now live in
+ * ScoreWaterfall, where they are shown as the arithmetic that produced them
+ * rather than three disconnected tiles. Keeping a second copy here would mean
+ * two components restating the same numbers — which is how they end up
+ * disagreeing, exactly as the four colour ramps did.
+ */
 export function IndexInsightsCard({
   view,
   scopeLabel = 'Plot',
@@ -20,78 +21,17 @@ export function IndexInsightsCard({
   scopeLabel?: string;
 }) {
   const codes = (view.reasonCodes || []).slice(0, 8);
-  const kbs = toKbsScore(view.score);
-  const band = kbsBandForScore(kbs);
-  const rawKbs = toKbsScore(view.rawIndex);
 
   return (
     <div className="bg-white rounded-xl border border-rule p-5 space-y-5">
       <div>
         <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-1">
-          Index insights
+          Findings
         </h2>
         <p className="text-xs text-stone-500 leading-relaxed">
-          Krishi Bhoomi Score (300–900) for this {scopeLabel.toLowerCase()}. Field-health only —
-          not a credit score or default probability.
+          Structured observations recorded for this {scopeLabel.toLowerCase()} during scoring.
         </p>
       </div>
-
-      <div className="grid sm:grid-cols-3 gap-3">
-        <div className="bg-paper rounded-lg border border-rule p-3.5">
-          <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-1.5">
-            KBS score
-          </p>
-          <p
-            className="font-bold text-stone-900 text-lg font-mono"
-            style={{ color: band?.ink }}
-          >
-            {kbs != null ? `${kbs}` : '—'}
-            <span className="text-xs font-semibold text-stone-500 ml-1">/ {KBS_MAX}</span>
-          </p>
-          {band && (
-            <p className="text-[11px] mt-1 font-medium" style={{ color: band.ink }}>
-              {band.name}
-            </p>
-          )}
-        </div>
-        <div className="bg-paper rounded-lg border border-rule p-3.5">
-          <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-1.5">
-            Raw (mapped)
-          </p>
-          <p className="font-semibold text-stone-900 text-sm font-mono">
-            {rawKbs != null ? rawKbs : formatScoreOne(view.rawIndex)}
-          </p>
-          <p className="text-[10px] text-ink-muted mt-1">
-            Internal {formatScoreOne(view.rawIndex)}
-          </p>
-        </div>
-        <div className="bg-paper rounded-lg border border-rule p-3.5">
-          <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-1.5">
-            Confidence gate
-          </p>
-          <p className="font-semibold text-stone-900 text-sm font-mono">
-            {formatGateMultiplier(view.gate)}
-          </p>
-        </div>
-      </div>
-
-      {view.weakSubIndices.length > 0 && (
-        <div>
-          <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-2">
-            Weak sub-indices
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {view.weakSubIndices.map((k) => (
-              <span
-                key={k}
-                className="text-xs px-2.5 py-1 rounded-full border border-amber-200 bg-amber-50 text-amber-900"
-              >
-                {subIndexLabel(k)}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
 
       <div>
         <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-2">

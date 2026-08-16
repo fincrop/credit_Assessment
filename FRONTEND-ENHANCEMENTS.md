@@ -19,7 +19,7 @@ Ordered so each item is shippable on its own and nothing depends on a later one.
 | 2 | Make the design system real | ✅ Done |
 | 3 | Show what we refused to score | ✅ Done |
 | 4 | Wire up the report data | ✅ Done |
-| 5 | Show *why* the score is that number | Not started |
+| 5 | Show *why* the score is that number | ✅ Done |
 | 6 | Show the field we actually saw | Not started ⭐ most persuasive |
 | 7 | Make the map a remote-sensing map | Not started |
 | 8 | The report | Not started |
@@ -79,7 +79,24 @@ A second sample pins the first-assessment case: `trend` is `null`, not a delta o
 
 `npm run verify` runs smoke + contract + `tsc` in one go.
 
-**⑤ Show *why* the score is that number.** Four disconnected bars and a lonely confidence-gate number become one waterfall: weights × sub-indices, the gate as a visible haircut, arriving at the KBS. §7.3.
+**⑤ Show *why* the score is that number.** ✅ **Done.** Four disconnected bars and an orphaned `0.92` became one panel showing the arithmetic.
+
+The formula was read off `risk_index_engine.py:88-136` rather than assumed:
+
+```
+additive  = Σ (score_i × weight_i / 100)     landuse, vigor, stability, weather
+raw_index = clip(additive + benefits.bonus)
+index     = clip(raw_index × gate)
+```
+
+- **Bars encode contribution, not score.** A sub-index of 42 matters differently at weight 35 than at weight 15. Each track is sized to its *weight* — so the four together span the full 100 points a raw index can reach — and filled to its contribution. **The unfilled part of a track is the recoverable loss**, which is the number a loan officer actually acts on. Four equal-length bars could never show that.
+- **The gate is a step in points, not a multiplier in a box.** And when the footprint was substituted, the engine multiplies the gate by 0.85 *in place* — so it is named inside the gate row rather than drawn as a separate step. Splitting it would misstate the formula.
+- **The clip is named.** `raw_index` is clipped to 0–100, so the parts need not sum to it. When they don't, a "clipped to range" row appears; silently showing parts that add to a different total looks like an arithmetic error.
+- `driver_captions` render under the driver they explain. **The holding level has none** — `farmer_aggregator.py` never calls `build_driver_captions` (zero occurrences), only the per-plot engine does — so none are passed there rather than invented. Worth closing on the backend side.
+- `lib/chart.ts` + `ChartFrame` — the shared primitives. `linePath()` **breaks at nulls rather than bridging them**, which item ⑥ depends on: a line drawn through a fortnight with no observation asserts a measurement never taken. `ChartFrame` makes an accessible name, a **table view**, and a real empty state structural rather than remembered.
+- `IndexInsightsCard` trimmed to findings only. Its KBS / raw / gate tiles now live in the waterfall; a second copy is how two components end up disagreeing, exactly as the colour ramps did.
+
+Nine assertions added to `npm run smoke` pinning the arithmetic against the engine's, including that four all-100 drivers reach exactly 100 — otherwise the tracks imply unreachable headroom. Writing them caught that my first expected value was wrong (57.4 vs the correct 57.5); the worked example in §7.3 had it right.
 
 **⑥ Show the field we actually saw.** The NDVI trajectory with per-point provenance, and an observation calendar of which weeks we could see. The pipeline's most persuasive artefact, currently not on screen at all. §7.3.
 

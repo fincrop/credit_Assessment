@@ -14,6 +14,7 @@ import {
   FarmSlimFallbackCard,
 } from '../../components/IndexInsightsCard';
 import { RefusalPanel } from '../../components/RefusalPanel';
+import { ScoreWaterfall } from '../../components/ScoreWaterfall';
 import { ConfidenceStrip } from '../../components/ConfidenceBadge';
 import { terminalStateOfFarm } from '../../../lib/terminalState';
 import { CropCyclesSection } from '../../components/CropCyclesSection';
@@ -296,6 +297,14 @@ function FarmDetailContent() {
 
         {activeTab === 'overview' && (
           <div className="space-y-4">
+            {scored && (
+              <ScoreWaterfall
+                view={farmView}
+                captions={plotPayload?.risk_assessment?.driver_captions}
+                footprint={plotPayload?.risk_assessment?.footprint}
+                scopeLabel="plot"
+              />
+            )}
             {scored ? (
               <IndexInsightsCard view={farmView} scopeLabel="plot" />
             ) : (
