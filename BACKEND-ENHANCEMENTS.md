@@ -11,7 +11,7 @@
 
 ### 0.1 What shipped
 
-Seven commits, `e8943ef9` → `669a9344`. Tests: **6 → 214**.
+`e8943ef9` → `1454a52f`. Tests: **6 → 300**.
 
 | # | Item | Status | Commit |
 |---|---|---|---|
@@ -19,13 +19,23 @@ Seven commits, `e8943ef9` → `669a9344`. Tests: **6 → 214**.
 | 2 | Refuse to score non-agricultural land | ✅ | `ddf2cd3b` |
 | 3 | Physically meaningful vegetation signal | ✅ | `53ed4a71` |
 | 4 | Perennials, seasons, detection hygiene | ✅ | `e385adb2` |
-| 5 | Use the crop name safely | ⬜ **not started** | — |
+| 5 | Use the crop name safely | ✅ | `23bfbc1d` |
 | 6 | Persist the evidence behind a score | ✅ | `0ce4bf4f` |
-| 7 | Honest explanations | ◐ **half** — overclaiming removed; peer cohort, narrative persistence and driver captions remain | `e8943ef9` |
-| 8 | Report backend | ⬜ **not started** | — |
+| 7 | Honest explanations | ✅ | `a3237563` |
+| 8 | Report backend | ✅ | `a3237563` |
 | + | Score drift harness | ✅ | `023cf693` |
 | + | INSUFFICIENT_DATA outcome | ✅ | `b023f600` |
 | + | Parcel viability gate | ✅ | `669a9344` |
+
+All eight are code-complete and tested. Two carry a caveat that a ✅ hides:
+
+- **Item 4's last repair is unverified against real data.** The
+  continuously-cropped-land fix (`00cfef62`) — the one that stops year-round
+  cropped farms detecting zero cycles — passed unit tests but has never been run
+  against imagery. Every other tick in this table was confirmed by a real run.
+- **Item 7's peer cohort is built but cold.** No zone has reached 20 assessed
+  farmers, so vigour stays an absolute score. It warms with volume; nothing
+  claims peer-relativity in the meantime.
 
 ### 0.2 Three terminal states, deliberately distinct
 
