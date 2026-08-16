@@ -1,0 +1,2450 @@
+[
+  {
+    "farmer_id": "15113763094",
+    "flags": [
+      "area_mismatch",
+      "area_mismatch_severe",
+      "tiny_parcel"
+    ],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 1.875,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.353,
+        "n_vertices": 19,
+        "elongation": 1.4,
+        "area_ratio": 0.188,
+        "approx_pixels": 35,
+        "centroid": [
+          25.101883,
+          82.95474
+        ],
+        "imagery": "https://www.google.com/maps/@25.101882853726284,82.95474021854682,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] UP120879146290",
+        "registered_ha": 1.875,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.353,
+        "n_vertices": 19,
+        "elongation": 1.4,
+        "area_ratio": 0.188,
+        "approx_pixels": 35,
+        "centroid": [
+          25.101883,
+          82.95474
+        ],
+        "imagery": "https://www.google.com/maps/@25.101882853726284,82.95474021854682,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[1] UP120879192737",
+        "registered_ha": 1.325,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0288,
+        "n_vertices": 19,
+        "elongation": 1.2,
+        "area_ratio": 0.022,
+        "approx_pixels": 2,
+        "centroid": [
+          29.04611,
+          77.342495
+        ],
+        "imagery": "https://www.google.com/maps/@29.046110073406936,77.34249468962544,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[2] UP120879113559",
+        "registered_ha": 0.152,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0955,
+        "n_vertices": 22,
+        "elongation": 1.4,
+        "area_ratio": 0.628,
+        "approx_pixels": 9,
+        "centroid": [
+          29.075467,
+          77.368226
+        ],
+        "imagery": "https://www.google.com/maps/@29.075467156005754,77.36822573341225,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[3] UP120879464578",
+        "registered_ha": 0.101,
+        "flags": [
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.087,
+        "n_vertices": 26,
+        "elongation": 2.4,
+        "area_ratio": 0.861,
+        "approx_pixels": 8,
+        "centroid": [
+          29.05619,
+          77.350487
+        ],
+        "imagery": "https://www.google.com/maps/@29.05618999965052,77.35048744506595,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[4] UP120879945929",
+        "registered_ha": 0.228,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0444,
+        "n_vertices": 19,
+        "elongation": 3.0,
+        "area_ratio": 0.195,
+        "approx_pixels": 4,
+        "centroid": [
+          29.02299,
+          77.450695
+        ],
+        "imagery": "https://www.google.com/maps/@29.022989898641413,77.45069546984675,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[5] UP120879113058",
+        "registered_ha": 0.72,
+        "flags": [],
+        "geometry_area_ha": 0.7642,
+        "n_vertices": 21,
+        "elongation": 1.2,
+        "area_ratio": 1.061,
+        "approx_pixels": 76,
+        "centroid": [
+          29.058071,
+          77.36255
+        ],
+        "imagery": "https://www.google.com/maps/@29.058071482321402,77.36254972518745,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": false
+  },
+  {
+    "farmer_id": "10922830546",
+    "flags": [
+      "area_mismatch",
+      "area_mismatch_severe",
+      "tiny_parcel"
+    ],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 0.17,
+        "flags": [
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1476,
+        "n_vertices": 12,
+        "elongation": 1.0,
+        "area_ratio": 0.868,
+        "approx_pixels": 14,
+        "centroid": [
+          29.09453,
+          77.34297
+        ],
+        "imagery": "https://www.google.com/maps/@29.094530085481576,77.3429699942732,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] UP212551446558",
+        "registered_ha": 0.052,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1708,
+        "n_vertices": 14,
+        "elongation": 1.8,
+        "area_ratio": 3.285,
+        "approx_pixels": 17,
+        "centroid": [
+          29.111993,
+          77.229306
+        ],
+        "imagery": "https://www.google.com/maps/@29.111993427898597,77.22930573194512,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[1] UP212551169569",
+        "registered_ha": 0.102,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1971,
+        "n_vertices": 8,
+        "elongation": 1.1,
+        "area_ratio": 1.932,
+        "approx_pixels": 19,
+        "centroid": [
+          29.113735,
+          77.22228
+        ],
+        "imagery": "https://www.google.com/maps/@29.113735123159277,77.22227983819269,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[2] UP212551215207",
+        "registered_ha": 0.17,
+        "flags": [
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1476,
+        "n_vertices": 12,
+        "elongation": 1.0,
+        "area_ratio": 0.868,
+        "approx_pixels": 14,
+        "centroid": [
+          29.09453,
+          77.34297
+        ],
+        "imagery": "https://www.google.com/maps/@29.094530085481576,77.3429699942732,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": false
+  },
+  {
+    "farmer_id": "6a6ddc269ab13759b3379132",
+    "flags": [],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 1.656,
+        "flags": [],
+        "geometry_area_ha": 1.6482,
+        "n_vertices": 5,
+        "elongation": 1.1,
+        "area_ratio": 0.995,
+        "approx_pixels": 164,
+        "centroid": [
+          18.019976,
+          79.744094
+        ],
+        "imagery": "https://www.google.com/maps/@18.01997646382432,79.74409407180352,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] cc21a22b-257c-41f1-a83c-ed9fea960143",
+        "registered_ha": 1.656,
+        "flags": [],
+        "geometry_area_ha": 1.6482,
+        "n_vertices": 5,
+        "elongation": 1.1,
+        "area_ratio": 0.995,
+        "approx_pixels": 164,
+        "centroid": [
+          18.019976,
+          79.744094
+        ],
+        "imagery": "https://www.google.com/maps/@18.01997646382432,79.74409407180352,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[1] 94b7fd69-855f-4195-9dae-59b60dea1fa7",
+        "registered_ha": 1.592,
+        "flags": [],
+        "geometry_area_ha": 1.5842,
+        "n_vertices": 5,
+        "elongation": 1.1,
+        "area_ratio": 0.995,
+        "approx_pixels": 158,
+        "centroid": [
+          18.018404,
+          79.747834
+        ],
+        "imagery": "https://www.google.com/maps/@18.01840385774476,79.74783403396975,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": true
+  },
+  {
+    "farmer_id": "11860611359",
+    "flags": [
+      "area_mismatch",
+      "area_mismatch_severe"
+    ],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 0.783,
+        "flags": [
+          "area_mismatch"
+        ],
+        "geometry_area_ha": 0.4251,
+        "n_vertices": 15,
+        "elongation": 1.6,
+        "area_ratio": 0.543,
+        "approx_pixels": 42,
+        "centroid": [
+          25.159202,
+          82.994972
+        ],
+        "imagery": "https://www.google.com/maps/@25.159202129065495,82.9949724423404,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] UP124993571369",
+        "registered_ha": 0.783,
+        "flags": [
+          "area_mismatch"
+        ],
+        "geometry_area_ha": 0.4251,
+        "n_vertices": 15,
+        "elongation": 1.6,
+        "area_ratio": 0.543,
+        "approx_pixels": 42,
+        "centroid": [
+          25.159202,
+          82.994972
+        ],
+        "imagery": "https://www.google.com/maps/@25.159202129065495,82.9949724423404,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[1] UP124993282121",
+        "registered_ha": 0.057,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.6348,
+        "n_vertices": 13,
+        "elongation": 1.4,
+        "area_ratio": 11.136,
+        "approx_pixels": 63,
+        "centroid": [
+          29.064444,
+          77.352458
+        ],
+        "imagery": "https://www.google.com/maps/@29.06444382517481,77.3524580779189,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": false
+  },
+  {
+    "farmer_id": "15152280453",
+    "flags": [
+      "area_mismatch_severe",
+      "tiny_parcel"
+    ],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 0.1131,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0403,
+        "n_vertices": 28,
+        "elongation": 3.3,
+        "area_ratio": 0.357,
+        "approx_pixels": 4,
+        "centroid": [
+          25.161186,
+          82.998622
+        ],
+        "imagery": "https://www.google.com/maps/@25.16118628797734,82.99862228894644,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] UP120899770752",
+        "registered_ha": 0.1131,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0403,
+        "n_vertices": 28,
+        "elongation": 3.3,
+        "area_ratio": 0.357,
+        "approx_pixels": 4,
+        "centroid": [
+          25.161186,
+          82.998622
+        ],
+        "imagery": "https://www.google.com/maps/@25.16118628797734,82.99862228894644,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[1] UP120899609804",
+        "registered_ha": 0.006,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0338,
+        "n_vertices": 18,
+        "elongation": 2.9,
+        "area_ratio": 5.626,
+        "approx_pixels": 3,
+        "centroid": [
+          25.168884,
+          82.99333
+        ],
+        "imagery": "https://www.google.com/maps/@25.168883957517654,82.99332953723814,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": false
+  },
+  {
+    "farmer_id": "6a6f831d45dea1a086239aa6",
+    "flags": [],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 0.266,
+        "flags": [],
+        "geometry_area_ha": 0.2645,
+        "n_vertices": 7,
+        "elongation": 1.3,
+        "area_ratio": 0.994,
+        "approx_pixels": 26,
+        "centroid": [
+          16.155955,
+          74.166293
+        ],
+        "imagery": "https://www.google.com/maps/@16.15595520979717,74.16629327532887,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] 448ed595-64d1-42e9-9e05-2fadf578b268",
+        "registered_ha": 0.266,
+        "flags": [],
+        "geometry_area_ha": 0.2645,
+        "n_vertices": 7,
+        "elongation": 1.3,
+        "area_ratio": 0.994,
+        "approx_pixels": 26,
+        "centroid": [
+          16.155955,
+          74.166293
+        ],
+        "imagery": "https://www.google.com/maps/@16.15595520979717,74.16629327532887,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": true
+  },
+  {
+    "farmer_id": "10049044129",
+    "flags": [
+      "area_mismatch_severe",
+      "tiny_parcel"
+    ],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 0.405,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0245,
+        "n_vertices": 12,
+        "elongation": 1.2,
+        "area_ratio": 0.06,
+        "approx_pixels": 2,
+        "centroid": [
+          29.085448,
+          77.38934
+        ],
+        "imagery": "https://www.google.com/maps/@29.085447830534093,77.38934014624691,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] UP119281181421",
+        "registered_ha": 0.061,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.2001,
+        "n_vertices": 20,
+        "elongation": 1.2,
+        "area_ratio": 3.28,
+        "approx_pixels": 20,
+        "centroid": [
+          29.977363,
+          77.339689
+        ],
+        "imagery": "https://www.google.com/maps/@29.977363199442447,77.33968854332277,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[1] UP119281260138",
+        "registered_ha": 0.25,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0448,
+        "n_vertices": 6,
+        "elongation": 1.1,
+        "area_ratio": 0.179,
+        "approx_pixels": 4,
+        "centroid": [
+          29.087984,
+          77.381368
+        ],
+        "imagery": "https://www.google.com/maps/@29.087983839496957,77.3813679507681,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[2] UP119281828208",
+        "registered_ha": 0.405,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0245,
+        "n_vertices": 12,
+        "elongation": 1.2,
+        "area_ratio": 0.06,
+        "approx_pixels": 2,
+        "centroid": [
+          29.085448,
+          77.38934
+        ],
+        "imagery": "https://www.google.com/maps/@29.085447830534093,77.38934014624691,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[3] UP119281261627",
+        "registered_ha": 0.298,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0603,
+        "n_vertices": 25,
+        "elongation": 1.4,
+        "area_ratio": 0.202,
+        "approx_pixels": 6,
+        "centroid": [
+          29.082908,
+          77.393553
+        ],
+        "imagery": "https://www.google.com/maps/@29.08290751456505,77.39355334918662,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": false
+  },
+  {
+    "farmer_id": "10429859518",
+    "flags": [
+      "area_mismatch",
+      "area_mismatch_severe",
+      "tiny_parcel"
+    ],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 0.35,
+        "flags": [],
+        "geometry_area_ha": 0.2933,
+        "n_vertices": 30,
+        "elongation": 1.1,
+        "area_ratio": 0.838,
+        "approx_pixels": 29,
+        "centroid": [
+          25.166266,
+          82.998857
+        ],
+        "imagery": "https://www.google.com/maps/@25.16626596218813,82.99885682086752,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] UP212848221502",
+        "registered_ha": 0.01,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1092,
+        "n_vertices": 13,
+        "elongation": 1.2,
+        "area_ratio": 10.924,
+        "approx_pixels": 10,
+        "centroid": [
+          25.169165,
+          82.998739
+        ],
+        "imagery": "https://www.google.com/maps/@25.16916486051554,82.99873937544106,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[1] UP212848402113",
+        "registered_ha": 0.09,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.9973,
+        "n_vertices": 89,
+        "elongation": 1.5,
+        "area_ratio": 22.193,
+        "approx_pixels": 199,
+        "centroid": [
+          29.071175,
+          77.361568
+        ],
+        "imagery": "https://www.google.com/maps/@29.071174681972767,77.36156822073636,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[2] UP212848261028",
+        "registered_ha": 0.07,
+        "flags": [
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0601,
+        "n_vertices": 6,
+        "elongation": 1.5,
+        "area_ratio": 0.859,
+        "approx_pixels": 6,
+        "centroid": [
+          29.149707,
+          77.293376
+        ],
+        "imagery": "https://www.google.com/maps/@29.14970659162249,77.293375716955,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[3] UP212848198568",
+        "registered_ha": 0.12,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1527,
+        "n_vertices": 20,
+        "elongation": 1.1,
+        "area_ratio": 1.273,
+        "approx_pixels": 15,
+        "centroid": [
+          25.167573,
+          82.994542
+        ],
+        "imagery": "https://www.google.com/maps/@25.16757323763896,82.99454156501358,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[4] UP212848121964",
+        "registered_ha": 0.13,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0961,
+        "n_vertices": 16,
+        "elongation": 1.2,
+        "area_ratio": 0.739,
+        "approx_pixels": 9,
+        "centroid": [
+          25.165311,
+          82.990714
+        ],
+        "imagery": "https://www.google.com/maps/@25.16531095690765,82.99071362040621,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[5] UP212848295882",
+        "registered_ha": 0.13,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.2715,
+        "n_vertices": 85,
+        "elongation": 6.3,
+        "area_ratio": 2.088,
+        "approx_pixels": 27,
+        "centroid": [
+          25.165587,
+          82.993877
+        ],
+        "imagery": "https://www.google.com/maps/@25.16558719434015,82.9938772588603,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[6] UP212848205859",
+        "registered_ha": 0.15,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0444,
+        "n_vertices": 11,
+        "elongation": 1.2,
+        "area_ratio": 0.296,
+        "approx_pixels": 4,
+        "centroid": [
+          25.159714,
+          82.989642
+        ],
+        "imagery": "https://www.google.com/maps/@25.15971431722069,82.98964164712694,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[7] UP212848114149",
+        "registered_ha": 0.29,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1246,
+        "n_vertices": 14,
+        "elongation": 2.0,
+        "area_ratio": 0.43,
+        "approx_pixels": 12,
+        "centroid": [
+          25.166923,
+          82.999705
+        ],
+        "imagery": "https://www.google.com/maps/@25.166922918349314,82.9997054464527,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[8] UP212848251599",
+        "registered_ha": 0.35,
+        "flags": [],
+        "geometry_area_ha": 0.2933,
+        "n_vertices": 30,
+        "elongation": 1.1,
+        "area_ratio": 0.838,
+        "approx_pixels": 29,
+        "centroid": [
+          25.166266,
+          82.998857
+        ],
+        "imagery": "https://www.google.com/maps/@25.16626596218813,82.99885682086752,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[9] UP212848281528",
+        "registered_ha": 0.006,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1263,
+        "n_vertices": 108,
+        "elongation": 1.5,
+        "area_ratio": 21.045,
+        "approx_pixels": 12,
+        "centroid": [
+          25.157175,
+          82.990799
+        ],
+        "imagery": "https://www.google.com/maps/@25.15717519790025,82.99079935589658,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[10] UP212848281544",
+        "registered_ha": 0.07,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0355,
+        "n_vertices": 7,
+        "elongation": 2.0,
+        "area_ratio": 0.507,
+        "approx_pixels": 3,
+        "centroid": [
+          29.14536,
+          77.295629
+        ],
+        "imagery": "https://www.google.com/maps/@29.145360211585494,77.2956287484309,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[11] UP212848106642",
+        "registered_ha": 0.03,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1113,
+        "n_vertices": 15,
+        "elongation": 1.4,
+        "area_ratio": 3.712,
+        "approx_pixels": 11,
+        "centroid": [
+          25.169249,
+          82.99961
+        ],
+        "imagery": "https://www.google.com/maps/@25.169249157616818,82.99961048367894,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[12] UP212848270115",
+        "registered_ha": 0.05,
+        "flags": [
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0482,
+        "n_vertices": 35,
+        "elongation": 3.2,
+        "area_ratio": 0.964,
+        "approx_pixels": 4,
+        "centroid": [
+          25.167926,
+          82.996426
+        ],
+        "imagery": "https://www.google.com/maps/@25.16792568152329,82.99642555025578,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[13] UP212848342640",
+        "registered_ha": 0.06,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.9585,
+        "n_vertices": 22,
+        "elongation": 1.1,
+        "area_ratio": 15.976,
+        "approx_pixels": 95,
+        "centroid": [
+          25.16329,
+          82.995494
+        ],
+        "imagery": "https://www.google.com/maps/@25.163289974427993,82.99549414620789,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[14] UP212848231697",
+        "registered_ha": 0.08,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0338,
+        "n_vertices": 13,
+        "elongation": 1.5,
+        "area_ratio": 0.422,
+        "approx_pixels": 3,
+        "centroid": [
+          25.16505,
+          82.99373
+        ],
+        "imagery": "https://www.google.com/maps/@25.165050353825833,82.99372957706511,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[15] UP212848333111",
+        "registered_ha": 0.08,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.4016,
+        "n_vertices": 23,
+        "elongation": 1.0,
+        "area_ratio": 5.02,
+        "approx_pixels": 40,
+        "centroid": [
+          25.161098,
+          82.991872
+        ],
+        "imagery": "https://www.google.com/maps/@25.161097884766583,82.99187238677577,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[16] UP212848236673",
+        "registered_ha": 0.08,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0411,
+        "n_vertices": 7,
+        "elongation": 1.1,
+        "area_ratio": 0.513,
+        "approx_pixels": 4,
+        "centroid": [
+          29.14672,
+          77.295946
+        ],
+        "imagery": "https://www.google.com/maps/@29.146719547724384,77.29594643680643,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[17] UP212848134197",
+        "registered_ha": 0.16,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0522,
+        "n_vertices": 50,
+        "elongation": 2.5,
+        "area_ratio": 0.326,
+        "approx_pixels": 5,
+        "centroid": [
+          25.16237,
+          82.995686
+        ],
+        "imagery": "https://www.google.com/maps/@25.16236993860938,82.99568592001113,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[18] UP212848190092",
+        "registered_ha": 0.17,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0549,
+        "n_vertices": 15,
+        "elongation": 1.2,
+        "area_ratio": 0.323,
+        "approx_pixels": 5,
+        "centroid": [
+          25.154118,
+          82.991893
+        ],
+        "imagery": "https://www.google.com/maps/@25.15411772451488,82.99189323152991,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[19] UP212848993626",
+        "registered_ha": 0.23,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1241,
+        "n_vertices": 18,
+        "elongation": 1.4,
+        "area_ratio": 0.54,
+        "approx_pixels": 12,
+        "centroid": [
+          25.152721,
+          82.991141
+        ],
+        "imagery": "https://www.google.com/maps/@25.152720605577773,82.99114079775316,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[20] UP212848209950",
+        "registered_ha": 0.25,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0581,
+        "n_vertices": 18,
+        "elongation": 1.5,
+        "area_ratio": 0.233,
+        "approx_pixels": 5,
+        "centroid": [
+          25.149218,
+          82.993152
+        ],
+        "imagery": "https://www.google.com/maps/@25.14921763416454,82.99315220530055,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[21] UP212848450371",
+        "registered_ha": 0.06,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1295,
+        "n_vertices": 35,
+        "elongation": 1.4,
+        "area_ratio": 2.159,
+        "approx_pixels": 12,
+        "centroid": [
+          25.158639,
+          82.992282
+        ],
+        "imagery": "https://www.google.com/maps/@25.1586385826073,82.99228183771405,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[22] UP212848906881",
+        "registered_ha": 0.06,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.3059,
+        "n_vertices": 117,
+        "elongation": 1.2,
+        "area_ratio": 5.099,
+        "approx_pixels": 30,
+        "centroid": [
+          25.156857,
+          82.991284
+        ],
+        "imagery": "https://www.google.com/maps/@25.156856632439343,82.99128442645632,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[23] UP212848345749",
+        "registered_ha": 0.09,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1939,
+        "n_vertices": 16,
+        "elongation": 1.1,
+        "area_ratio": 2.154,
+        "approx_pixels": 19,
+        "centroid": [
+          29.147487,
+          77.295865
+        ],
+        "imagery": "https://www.google.com/maps/@29.14748675832384,77.29586475290493,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[24] UP212848103478",
+        "registered_ha": 0.15,
+        "flags": [
+          "area_mismatch"
+        ],
+        "geometry_area_ha": 0.2373,
+        "n_vertices": 13,
+        "elongation": 1.1,
+        "area_ratio": 1.582,
+        "approx_pixels": 23,
+        "centroid": [
+          29.108945,
+          77.344693
+        ],
+        "imagery": "https://www.google.com/maps/@29.10894510092533,77.3446932638792,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[25] UP212848152816",
+        "registered_ha": 0.15,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.0733,
+        "n_vertices": 46,
+        "elongation": 1.4,
+        "area_ratio": 7.155,
+        "approx_pixels": 107,
+        "centroid": [
+          29.097649,
+          77.19519
+        ],
+        "imagery": "https://www.google.com/maps/@29.097648775093578,77.19519033378708,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[26] UP212848216129",
+        "registered_ha": 0.28,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.097,
+        "n_vertices": 16,
+        "elongation": 1.1,
+        "area_ratio": 0.347,
+        "approx_pixels": 9,
+        "centroid": [
+          29.103753,
+          77.337326
+        ],
+        "imagery": "https://www.google.com/maps/@29.103753304154814,77.33732614264795,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[27] UP212848121108",
+        "registered_ha": 0.006,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.7145,
+        "n_vertices": 11,
+        "elongation": 1.1,
+        "area_ratio": 119.084,
+        "approx_pixels": 71,
+        "centroid": [
+          29.090273,
+          77.33761
+        ],
+        "imagery": "https://www.google.com/maps/@29.090273413795057,77.33760998117859,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[28] UP212848246628",
+        "registered_ha": 0.032,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.076,
+        "n_vertices": 11,
+        "elongation": 2.1,
+        "area_ratio": 2.375,
+        "approx_pixels": 7,
+        "centroid": [
+          29.116618,
+          77.227924
+        ],
+        "imagery": "https://www.google.com/maps/@29.11661808265487,77.22792425267882,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[29] UP212848227485",
+        "registered_ha": 0.05,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0757,
+        "n_vertices": 11,
+        "elongation": 2.1,
+        "area_ratio": 1.514,
+        "approx_pixels": 7,
+        "centroid": [
+          29.103898,
+          77.218731
+        ],
+        "imagery": "https://www.google.com/maps/@29.10389818050777,77.21873116425151,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[30] UP212848141834",
+        "registered_ha": 0.07,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 5.1733,
+        "n_vertices": 24,
+        "elongation": 1.0,
+        "area_ratio": 73.905,
+        "approx_pixels": 517,
+        "centroid": [
+          29.0986,
+          77.348754
+        ],
+        "imagery": "https://www.google.com/maps/@29.098599500175187,77.34875403074687,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[31] UP212848296564",
+        "registered_ha": 0.07,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 3.5955,
+        "n_vertices": 25,
+        "elongation": 1.2,
+        "area_ratio": 51.365,
+        "approx_pixels": 359,
+        "centroid": [
+          29.102989,
+          77.218316
+        ],
+        "imagery": "https://www.google.com/maps/@29.102989041236338,77.21831611584102,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[32] UP212848993281",
+        "registered_ha": 0.07,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0918,
+        "n_vertices": 10,
+        "elongation": 1.0,
+        "area_ratio": 1.312,
+        "approx_pixels": 9,
+        "centroid": [
+          29.054729,
+          77.339787
+        ],
+        "imagery": "https://www.google.com/maps/@29.05472915700119,77.33978666237412,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[33] UP212848313566",
+        "registered_ha": 0.09,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 4.1565,
+        "n_vertices": 31,
+        "elongation": 1.0,
+        "area_ratio": 46.183,
+        "approx_pixels": 415,
+        "centroid": [
+          29.10165,
+          77.348055
+        ],
+        "imagery": "https://www.google.com/maps/@29.1016495215962,77.34805492296327,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[34] UP212848127182",
+        "registered_ha": 0.1,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.6913,
+        "n_vertices": 24,
+        "elongation": 1.1,
+        "area_ratio": 16.913,
+        "approx_pixels": 169,
+        "centroid": [
+          29.114921,
+          77.216861
+        ],
+        "imagery": "https://www.google.com/maps/@29.114920731977193,77.21686070280126,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[35] UP212848267979",
+        "registered_ha": 0.11,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.055,
+        "n_vertices": 17,
+        "elongation": 1.1,
+        "area_ratio": 9.591,
+        "approx_pixels": 105,
+        "centroid": [
+          29.105494,
+          77.345678
+        ],
+        "imagery": "https://www.google.com/maps/@29.105494234260124,77.34567838047067,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[36] UP212848321172",
+        "registered_ha": 0.11,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.535,
+        "n_vertices": 14,
+        "elongation": 1.1,
+        "area_ratio": 13.954,
+        "approx_pixels": 153,
+        "centroid": [
+          29.092045,
+          77.339425
+        ],
+        "imagery": "https://www.google.com/maps/@29.092045046954865,77.3394247684676,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[37] UP212848578530",
+        "registered_ha": 0.15,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.091,
+        "n_vertices": 9,
+        "elongation": 1.0,
+        "area_ratio": 0.607,
+        "approx_pixels": 9,
+        "centroid": [
+          29.114831,
+          77.229299
+        ],
+        "imagery": "https://www.google.com/maps/@29.114831340402095,77.22929854907164,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[38] UP212848203299",
+        "registered_ha": 0.18,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.0027,
+        "n_vertices": 158,
+        "elongation": 8.0,
+        "area_ratio": 5.57,
+        "approx_pixels": 100,
+        "centroid": [
+          29.107675,
+          77.222404
+        ],
+        "imagery": "https://www.google.com/maps/@29.10767482658702,77.22240355660888,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[39] UP212848297622",
+        "registered_ha": 0.21,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.045,
+        "n_vertices": 12,
+        "elongation": 1.1,
+        "area_ratio": 0.214,
+        "approx_pixels": 4,
+        "centroid": [
+          29.112766,
+          77.337498
+        ],
+        "imagery": "https://www.google.com/maps/@29.112765678572185,77.33749769097305,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[40] UP212848210261",
+        "registered_ha": 0.05,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.146,
+        "n_vertices": 13,
+        "elongation": 1.1,
+        "area_ratio": 2.921,
+        "approx_pixels": 14,
+        "centroid": [
+          29.113079,
+          77.228629
+        ],
+        "imagery": "https://www.google.com/maps/@29.113078857253353,77.22862926518603,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[41] UP212848326182",
+        "registered_ha": 0.05,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.5575,
+        "n_vertices": 28,
+        "elongation": 1.5,
+        "area_ratio": 31.149,
+        "approx_pixels": 155,
+        "centroid": [
+          29.108279,
+          77.209512
+        ],
+        "imagery": "https://www.google.com/maps/@29.108278782473715,77.20951228807029,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[42] UP212848701656",
+        "registered_ha": 0.05,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.4529,
+        "n_vertices": 84,
+        "elongation": 1.2,
+        "area_ratio": 29.057,
+        "approx_pixels": 145,
+        "centroid": [
+          29.103657,
+          77.337794
+        ],
+        "imagery": "https://www.google.com/maps/@29.103656624131727,77.33779392514109,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[43] UP212848458706",
+        "registered_ha": 0.04,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0275,
+        "n_vertices": 20,
+        "elongation": 2.0,
+        "area_ratio": 0.687,
+        "approx_pixels": 2,
+        "centroid": [
+          29.106459,
+          77.204721
+        ],
+        "imagery": "https://www.google.com/maps/@29.106458893289776,77.20472054922159,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[44] UP212848310293",
+        "registered_ha": 0.02,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0904,
+        "n_vertices": 57,
+        "elongation": 1.4,
+        "area_ratio": 4.518,
+        "approx_pixels": 9,
+        "centroid": [
+          29.107682,
+          77.34802
+        ],
+        "imagery": "https://www.google.com/maps/@29.107682315481885,77.3480203306197,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[45] UP212848256039",
+        "registered_ha": 0.11,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1708,
+        "n_vertices": 10,
+        "elongation": 1.1,
+        "area_ratio": 1.553,
+        "approx_pixels": 17,
+        "centroid": [
+          29.107893,
+          77.213594
+        ],
+        "imagery": "https://www.google.com/maps/@29.10789314298638,77.21359399783623,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[46] UP212848132773",
+        "registered_ha": 0.12,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.3609,
+        "n_vertices": 27,
+        "elongation": 1.0,
+        "area_ratio": 11.341,
+        "approx_pixels": 136,
+        "centroid": [
+          29.113485,
+          77.343054
+        ],
+        "imagery": "https://www.google.com/maps/@29.113484521005596,77.34305438801869,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[47] UP212848193504",
+        "registered_ha": 0.12,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0393,
+        "n_vertices": 15,
+        "elongation": 1.3,
+        "area_ratio": 0.327,
+        "approx_pixels": 3,
+        "centroid": [
+          29.117492,
+          77.227737
+        ],
+        "imagery": "https://www.google.com/maps/@29.11749174330513,77.22773736024133,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[48] UP212848280401",
+        "registered_ha": 0.12,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 5.9289,
+        "n_vertices": 29,
+        "elongation": 1.1,
+        "area_ratio": 49.407,
+        "approx_pixels": 592,
+        "centroid": [
+          29.099896,
+          77.346795
+        ],
+        "imagery": "https://www.google.com/maps/@29.09989649162552,77.3467949277763,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[49] UP212848315464",
+        "registered_ha": 0.13,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0692,
+        "n_vertices": 28,
+        "elongation": 2.0,
+        "area_ratio": 0.532,
+        "approx_pixels": 6,
+        "centroid": [
+          29.107208,
+          77.196108
+        ],
+        "imagery": "https://www.google.com/maps/@29.10720795739152,77.19610778844769,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[50] UP212848231446",
+        "registered_ha": 0.17,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1309,
+        "n_vertices": 11,
+        "elongation": 1.1,
+        "area_ratio": 0.77,
+        "approx_pixels": 13,
+        "centroid": [
+          29.104666,
+          77.337687
+        ],
+        "imagery": "https://www.google.com/maps/@29.104665743929264,77.33768705209,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[51] UP212848530576",
+        "registered_ha": 0.17,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0828,
+        "n_vertices": 8,
+        "elongation": 1.4,
+        "area_ratio": 0.487,
+        "approx_pixels": 8,
+        "centroid": [
+          29.113737,
+          77.222946
+        ],
+        "imagery": "https://www.google.com/maps/@29.113737457148964,77.22294635533154,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[52] UP212848310255",
+        "registered_ha": 0.22,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.8853,
+        "n_vertices": 20,
+        "elongation": 1.0,
+        "area_ratio": 8.57,
+        "approx_pixels": 188,
+        "centroid": [
+          29.110647,
+          77.341671
+        ],
+        "imagery": "https://www.google.com/maps/@29.11064695070711,77.34167125296278,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[53] UP212848182777",
+        "registered_ha": 0.022,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0468,
+        "n_vertices": 18,
+        "elongation": 1.1,
+        "area_ratio": 2.127,
+        "approx_pixels": 4,
+        "centroid": [
+          29.10982,
+          77.217308
+        ],
+        "imagery": "https://www.google.com/maps/@29.10981950255099,77.21730750586866,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[54] UP212848157691",
+        "registered_ha": 0.04,
+        "flags": [
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0387,
+        "n_vertices": 16,
+        "elongation": 1.8,
+        "area_ratio": 0.968,
+        "approx_pixels": 3,
+        "centroid": [
+          29.089969,
+          77.338881
+        ],
+        "imagery": "https://www.google.com/maps/@29.089969098532602,77.33888115656796,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[55] UP212848335416",
+        "registered_ha": 0.08,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.0834,
+        "n_vertices": 14,
+        "elongation": 1.1,
+        "area_ratio": 13.542,
+        "approx_pixels": 108,
+        "centroid": [
+          29.087794,
+          77.342929
+        ],
+        "imagery": "https://www.google.com/maps/@29.087794199567952,77.34292852147753,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[56] UP212848344306",
+        "registered_ha": 0.08,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.6735,
+        "n_vertices": 19,
+        "elongation": 1.3,
+        "area_ratio": 20.918,
+        "approx_pixels": 167,
+        "centroid": [
+          29.107287,
+          77.220371
+        ],
+        "imagery": "https://www.google.com/maps/@29.10728739440332,77.22037109304644,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[57] UP212848175795",
+        "registered_ha": 0.14,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.3669,
+        "n_vertices": 17,
+        "elongation": 1.9,
+        "area_ratio": 2.621,
+        "approx_pixels": 36,
+        "centroid": [
+          29.105129,
+          77.224539
+        ],
+        "imagery": "https://www.google.com/maps/@29.105128990861758,77.22453919916694,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[58] UP212848232824",
+        "registered_ha": 0.14,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 2.4567,
+        "n_vertices": 33,
+        "elongation": 1.2,
+        "area_ratio": 17.548,
+        "approx_pixels": 245,
+        "centroid": [
+          29.110769,
+          77.347129
+        ],
+        "imagery": "https://www.google.com/maps/@29.110768927678794,77.34712909951911,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[59] UP212848314384",
+        "registered_ha": 0.14,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0789,
+        "n_vertices": 20,
+        "elongation": 2.1,
+        "area_ratio": 0.564,
+        "approx_pixels": 7,
+        "centroid": [
+          29.111524,
+          77.229175
+        ],
+        "imagery": "https://www.google.com/maps/@29.11152416405036,77.22917503749979,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[60] UP212848268289",
+        "registered_ha": 0.16,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 2.6147,
+        "n_vertices": 24,
+        "elongation": 1.1,
+        "area_ratio": 16.342,
+        "approx_pixels": 261,
+        "centroid": [
+          29.094482,
+          77.342208
+        ],
+        "imagery": "https://www.google.com/maps/@29.094481930574318,77.34220801547197,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[61] UP212848216397",
+        "registered_ha": 0.11,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.3367,
+        "n_vertices": 16,
+        "elongation": 1.1,
+        "area_ratio": 3.061,
+        "approx_pixels": 33,
+        "centroid": [
+          28.995892,
+          77.241817
+        ],
+        "imagery": "https://www.google.com/maps/@28.995891637275164,77.24181694088333,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[62] UP212848152227",
+        "registered_ha": 0.17,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.0647,
+        "n_vertices": 32,
+        "elongation": 1.3,
+        "area_ratio": 6.263,
+        "approx_pixels": 106,
+        "centroid": [
+          29.108556,
+          77.21546
+        ],
+        "imagery": "https://www.google.com/maps/@29.10855559007706,77.21546039564286,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[63] UP212848296913",
+        "registered_ha": 0.19,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0398,
+        "n_vertices": 12,
+        "elongation": 1.4,
+        "area_ratio": 0.21,
+        "approx_pixels": 3,
+        "centroid": [
+          29.098826,
+          77.343419
+        ],
+        "imagery": "https://www.google.com/maps/@29.098825659761317,77.34341891030782,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[64] UP212848174555",
+        "registered_ha": 0.21,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0139,
+        "n_vertices": 7,
+        "elongation": 1.1,
+        "area_ratio": 0.066,
+        "approx_pixels": 1,
+        "centroid": [
+          29.048603,
+          77.346008
+        ],
+        "imagery": "https://www.google.com/maps/@29.048603071876563,77.34600839204425,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[65] UP212848844274",
+        "registered_ha": 0.06,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.5877,
+        "n_vertices": 23,
+        "elongation": 1.3,
+        "area_ratio": 9.794,
+        "approx_pixels": 58,
+        "centroid": [
+          29.113717,
+          77.235592
+        ],
+        "imagery": "https://www.google.com/maps/@29.11371659439776,77.23559216126687,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[66] UP212848571250",
+        "registered_ha": 0.07,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.5866,
+        "n_vertices": 54,
+        "elongation": 1.0,
+        "area_ratio": 22.666,
+        "approx_pixels": 158,
+        "centroid": [
+          28.998039,
+          77.232472
+        ],
+        "imagery": "https://www.google.com/maps/@28.998038737457367,77.23247204814568,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[67] UP212848196412",
+        "registered_ha": 0.08,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 3.0456,
+        "n_vertices": 45,
+        "elongation": 1.1,
+        "area_ratio": 38.07,
+        "approx_pixels": 304,
+        "centroid": [
+          29.00098,
+          77.234987
+        ],
+        "imagery": "https://www.google.com/maps/@29.000980364142933,77.23498692378817,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[68] UP212848288219",
+        "registered_ha": 0.07,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 9.3504,
+        "n_vertices": 111,
+        "elongation": 1.1,
+        "area_ratio": 133.577,
+        "approx_pixels": 935,
+        "centroid": [
+          29.003339,
+          77.241887
+        ],
+        "imagery": "https://www.google.com/maps/@29.003339053804,77.24188650792745,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[69] UP212848941161",
+        "registered_ha": 0.09,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.6326,
+        "n_vertices": 23,
+        "elongation": 1.2,
+        "area_ratio": 7.029,
+        "approx_pixels": 63,
+        "centroid": [
+          29.062941,
+          77.359807
+        ],
+        "imagery": "https://www.google.com/maps/@29.062941424782668,77.35980690210633,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[70] UP212848295600",
+        "registered_ha": 0.1,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0148,
+        "n_vertices": 17,
+        "elongation": 1.8,
+        "area_ratio": 0.148,
+        "approx_pixels": 1,
+        "centroid": [
+          29.078656,
+          77.372955
+        ],
+        "imagery": "https://www.google.com/maps/@29.07865611552874,77.37295530442483,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[71] UP212848892257",
+        "registered_ha": 0.1,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.2283,
+        "n_vertices": 26,
+        "elongation": 1.4,
+        "area_ratio": 2.283,
+        "approx_pixels": 22,
+        "centroid": [
+          29.07809,
+          77.359083
+        ],
+        "imagery": "https://www.google.com/maps/@29.078089611675637,77.35908253316103,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[72] UP212848119139",
+        "registered_ha": 0.11,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 6.6777,
+        "n_vertices": 116,
+        "elongation": 1.2,
+        "area_ratio": 60.706,
+        "approx_pixels": 667,
+        "centroid": [
+          29.066947,
+          77.367433
+        ],
+        "imagery": "https://www.google.com/maps/@29.066947206957444,77.36743311919248,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[73] UP212848131799",
+        "registered_ha": 0.11,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0386,
+        "n_vertices": 26,
+        "elongation": 2.2,
+        "area_ratio": 0.351,
+        "approx_pixels": 3,
+        "centroid": [
+          29.081629,
+          77.35419
+        ],
+        "imagery": "https://www.google.com/maps/@29.08162855613349,77.3541902586246,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[74] UP212848118065",
+        "registered_ha": 0.01,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 2.9353,
+        "n_vertices": 32,
+        "elongation": 1.3,
+        "area_ratio": 293.533,
+        "approx_pixels": 293,
+        "centroid": [
+          29.064292,
+          77.367975
+        ],
+        "imagery": "https://www.google.com/maps/@29.064291996933047,77.36797544918838,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": false
+  },
+  {
+    "farmer_id": "6a743f02e7f98e19f0ddd1ce",
+    "flags": [],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 0.94,
+        "flags": [],
+        "geometry_area_ha": 0.9356,
+        "n_vertices": 5,
+        "elongation": 1.1,
+        "area_ratio": 0.995,
+        "approx_pixels": 93,
+        "centroid": [
+          23.795825,
+          86.196312
+        ],
+        "imagery": "https://www.google.com/maps/@23.79582462744488,86.19631245732307,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] 686df391-99c9-4fa4-83e4-d08e4f037300",
+        "registered_ha": 0.94,
+        "flags": [],
+        "geometry_area_ha": 0.9356,
+        "n_vertices": 5,
+        "elongation": 1.1,
+        "area_ratio": 0.995,
+        "approx_pixels": 93,
+        "centroid": [
+          23.795825,
+          86.196312
+        ],
+        "imagery": "https://www.google.com/maps/@23.79582462744488,86.19631245732307,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": true
+  },
+  {
+    "farmer_id": "10624684679",
+    "flags": [
+      "area_mismatch_severe",
+      "tiny_parcel"
+    ],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 0.2025,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0926,
+        "n_vertices": 16,
+        "elongation": 2.5,
+        "area_ratio": 0.457,
+        "approx_pixels": 9,
+        "centroid": [
+          25.1644,
+          82.993965
+        ],
+        "imagery": "https://www.google.com/maps/@25.164399664016116,82.99396521447899,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] UP119387134023",
+        "registered_ha": 0.0565,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0147,
+        "n_vertices": 7,
+        "elongation": 1.4,
+        "area_ratio": 0.261,
+        "approx_pixels": 1,
+        "centroid": [
+          25.153785,
+          82.992032
+        ],
+        "imagery": "https://www.google.com/maps/@25.15378511672546,82.99203227307656,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[1] UP119387236320",
+        "registered_ha": 0.2025,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0926,
+        "n_vertices": 16,
+        "elongation": 2.5,
+        "area_ratio": 0.457,
+        "approx_pixels": 9,
+        "centroid": [
+          25.1644,
+          82.993965
+        ],
+        "imagery": "https://www.google.com/maps/@25.164399664016116,82.99396521447899,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": false
+  },
+  {
+    "farmer_id": "14414799256",
+    "flags": [
+      "area_mismatch_severe"
+    ],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 0.804,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.3613,
+        "n_vertices": 19,
+        "elongation": 1.1,
+        "area_ratio": 0.449,
+        "approx_pixels": 36,
+        "centroid": [
+          29.967766,
+          77.338753
+        ],
+        "imagery": "https://www.google.com/maps/@29.967766190125907,77.33875265960522,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] UP124993595662",
+        "registered_ha": 0.804,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.3613,
+        "n_vertices": 19,
+        "elongation": 1.1,
+        "area_ratio": 0.449,
+        "approx_pixels": 36,
+        "centroid": [
+          29.967766,
+          77.338753
+        ],
+        "imagery": "https://www.google.com/maps/@29.967766190125907,77.33875265960522,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[1] UP124993454560",
+        "registered_ha": 0.011,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.1769,
+        "n_vertices": 27,
+        "elongation": 1.7,
+        "area_ratio": 106.995,
+        "approx_pixels": 117,
+        "centroid": [
+          25.163384,
+          82.992268
+        ],
+        "imagery": "https://www.google.com/maps/@25.163383891322088,82.99226842344285,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": false
+  },
+  {
+    "farmer_id": "14335445556",
+    "flags": [
+      "area_mismatch_severe",
+      "tiny_parcel"
+    ],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 0.4013,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0412,
+        "n_vertices": 22,
+        "elongation": 1.9,
+        "area_ratio": 0.103,
+        "approx_pixels": 4,
+        "centroid": [
+          25.096739,
+          82.962799
+        ],
+        "imagery": "https://www.google.com/maps/@25.096738821132817,82.96279915977861,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] UP212511279368",
+        "registered_ha": 0.4013,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0412,
+        "n_vertices": 22,
+        "elongation": 1.9,
+        "area_ratio": 0.103,
+        "approx_pixels": 4,
+        "centroid": [
+          25.096739,
+          82.962799
+        ],
+        "imagery": "https://www.google.com/maps/@25.096738821132817,82.96279915977861,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[1] UP212511953896",
+        "registered_ha": 0.0464,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 1.5111,
+        "n_vertices": 20,
+        "elongation": 1.2,
+        "area_ratio": 32.566,
+        "approx_pixels": 151,
+        "centroid": [
+          29.095244,
+          77.345527
+        ],
+        "imagery": "https://www.google.com/maps/@29.095244069534278,77.34552711631896,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": false
+  },
+  {
+    "farmer_id": "14322905350",
+    "flags": [
+      "area_mismatch_severe"
+    ],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 0.1409,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.4517,
+        "n_vertices": 12,
+        "elongation": 1.0,
+        "area_ratio": 3.206,
+        "approx_pixels": 45,
+        "centroid": [
+          29.086885,
+          77.397759
+        ],
+        "imagery": "https://www.google.com/maps/@29.086884563054515,77.39775933645763,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] UP119312246830",
+        "registered_ha": 0.0036,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 6.6295,
+        "n_vertices": 110,
+        "elongation": 1.2,
+        "area_ratio": 1841.523,
+        "approx_pixels": 662,
+        "centroid": [
+          29.974781,
+          77.338207
+        ],
+        "imagery": "https://www.google.com/maps/@29.97478143746205,77.33820662701173,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[1] UP119312739454",
+        "registered_ha": 0.1409,
+        "flags": [
+          "area_mismatch_severe"
+        ],
+        "geometry_area_ha": 0.4517,
+        "n_vertices": 12,
+        "elongation": 1.0,
+        "area_ratio": 3.206,
+        "approx_pixels": 45,
+        "centroid": [
+          29.086885,
+          77.397759
+        ],
+        "imagery": "https://www.google.com/maps/@29.086884563054515,77.39775933645763,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": false
+  },
+  {
+    "farmer_id": "17468146693",
+    "flags": [
+      "area_mismatch_severe",
+      "tiny_parcel"
+    ],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 0.01,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0477,
+        "n_vertices": 33,
+        "elongation": 2.2,
+        "area_ratio": 4.774,
+        "approx_pixels": 4,
+        "centroid": [
+          29.066835,
+          77.369404
+        ],
+        "imagery": "https://www.google.com/maps/@29.066835288858677,77.36940413324213,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] UP119282102221",
+        "registered_ha": 0.0056,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.1596,
+        "n_vertices": 10,
+        "elongation": 1.7,
+        "area_ratio": 28.504,
+        "approx_pixels": 15,
+        "centroid": [
+          29.068048,
+          77.355046
+        ],
+        "imagery": "https://www.google.com/maps/@29.068048399575623,77.35504635548858,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[1] UP119282311926",
+        "registered_ha": 0.01,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0477,
+        "n_vertices": 33,
+        "elongation": 2.2,
+        "area_ratio": 4.774,
+        "approx_pixels": 4,
+        "centroid": [
+          29.066835,
+          77.369404
+        ],
+        "imagery": "https://www.google.com/maps/@29.066835288858677,77.36940413324213,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": false
+  },
+  {
+    "farmer_id": "10450078010",
+    "flags": [
+      "area_mismatch_severe",
+      "tiny_parcel"
+    ],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 1.42,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0826,
+        "n_vertices": 19,
+        "elongation": 1.1,
+        "area_ratio": 0.058,
+        "approx_pixels": 8,
+        "centroid": [
+          25.167192,
+          82.994126
+        ],
+        "imagery": "https://www.google.com/maps/@25.167191939936956,82.99412598248426,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] UP120879887123",
+        "registered_ha": 1.42,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0826,
+        "n_vertices": 19,
+        "elongation": 1.1,
+        "area_ratio": 0.058,
+        "approx_pixels": 8,
+        "centroid": [
+          25.167192,
+          82.994126
+        ],
+        "imagery": "https://www.google.com/maps/@25.167191939936956,82.99412598248426,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[1] UP120879111073",
+        "registered_ha": 0.319,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0187,
+        "n_vertices": 9,
+        "elongation": 1.4,
+        "area_ratio": 0.058,
+        "approx_pixels": 1,
+        "centroid": [
+          29.070876,
+          77.354428
+        ],
+        "imagery": "https://www.google.com/maps/@29.070875922319253,77.35442804989329,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": false
+  },
+  {
+    "farmer_id": "0909897865",
+    "flags": [],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 0.545,
+        "flags": [],
+        "geometry_area_ha": 0.5419,
+        "n_vertices": 5,
+        "elongation": 1.1,
+        "area_ratio": 0.994,
+        "approx_pixels": 54,
+        "centroid": [
+          13.778701,
+          77.051105
+        ],
+        "imagery": "https://www.google.com/maps/@13.778700789323874,77.05110490322114,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] a35c27c5-1a26-4be3-9e1c-d690478d386f",
+        "registered_ha": 0.545,
+        "flags": [],
+        "geometry_area_ha": 0.5419,
+        "n_vertices": 5,
+        "elongation": 1.1,
+        "area_ratio": 0.994,
+        "approx_pixels": 54,
+        "centroid": [
+          13.778701,
+          77.051105
+        ],
+        "imagery": "https://www.google.com/maps/@13.778700789323874,77.05110490322114,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": true
+  },
+  {
+    "farmer_id": "6a7e2e8b06e485e13f575fb2",
+    "flags": [],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 1.648,
+        "flags": [],
+        "geometry_area_ha": 1.6406,
+        "n_vertices": 5,
+        "elongation": 1.1,
+        "area_ratio": 0.995,
+        "approx_pixels": 164,
+        "centroid": [
+          30.175173,
+          78.123484
+        ],
+        "imagery": "https://www.google.com/maps/@30.175173485841917,78.12348425388338,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] e8463348-5535-44d1-a69e-694252c2d185",
+        "registered_ha": 1.648,
+        "flags": [],
+        "geometry_area_ha": 1.6406,
+        "n_vertices": 5,
+        "elongation": 1.1,
+        "area_ratio": 0.995,
+        "approx_pixels": 164,
+        "centroid": [
+          30.175173,
+          78.123484
+        ],
+        "imagery": "https://www.google.com/maps/@30.175173485841917,78.12348425388338,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": true
+  },
+  {
+    "farmer_id": "6a7e300006e485e13f575fb3",
+    "flags": [],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 5.755,
+        "flags": [],
+        "geometry_area_ha": 5.728,
+        "n_vertices": 6,
+        "elongation": 1.4,
+        "area_ratio": 0.995,
+        "approx_pixels": 572,
+        "centroid": [
+          29.98649,
+          78.20932
+        ],
+        "imagery": "https://www.google.com/maps/@29.98649016341301,78.20932030677797,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] ae3122d3-5bfb-45a3-a1a4-c00ba60491bd",
+        "registered_ha": 5.755,
+        "flags": [],
+        "geometry_area_ha": 5.728,
+        "n_vertices": 6,
+        "elongation": 1.4,
+        "area_ratio": 0.995,
+        "approx_pixels": 572,
+        "centroid": [
+          29.98649,
+          78.20932
+        ],
+        "imagery": "https://www.google.com/maps/@29.98649016341301,78.20932030677797,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": true
+  },
+  {
+    "farmer_id": "12520694333",
+    "flags": [
+      "area_mismatch",
+      "area_mismatch_severe",
+      "tiny_parcel"
+    ],
+    "parcels": [
+      {
+        "label": "envelope",
+        "registered_ha": 0.152,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0994,
+        "n_vertices": 21,
+        "elongation": 1.9,
+        "area_ratio": 0.654,
+        "approx_pixels": 9,
+        "centroid": [
+          25.167475,
+          83.000811
+        ],
+        "imagery": "https://www.google.com/maps/@25.167474586908767,83.0008108452327,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[0] UP212492122100",
+        "registered_ha": 0.152,
+        "flags": [
+          "area_mismatch",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0994,
+        "n_vertices": 21,
+        "elongation": 1.9,
+        "area_ratio": 0.654,
+        "approx_pixels": 9,
+        "centroid": [
+          25.167475,
+          83.000811
+        ],
+        "imagery": "https://www.google.com/maps/@25.167474586908767,83.0008108452327,600m/data=!3m1!1e3"
+      },
+      {
+        "label": "farms[1] UP212492373251",
+        "registered_ha": 0.134,
+        "flags": [
+          "area_mismatch_severe",
+          "tiny_parcel"
+        ],
+        "geometry_area_ha": 0.0573,
+        "n_vertices": 8,
+        "elongation": 1.1,
+        "area_ratio": 0.428,
+        "approx_pixels": 5,
+        "centroid": [
+          25.156749,
+          82.993642
+        ],
+        "imagery": "https://www.google.com/maps/@25.156749176140746,82.99364229005963,600m/data=!3m1!1e3"
+      }
+    ],
+    "clean": false
+  }
+]

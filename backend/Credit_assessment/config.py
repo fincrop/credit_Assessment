@@ -344,6 +344,31 @@ class PipelineConfig:
     # Each corresponds to a documented surface behaviour, and the temporal
     # stream (which needs no external calibration) carries the decisions that
     # spectral evidence alone cannot support.
+    # ── Parcel viability ─────────────────────────────────────────────────
+    # Can this parcel be honestly measured at 10 m? See
+    # assessment/parcel_viability.py. A Sentinel-2 pixel is 0.01 ha.
+    #
+    # A geometry audit over the live database found 60 of 113 parcels under 20
+    # pixels and 24 under FIVE. At four pixels the AOI mean is mostly the
+    # neighbouring field or road, whatever the boundary says.
+    #
+    # HARD floor: below this nothing meaningful can be computed, so we decline
+    # rather than return a confident number about land we did not measure.
+    PARCEL_MIN_PIXELS_HARD = 5           # 0.05 ha
+    # RELIABLE floor: measurable, but the signal carries neighbouring land.
+    # Scored with a flag and a confidence discount.
+    PARCEL_MIN_PIXELS_RELIABLE = 20      # 0.20 ha
+    PARCEL_MARGINAL_GATE_PENALTY = 0.85
+
+    # Polygon area vs registered area. Among AgriStack-ingested parcels only 7
+    # of 106 fell in this range; ratios spanned 0.022 to 1841 in both
+    # directions, which is scatter, not a unit error — the polygon and the
+    # registered area describe different parcels. That is an INGEST defect;
+    # here we only record that they disagree, because we cannot know which is
+    # right and guessing would move the error rather than remove it.
+    PARCEL_AREA_RATIO_MIN = 0.8
+    PARCEL_AREA_RATIO_MAX = 1.25
+
     # ── Data sufficiency ─────────────────────────────────────────────────
     # Can we make any claim about this parcel? See assessment/data_sufficiency.py.
     #

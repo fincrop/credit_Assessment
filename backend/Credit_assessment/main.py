@@ -86,6 +86,11 @@ from assessment.evidence_snapshot import (
     build_score_history_entry,
 )
 from assessment.data_sufficiency import INSUFFICIENT, assess_data_sufficiency
+from assessment.parcel_viability import (
+    MARGINAL,
+    NOT_VIABLE,
+    assess_parcel_viability,
+)
 from utils.peer_benchmark import PeerBenchmark
 from config import PipelineConfig
 from utils.farmer_benefits import merge_farmer_benefits, normalize_farmer_benefits
@@ -597,6 +602,37 @@ class SatelliteBasedCreditPipeline:
         }
  
         try:
+            # ── PARCEL VIABILITY ─────────────────────────────────────────
+            # Can this parcel be honestly measured at 10 m at all? Runs BEFORE
+            # the satellite pull: there is no point spending quota on a footprint
+            # of four pixels, where the AOI mean is mostly the neighbouring field.
+            viability = assess_parcel_viability(
+                registered_ha=field_area_ha,
+                geometry_ha=(geometry.area_ha if hasattr(geometry, 'area_ha') else None),
+                farmer_id=farmer_id,
+            )
+            assessment['parcel_viability'] = viability
+
+            if viability['outcome'] == NOT_VIABLE:
+                assessment['status'] = 'INSUFFICIENT_DATA'
+                assessment['insufficient_reason'] = viability['reason']
+                assessment['processing_time_seconds'] = (
+                    datetime.now() - start_time
+                ).total_seconds()
+                logger.warning("Assessment stopped: %s", viability['reason'])
+                if save_to_db and self.use_mongodb:
+                    try:
+                        self.db.save_assessment(assessment)
+                    except Exception as e:
+                        logger.error("Could not persist viability result: %s", e)
+                gc.collect()
+                return assessment
+
+            if viability['outcome'] == MARGINAL:
+                assessment['warnings'].append(
+                    f"Parcel viability: {viability['reason']}"
+                )
+
             # ============================================================
             # STEP 1: SATELLITE DATA COLLECTION (Continuous, season-aligned)
             # ============================================================
