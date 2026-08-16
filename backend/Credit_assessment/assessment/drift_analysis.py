@@ -241,10 +241,15 @@ def compare_one(farmer_id: str, baseline: Optional[Dict], current: Optional[Dict
         pv = (current or {}).get("parcel_viability") or {}
         ds_ev = ds.get("evidence") or {}
         pv_ev = pv.get("evidence") or {}
+        # Key on which gate actually FIRED, not on which one left evidence.
+        # parcel_viability is now stamped on every assessment including passes,
+        # so testing for the presence of its evidence reported "parcel_size" for
+        # everything — including a 93-pixel parcel stopped by cloud cover.
+        size_stopped = str(pv.get("outcome", "")) == "not_viable"
         result.update({
             "outcome": "now_insufficient_data" if baseline else "insufficient_no_baseline",
             "delta": None,
-            "insufficient_cause": "parcel_size" if pv_ev else "observation_coverage",
+            "insufficient_cause": "parcel_size" if size_stopped else "observation_coverage",
             "insufficient_reason": (
                 ds.get("reason")
                 or pv.get("reason")

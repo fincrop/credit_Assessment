@@ -133,16 +133,38 @@ def assess_data_sufficiency(
     sources = list(cd.get("signal_source") or [])
     n_bins = len(dates)
 
-    # A bin is observed if it carries real imagery — optical or SAR-fused.
-    # 'imputed' means reconstructed, and 'sar' alone is a weaker inference.
-    observed_flags: List[bool] = []
+    # Three levels of evidence, not two.
+    #
+    #   optical / fused  direct observation
+    #   sar              a real but weaker measurement of the parcel
+    #   imputed          reconstruction — no measurement at all
+    #
+    # The distinction matters enormously in India. Monsoon cloud routinely
+    # blanks optical for 60-90 days, and SAR is precisely what covers it —
+    # a live run showed "SAR: RVI filled 103/116 bins". Treating SAR-only bins
+    # as blindness would declare most kharif seasons unobservable and refuse
+    # farmers over normal monsoon weather.
+    #
+    # So the blind-gap rule keys on bins with NO measurement of any kind, while
+    # observed_fraction still reports DIRECT observation only, so a
+    # SAR-dependent record is visibly weaker without being refused.
+    direct_flags: List[bool] = []
+    any_signal_flags: List[bool] = []
+    n_sar_only = 0
     for i in range(n_bins):
         src = str(sources[i]).lower() if i < len(sources) else ""
-        observed_flags.append(src in ("optical", "fused"))
+        direct = src in ("optical", "fused")
+        direct_flags.append(direct)
+        any_signal_flags.append(direct or src == "sar")
+        if src == "sar":
+            n_sar_only += 1
 
-    n_observed = sum(observed_flags)
+    n_observed = sum(direct_flags)
+    n_any_signal = sum(any_signal_flags)
     observed_fraction = (n_observed / n_bins) if n_bins else 0.0
-    gap = _largest_observed_gap_days(dates, observed_flags) if n_bins else {"days": 0, "span": None}
+    any_signal_fraction = (n_any_signal / n_bins) if n_bins else 0.0
+    # Gap = a run with no measurement at all, optical or radar.
+    gap = _largest_observed_gap_days(dates, any_signal_flags) if n_bins else {"days": 0, "span": None}
 
     min_cycle_days = int(getattr(P, "CROP_CYCLE_MIN_DURATION_DAYS", 40))
     blind_gap_days = int(getattr(P, "DATA_SUFFICIENCY_BLIND_GAP_DAYS", 0)) or min_cycle_days
@@ -152,6 +174,11 @@ def assess_data_sufficiency(
         "n_bins": n_bins,
         "n_observed_bins": n_observed,
         "observed_fraction": round(observed_fraction, 3),
+        # Including radar. The gap below is measured against this, not against
+        # optical alone.
+        "n_bins_with_any_signal": n_any_signal,
+        "any_signal_fraction": round(any_signal_fraction, 3),
+        "n_sar_only_bins": n_sar_only,
         "largest_blind_gap_days": gap["days"],
         "largest_blind_gap_span": gap["span"],
         "n_cycles_detected": int(n_cycles),
@@ -177,13 +204,16 @@ def assess_data_sufficiency(
         span = gap["span"]
         where = f" ({span[0]} to {span[1]})" if span else ""
         reasons.append(
-            f"a {gap['days']}-day stretch{where} has no usable observation — "
-            f"longer than the {blind_gap_days}-day minimum crop cycle, so an "
-            f"entire season could have been grown unseen"
+            f"a {gap['days']}-day stretch{where} has no measurement at all, "
+            f"optical or radar — longer than the {blind_gap_days}-day minimum "
+            f"crop cycle, so an entire season could have been grown unseen"
         )
-    if observed_fraction < min_observed:
+    # Judged on total signal coverage. A record carried largely by radar is
+    # weaker, not absent, and is handled by the confidence gate rather than by
+    # refusing the farmer.
+    if any_signal_fraction < min_observed:
         reasons.append(
-            f"only {observed_fraction:.0%} of the window was directly observed "
+            f"only {any_signal_fraction:.0%} of the window carried any signal "
             f"(minimum {min_observed:.0%})"
         )
 

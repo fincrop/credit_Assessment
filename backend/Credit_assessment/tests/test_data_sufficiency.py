@@ -146,3 +146,45 @@ def test_trailing_blind_run_is_detected():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# ── SAR is a measurement, not blindness ───────────────────────────────────
+
+def test_a_monsoon_gap_covered_by_sar_is_not_blindness():
+    """
+    THE case this rule exists to get right. Indian monsoon cloud routinely
+    blanks optical for 60-90 days and SAR is precisely what covers it — a live
+    run logged "SAR: RVI filled 103/116 bins". Counting SAR-only bins as blind
+    would declare most kharif seasons unobservable and refuse farmers over
+    normal monsoon weather.
+    """
+    src = ["optical"] * 40 + ["sar"] * 12 + ["optical"] * 58   # 120-day SAR stretch
+    v = assess_data_sufficiency(_cd(src), n_cycles=0)
+    assert v["outcome"] == SUFFICIENT, v["reason"]
+
+
+def test_the_same_gap_with_no_sar_is_blindness():
+    """The contrast: identical length, but nothing measured it."""
+    src = ["optical"] * 40 + ["imputed"] * 12 + ["optical"] * 58
+    v = assess_data_sufficiency(_cd(src), n_cycles=0)
+    assert v["outcome"] == INSUFFICIENT
+    assert "optical or radar" in v["reason"]
+
+
+def test_sar_reliance_is_visible_even_when_sufficient():
+    """
+    A record carried by radar is weaker, not absent. It must pass, but the
+    weakness has to be legible rather than hidden.
+    """
+    src = ["optical"] * 40 + ["sar"] * 12 + ["optical"] * 58
+    ev = assess_data_sufficiency(_cd(src), n_cycles=0)["evidence"]
+    assert ev["n_sar_only_bins"] == 12
+    # Direct observation is lower than total signal coverage — that difference
+    # is what a consumer needs to see.
+    assert ev["observed_fraction"] < ev["any_signal_fraction"]
+
+
+def test_a_record_that_is_entirely_sar_still_reports_zero_direct_observation():
+    ev = assess_data_sufficiency(_cd(["sar"] * 110), n_cycles=0)["evidence"]
+    assert ev["observed_fraction"] == 0.0
+    assert ev["any_signal_fraction"] == 1.0
