@@ -2,7 +2,7 @@
  "success": true,
  "report": {
   "payload_version": "report_payload_v1",
-  "generated_at": "2026-08-16 15:10:39.955452+00:00",
+  "generated_at": "2026-08-16 15:27:55.184263+00:00",
   "farmer_id": "TESTFARMER1",
   "assessment_date": "2026-08-16 10:00:00+00:00",
   "report_id": "KBS-20260816-99AAD3D6",
@@ -10,7 +10,7 @@
   "farmer": {},
   "prepared_by": {},
   "score": {
-   "kbs": 644,
+   "kbs": 619,
    "scale_min": 300,
    "scale_max": 900,
    "band": {
@@ -40,8 +40,8 @@
      "max": 900
     }
    ],
-   "index_score": 57.4,
-   "raw_index": 62.1,
+   "index_score": 53.1,
+   "raw_index": 57.5,
    "risk_category": "MEDIUM",
    "confidence_gate": 0.924,
    "index_version": "index_v5",
@@ -51,7 +51,7 @@
   "trend": {
    "previous_kbs": 606,
    "previous_date": "2026-02-01T00:00:00",
-   "delta": 38,
+   "delta": 13,
    "direction": "up"
   },
   "sub_indices": [
@@ -225,7 +225,7 @@
    "review_workflow": "No reviewer workflow exists."
   },
   "integrity": {
-   "content_sha256": "8259984787e1eaab75496d5417391e636c18bf761b51c82a1760f2b8517fdbb8",
+   "content_sha256": "ae1bea91e176b277b34ed30012d4925cd2e174db7e1526b56cfda3d23a9feb87",
    "note": "Hash covers report content, excluding the generation timestamp."
   },
   "sections_present": {

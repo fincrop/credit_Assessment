@@ -705,13 +705,21 @@ function DashboardPageContent() {
                   </button>
                 )}
                 {status === 'SUCCESS' && farmerId.trim() && (
-                  <button
-                    type="button"
-                    onClick={startRerun}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium"
-                  >
-                    Re-run Assessment
-                  </button>
+                  <>
+                    <Link
+                      href={`/report/${encodeURIComponent(farmerId.trim())}`}
+                      className="bg-white hover:bg-paper border border-rule text-stone-700 px-4 py-2 rounded-lg text-sm font-medium"
+                    >
+                      Open report
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={startRerun}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                    >
+                      Re-run Assessment
+                    </button>
+                  </>
                 )}
                 <button
                   type="button"

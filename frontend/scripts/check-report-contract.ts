@@ -16,6 +16,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ReportResponse } from '../app/types/report';
 import { hasSection, trendLabel } from '../app/lib/reportClient';
+import { riskViewFromReport, captionsFromReport } from '../app/lib/reportView';
 
 const raw = JSON.parse(
   readFileSync(join(import.meta.dirname, 'report_sample.json'), 'utf8')
@@ -128,6 +129,55 @@ check('hasSection falls back when sections_present is absent',
   hasSection(legacy, 'score') && hasSection(legacy, 'sub_indices') &&
     !hasSection(legacy, 'trend') && !hasSection(legacy, 'ndvi_trajectory'),
   'an older payload must still render what it has');
+
+/* ── The report must not disagree with the dashboard ─────────────────────
+   Both render the score build-up through ScoreWaterfall, so the report
+   payload is adapted to RiskView rather than given its own panel. If this
+   adapter drops or reshapes a field, the report and the dashboard show
+   different derivations of the same score — and the report is the artefact
+   that leaves the building. */
+const view = riskViewFromReport(report);
+
+/** Equality check. `check` takes a boolean — passing a raw value would make
+ *  any non-empty string pass vacuously, which is exactly what happened when
+ *  this block was first written against the smoke suite's signature. */
+const eq = (name: string, got: unknown, want: unknown) =>
+  check(
+    name,
+    JSON.stringify(got) === JSON.stringify(want),
+    `got=${JSON.stringify(got)} want=${JSON.stringify(want)}`
+  );
+
+eq('adapter carries every sub-index',
+  Object.keys(view.subIndices).sort(),
+  report.sub_indices.filter((s) => s.score != null).map((s) => s.key).sort());
+eq('adapter carries the weights',
+  Object.keys(view.weights).length, report.sub_indices.filter((s) => s.weight != null).length);
+eq('adapter preserves the index', view.score, report.score.index_score);
+eq('adapter preserves the raw index', view.rawIndex, report.score.raw_index);
+eq('adapter preserves the gate', view.gate, report.score.confidence_gate);
+eq('adapter flags the weakest driver',
+  view.weakSubIndices, report.sub_indices.filter((s) => s.is_weakest).map((s) => s.key));
+eq('adapter carries reason codes', view.reasonCodes.length, report.reason_codes.length);
+eq('adapter reports no score as insufficient',
+  riskViewFromReport({ ...report, score: { ...report.score, kbs: null } }).insufficientData, true);
+
+// The waterfall recomputes the composite from these; it must land on the
+// index the backend already published, or the report shows a derivation
+// that did not happen.
+const composite = Object.keys(view.subIndices).reduce(
+  (a, k) => a + (view.subIndices[k] * (view.weights[k] ?? 0)) / 100,
+  0
+);
+check('adapted parts reproduce the backend raw index',
+  Math.abs(composite - (view.rawIndex ?? 0)) < 0.15,
+  `parts=${composite.toFixed(2)} backend raw=${view.rawIndex}`);
+
+const caps = captionsFromReport(report);
+check('captions extracted per driver',
+  report.sub_indices.every((s) => !s.caption || caps[s.key] === s.caption));
+check('data-confidence caption carried',
+  report.data_confidence.caption ? caps.data_confidence === report.data_confidence.caption : true);
 
 console.log(failures === 0 ? '\ncontract holds' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

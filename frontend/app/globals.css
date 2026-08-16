@@ -259,7 +259,54 @@ body {
 }
 
 /* =========================================================
-   Assessment print report (same-document @media print)
+   Report dossier — /report/[farmer_id]
+
+   Designed for A4 first rather than adapted to it. The charts are SVG, so
+   they print at full resolution instead of becoming a screenshot of a
+   website, which is what the old dashboard-with-print-overrides produced.
+   ========================================================= */
+@page {
+  size: A4;
+  margin: 14mm;
+}
+
+.report-header {
+  border-bottom: 2px solid var(--color-ink);
+  padding-bottom: 0.75rem;
+}
+
+@media print {
+  .report-sheet {
+    max-width: none;
+    font-size: 10.5pt;
+  }
+
+  /* A section split across a page break loses the figure from its caption,
+     which in a credit file is how a number ends up quoted without its
+     qualifier. */
+  .report-sheet > * > section,
+  .report-sheet section {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+
+  .report-sheet a[href]::after {
+    content: '';
+  }
+
+  /* Tinted surfaces must survive the printer, or a band chip prints white
+     and the score loses the only colour cue it has left on paper. */
+  .report-sheet * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+/* =========================================================
+   Assessment print report (LEGACY — superseded by /report/[farmer_id])
+
+   Kept while the old dashboard print path is still reachable. Remove with
+   AssessmentPrintReport.tsx.
    ========================================================= */
 .print-only {
   display: none;

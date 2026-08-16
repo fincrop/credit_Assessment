@@ -22,7 +22,7 @@ Ordered so each item is shippable on its own and nothing depends on a later one.
 | 5 | Show *why* the score is that number | ✅ Done |
 | 6 | Show the field we actually saw | ✅ Done |
 | 7 | Make the map a remote-sensing map | ✅ Done — one item descoped, see below |
-| 8 | The report | Not started |
+| 8 | The report | ✅ Done — header slot open on FD-6 |
 | 9 | Rebuild the dashboard around its reader | Not started |
 | 10 | The remaining panels | Not started |
 | 11 | Make it usable for everyone | Not started |
@@ -126,7 +126,20 @@ Eighteen assertions added on the chart primitives, aimed at the properties that 
 
 Verified: `tsc` (which also checks every Leaflet call against `@types/leaflet`), `verify`, and `next build` all pass. **Not visually confirmed against a live map** — this environment has no database or pipeline credentials to render a real assessment. Worth a manual look before pilot.
 
-**⑧ The report.** A print-first dossier route driven by the report contract — replacing 232 lines of `@media print` overrides that reformat the dashboard. §9.2.
+**⑧ The report.** ✅ **Done.** `/report/[farmer_id]` — one column, print-first, driven entirely by the report contract and its `sections_present` / `omitted` gates.
+
+- **The score panel is the dashboard's, not a copy.** `riskViewFromReport()` adapts the payload so `ScoreWaterfall` is reused verbatim. Two components rendering the same arithmetic is how the four colour ramps happened, and a report that disagreed with the dashboard about how a score was built would be the worst version of that — it is the artefact that leaves the building.
+- **Farmer identity is absent, and the header says so** rather than leaving a gap: *"The masking policy for personal data is not settled, so the assessment service does not emit it and this page does not fetch it."* An empty slot reads as an oversight and invites someone to fill it from `farm_info` before FD-6 is decided.
+- Refusals, the footprint banner, and every `omitted{}` entry render inside the report, so a dossier that reaches a credit committee carries the same refusals the screen does.
+- Print-first CSS: `@page A4`, `break-inside: avoid` per section (a section split across a page break separates a figure from its qualifier — which is how a number gets quoted without its caveat), and `print-color-adjust: exact` so band tints survive the printer.
+- `AssessmentPrintReport` is superseded; its CSS block is marked legacy pending removal.
+
+**Two real bugs, both caught by tests rather than by reading:**
+
+1. **The waterfall would have mislabelled a benefits bonus as a clip.** The residual between the parts and `raw_index` has two opposite causes — clipped at 100 (negative) versus something added the scope cannot see (positive, the benefits bonus, which the report payload does not carry). Calling both "clipped to range" states a false reason for a real difference. Now labelled by direction.
+2. **My own contract assertions were passing vacuously.** I wrote eight of them against the smoke suite's `(name, got, want)` signature while this file's `check` takes `(name, ok, detail)` — so a non-empty string landed in the `ok` slot and every one passed without comparing anything. `tsx` does not typecheck; `next build` does, and it failed the build. Fixed with an explicit `eq()` helper.
+
+That second one had a process cause worth recording: `npm run verify` *did* run `tsc` and *did* fail, but I grepped its output for pass-strings only, so the failure was invisible. **Check the exit code, not the log.**
 
 **⑨ Rebuild the dashboard around its reader.** 796 lines of orchestration and layout in one file, restructured into verdict → evidence → holding → provenance. §9.1.
 

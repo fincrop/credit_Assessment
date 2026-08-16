@@ -139,10 +139,18 @@ export function ScoreWaterfall({
   const band = bandForIndex(index);
   const gateLoss = gate != null ? raw - index : 0;
 
-  // The engine clips raw_index to 0–100, so the parts need not sum to it.
-  // Showing the parts adding to a different total than the stated raw index
-  // would look like an arithmetic error; naming the clip is the honest fix.
-  const clipped = Math.abs(additive + bonus - raw) > 0.15;
+  // The parts need not sum to raw_index, and the two reasons are opposite:
+  //
+  //   raw < parts  the engine clipped the composite at 100
+  //   raw > parts  something was ADDED that this scope cannot see — the
+  //                benefits bonus, which the report payload does not carry
+  //
+  // Labelling both as "clipped" would state a false reason for a real
+  // difference, which is worse than leaving it unexplained. Showing the parts
+  // adding to a different total with no row at all would look like an
+  // arithmetic error, so the residual is always named, in the right direction.
+  const residual = raw - (additive + bonus);
+  const showResidual = Math.abs(residual) > 0.15;
 
   // Track width is the weight, so all four tracks together span the full
   // 100 points a raw index can reach. Fill is the contribution.
@@ -229,10 +237,15 @@ export function ScoreWaterfall({
             value={`+${bonus.toFixed(1)}`}
           />
         )}
-        {clipped && (
+        {showResidual && (
           <StepRow
-            label="Clipped to the 0–100 range"
-            value={(raw - additive - bonus).toFixed(1)}
+            label={residual < 0 ? 'Clipped to the 0–100 range' : 'Other additions'}
+            detail={
+              residual < 0
+                ? undefined
+                : 'recorded on the assessment but not itemised in this view'
+            }
+            value={`${residual > 0 ? '+' : ''}${residual.toFixed(1)}`}
           />
         )}
         <StepRow label="Raw index" value={raw.toFixed(1)} emphasis />
