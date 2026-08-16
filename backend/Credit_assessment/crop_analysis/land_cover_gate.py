@@ -395,6 +395,7 @@ def classify_land_cover(
     agro_profile: Optional[Dict] = None,
     external_lulc: Optional[Dict] = None,
     registry_crop: Optional[str] = None,
+    geospatial_prep: Optional[Dict] = None,
 ) -> Dict:
     """
     Decide whether this parcel is agricultural land.
@@ -475,6 +476,28 @@ def classify_land_cover(
     reject_at = float(getattr(P, "LANDCOVER_REJECT_CONFIDENCE", 0.75))
     flag_at = float(getattr(P, "LANDCOVER_FLAG_CONFIDENCE", 0.45))
 
+    # Was this verdict computed over the farmer's ACTUAL boundary?
+    #
+    # When a polygon fails geometry QA the collector silently substitutes a
+    # circular buffer around the centroid, so we may have analysed a circle
+    # near the field rather than the field. A circle that overlaps the adjacent
+    # river yields a confident WATER verdict about land that is perfectly fine.
+    #
+    # "Your boundary is wrong" and "your land is water" are completely different
+    # messages, and only one of them is the farmer's problem. We must never
+    # deliver the second when we can only justify the first, so a verdict built
+    # on substituted geometry may FLAG but never REJECT.
+    geo = geospatial_prep or {}
+    geometry_source = str(geo.get("geometry_source") or "")
+    geometry_substituted = "fallback" in geometry_source or "point" in geometry_source
+    if geometry_substituted:
+        notes_prefix = (
+            f"geometry: verdict computed over a substituted geometry "
+            f"({geometry_source}), not the supplied boundary"
+        )
+    else:
+        notes_prefix = None
+
     notes: List[str] = []
     for name, (scls, sconf, snotes) in streams.items():
         for note in snotes:
@@ -515,6 +538,19 @@ def classify_land_cover(
         outcome = FLAG
         reason = "Land cover could not be determined from the available evidence."
 
+    # Downgrade a rejection that rests on substituted geometry. We cannot tell a
+    # bad boundary from bad land, so we say so instead of refusing the farmer.
+    if geometry_substituted and outcome == REJECT:
+        outcome = FLAG
+        reason = (
+            f"Parcel looks like {cls.lower()}, but this was measured over a "
+            f"substituted geometry ({geometry_source}) rather than the supplied "
+            f"boundary — the boundary may be wrong rather than the land. "
+            f"Re-draw the boundary before treating this as a rejection."
+        )
+    if notes_prefix:
+        notes.insert(0, notes_prefix)
+
     verdict = {
         "gate_version": GATE_VERSION,
         "outcome": outcome,
@@ -536,6 +572,10 @@ def classify_land_cover(
         "field_area_ha": field_area_ha,
         "location": location,
         "external_lulc_used": bool(external_lulc),
+        # Provenance of the footprint this verdict was measured over. A
+        # consumer must be able to tell a land finding from a data finding.
+        "geometry_source": geometry_source or None,
+        "geometry_substituted": geometry_substituted,
     }
 
     if outcome == REJECT:

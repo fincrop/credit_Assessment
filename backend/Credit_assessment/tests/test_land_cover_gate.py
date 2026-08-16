@@ -257,3 +257,45 @@ def test_external_lulc_verdict_is_used_when_supplied():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# ── geometry provenance: a bad boundary is not bad land ───────────────────
+
+def test_rejection_is_downgraded_when_geometry_was_substituted():
+    """
+    When a polygon fails QA the collector silently analyses a circular buffer
+    instead. A circle overlapping the adjacent river yields a confident WATER
+    verdict about land that is perfectly fine. We cannot tell the two apart, so
+    we must not refuse the farmer.
+    """
+    clean = classify_land_cover(WATER_BODY)
+    substituted = classify_land_cover(
+        WATER_BODY,
+        geospatial_prep={"geometry_source": "polygon_rejected_fallback_point"},
+    )
+    assert clean["outcome"] == REJECT
+    assert substituted["outcome"] == FLAG
+    assert substituted["is_cultivable"] is True
+    assert "boundary may be wrong" in substituted["reason"]
+
+
+def test_geometry_provenance_is_recorded_on_every_verdict():
+    v = classify_land_cover(
+        DOUBLE_CROPPED, n_cycles=2,
+        geospatial_prep={"geometry_source": "polygon"},
+    )
+    assert v["geometry_substituted"] is False
+    assert v["geometry_source"] == "polygon"
+
+
+def test_substituted_geometry_is_called_out_in_the_notes():
+    v = classify_land_cover(
+        QUARRY, geospatial_prep={"geometry_source": "polygon_rejected_fallback_point"},
+    )
+    assert any("substituted geometry" in n for n in v["notes"])
+
+
+def test_a_good_boundary_still_rejects_normally():
+    """The downgrade must only apply when geometry was actually substituted."""
+    v = classify_land_cover(WATER_BODY, geospatial_prep={"geometry_source": "polygon"})
+    assert v["outcome"] == REJECT

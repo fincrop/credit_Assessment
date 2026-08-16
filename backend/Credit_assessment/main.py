@@ -751,6 +751,9 @@ class SatelliteBasedCreditPipeline:
                     location={'latitude': clat, 'longitude': clon},
                     agro_profile=eco_profile,
                     registry_crop=crop_hint,
+                    # So the gate can tell whether it measured the farmer's
+                    # actual boundary or a substituted buffer.
+                    geospatial_prep=assessment.get('geospatial_prep'),
                 )
                 assessment['land_cover'] = land_cover
                 assessment['pipeline_stages'].append('2b_land_cover')
