@@ -226,6 +226,30 @@ def test_score_history_entry_is_flat_and_complete():
     assert e["weights"]["landuse"] == 30
 
 
+def test_score_history_accepts_farmer_level_scalar_sub_indices():
+    """Multi-farm roll-up stores sub_indices as floats, not {score: ...} dicts."""
+    e = build_score_history_entry({
+        "farmer_id": "FARMER_001",
+        "assessment_date": datetime(2026, 8, 16, 21, 0),
+        "field_area_ha": 1.7,
+        "risk_assessment": {
+            "index_score": 70.8,
+            "raw_index": 79.6,
+            "risk_category": "LOW",
+            "confidence_gate": 0.89,
+            "weights": {"landuse": 30, "vigor": 25, "stability": 20, "weather": 25},
+            "sub_indices": {
+                "landuse": 62.8, "vigor": 82.9, "stability": 97.6,
+                "weather": 65.9, "data_confidence": 72.4,
+            },
+            "weak_sub_indices": [],
+        },
+    })
+    assert e["index_score"] == 70.8
+    assert e["sub_index_scores"]["landuse"] == 62.8
+    assert e["sub_index_scores"]["vigor"] == 82.9
+
+
 def test_scope_is_farmer_when_no_plot_key():
     e = build_score_history_entry(_assessment())
     assert e["scope"] == "farmer" and e["plot_key"] is None

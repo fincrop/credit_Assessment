@@ -34,6 +34,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from assessment.driver_captions import build_driver_captions
+from assessment.legacy_credit_shim import sub_index_score
 from utils.mongo_encoding import as_utc, utc_now
 
 __all__ = ["build_report_payload", "REPORT_PAYLOAD_VERSION", "KBS_BANDS"]
@@ -211,7 +212,7 @@ def build_report_payload(
         "sub_indices": [
             {
                 "key": key,
-                "score": _num((subs.get(key) or {}).get("score")),
+                "score": sub_index_score(subs.get(key)),
                 "weight": _num((risk.get("weights") or {}).get(key)),
                 "is_weakest": key in (risk.get("weak_sub_indices") or []),
                 "caption": (risk.get("driver_captions") or {}).get(key),
@@ -220,7 +221,7 @@ def build_report_payload(
             if key in subs
         ],
         "data_confidence": {
-            "score": _num((subs.get("data_confidence") or {}).get("score")),
+            "score": sub_index_score(subs.get("data_confidence")),
             "gate": _num(risk.get("confidence_gate")),
             "caption": (risk.get("driver_captions") or {}).get("data_confidence"),
         },

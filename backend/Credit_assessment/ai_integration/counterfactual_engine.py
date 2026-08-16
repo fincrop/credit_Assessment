@@ -20,6 +20,7 @@ import logging
 from typing import Dict, List
 
 from config import PipelineConfig
+from assessment.legacy_credit_shim import risk_block, sub_index_score
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ class CounterfactualEngine:
             Dict with current_score, target_score, scenarios (list),
             projected_score_with_all_improvements, and improvement_roadmap.
         """
-        ra = assessment.get('risk_assessment')
+        ra = risk_block(assessment)
         if isinstance(ra, dict) and ra.get('sub_indices'):
             current_score = float(ra.get('index_score', 50))
             current_risk = ra.get('risk_category', 'UNKNOWN')
@@ -132,9 +133,9 @@ class CounterfactualEngine:
         idx = 1
         for comp, (title, action) in self._V5_ACTIONS.items():
             sd = subs.get(comp)
-            if not sd:
+            s = sub_index_score(sd)
+            if s is None:
                 continue
-            s = float(sd.get('score', 50))
             if s >= 85:
                 continue  # already strong
             target = min(85.0, s + 25.0)
@@ -195,7 +196,7 @@ class CounterfactualEngine:
             elif target_ci >= 2.0: new_score = 75.0 + (target_ci - 2.0) * 25.0
             elif target_ci >= 1.0: new_score = 50.0 + (target_ci - 1.0) * 25.0
             else:                  new_score = target_ci * 50.0
-            gain = ((new_score - cur_score) / 100) * _WEIGHTS['cropping_intensity']
+            gain = ((new_score - cur_score) / 100) * _WEIGHTS.get('cropping_intensity', 0)
             scenarios.append({
                 'id':            'increase_cropping_intensity',
                 'title':         'Increase Crop Cycles per Year',
@@ -227,11 +228,11 @@ class CounterfactualEngine:
             new_sig_pts = min(50.0, float(target_signal) * 0.5)
             gain_det = max(
                 0.0,
-                ((new_sig_pts - cur_sig_pts) / 100.0) * _WEIGHTS['crop_detection'],
+                ((new_sig_pts - cur_sig_pts) / 100.0) * _WEIGHTS.get('crop_detection', 0),
             )
             gain_perf = max(
                 0.0,
-                ((target_perf - crop_perf) / 100.0) * _WEIGHTS['crop_performance'],
+                ((target_perf - crop_perf) / 100.0) * _WEIGHTS.get('crop_performance', 0),
             )
             total_gain = round(gain_det + gain_perf, 1)
             if total_gain > 0:
@@ -265,7 +266,7 @@ class CounterfactualEngine:
             cur_ap     = component_scores.get('anomaly_penalty',
                          max(0.0, 100.0 - n_high * ph))
             new_ap     = min(100.0, max(0.0, 100.0 - target_high * ph))
-            gain       = ((new_ap - cur_ap) / 100) * _WEIGHTS['anomaly_penalty']
+            gain       = ((new_ap - cur_ap) / 100) * _WEIGHTS.get('anomaly_penalty', 0)
             scenarios.append({
                 'id':            'reduce_stress_events',
                 'title':         'Reduce High-Impact Crop Stress Events',
@@ -291,7 +292,7 @@ class CounterfactualEngine:
         # ── S4: Improve Yield Potential ───────────────────────────────────────
         if yield_score < 60:
             target_yield = min(100.0, yield_score + 25)
-            gain = ((target_yield - yield_score) / 100) * _WEIGHTS['yield_potential']
+            gain = ((target_yield - yield_score) / 100) * _WEIGHTS.get('yield_potential', 0)
             scenarios.append({
                 'id':            'improve_yield_potential',
                 'title':         'Increase Crop Yield Potential',
@@ -320,7 +321,7 @@ class CounterfactualEngine:
             new_risk = max(30.0, weather_risk - 20)
             cur_ws   = component_scores.get('weather_safety', max(0, 100 - weather_risk))
             new_ws   = max(0.0, 100.0 - new_risk)
-            gain     = ((new_ws - cur_ws) / 100) * _WEIGHTS['weather_safety']
+            gain     = ((new_ws - cur_ws) / 100) * _WEIGHTS.get('weather_safety', 0)
             scenarios.append({
                 'id':            'reduce_weather_risk',
                 'title':         'Adopt Weather-Adaptive Farming Practices',
@@ -352,7 +353,7 @@ class CounterfactualEngine:
             if not insurance: missing.append('PMFBY Crop Insurance')
             cur_gb  = component_scores.get('govt_benefits',
                       (50 if pm_kisan else 0) + (50 if insurance else 0))
-            gain    = ((100 - cur_gb) / 100) * _WEIGHTS['govt_benefits']
+            gain    = ((100 - cur_gb) / 100) * _WEIGHTS.get('govt_benefits', 0)
             scenarios.append({
                 'id':            'govt_scheme_enrollment',
                 'title':         f"Enroll in Government Schemes: {', '.join(missing)}",

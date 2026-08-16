@@ -8,7 +8,36 @@ the nested {score, inputs, drivers} objects from sub_indices.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+
+def sub_index_score(val: Any, default: Optional[float] = None) -> Optional[float]:
+    """
+    Plot-level sub_indices are ``{score, inputs, drivers}``. Farmer-level
+    aggregation stores the same keys as bare floats. Readers that assume one
+    shape crash the other (AttributeError: float has no attribute 'get').
+    """
+    if isinstance(val, dict):
+        val = val.get("score")
+    if val is None:
+        return default
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
+def risk_block(assessment: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Plot docs use ``risk_assessment``; multi-farm roll-ups use ``farmer_level``."""
+    if not isinstance(assessment, dict):
+        return {}
+    ra = assessment.get("risk_assessment")
+    if isinstance(ra, dict) and ra.get("sub_indices"):
+        return ra
+    fl = assessment.get("farmer_level")
+    if isinstance(fl, dict) and fl.get("sub_indices"):
+        return fl
+    return ra if isinstance(ra, dict) else (fl if isinstance(fl, dict) else {})
 
 
 def legacy_credit_shim(risk_assessment: Dict[str, Any]) -> Dict[str, Any]:
@@ -18,13 +47,9 @@ def legacy_credit_shim(risk_assessment: Dict[str, Any]) -> Dict[str, Any]:
 
     component_scores: Dict[str, float] = {}
     for key, val in sub.items():
-        if isinstance(val, dict) and "score" in val:
-            try:
-                component_scores[key] = float(val["score"])
-            except (TypeError, ValueError):
-                continue
-        elif isinstance(val, (int, float)):
-            component_scores[key] = float(val)
+        score = sub_index_score(val)
+        if score is not None:
+            component_scores[key] = score
 
     weights = ra.get("weights") or {}
     try:

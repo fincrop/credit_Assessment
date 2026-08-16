@@ -22,6 +22,7 @@ import numpy as np
 from typing import Dict, List, Optional
 
 from config import PipelineConfig
+from assessment.legacy_credit_shim import risk_block, sub_index_score
 
 logger = logging.getLogger(__name__)
 
@@ -269,7 +270,7 @@ class SHAPExplainer:
         (attributed by their AHP weights); falls back to the legacy 7-component
         credit scores. Positive contribution = pushes the index UP.
         """
-        ra = assessment.get('risk_assessment')
+        ra = risk_block(assessment)
         if isinstance(ra, dict) and ra.get('sub_indices'):
             subs = ra['sub_indices']
             weights = ra.get('weights', {}) or {}
@@ -278,7 +279,7 @@ class SHAPExplainer:
             component_scores = {}
             contribs = {}
             for comp, sd in subs.items():
-                sc = float(sd.get('score', 50))
+                sc = sub_index_score(sd, 50.0)
                 component_scores[comp] = sc
                 if comp == 'data_confidence':
                     continue
@@ -300,7 +301,9 @@ class SHAPExplainer:
             method = 'rule_based_attribution_v5_subindex'
             extra = {
                 'confidence_gate': gate,
-                'data_confidence_score': float(subs.get('data_confidence', {}).get('score', 100)),
+                'data_confidence_score': sub_index_score(
+                    subs.get('data_confidence'), 100.0
+                ),
                 'reason_codes': ra.get('reason_codes', []),
             }
             summary = (

@@ -92,10 +92,20 @@ class SarvamTranslator:
         # SarvamAI has a ~1000 char limit per call — chunk if needed
         chunks   = self._chunk_text(text, max_chars=900)
         translated_chunks = []
+        failed = False
 
         for chunk in chunks:
             result = self._call_sarvam(chunk)
+            if result is None:
+                failed = True
+                break
             translated_chunks.append(result)
+
+        if failed or not translated_chunks:
+            logger.warning(
+                "SarvamAI translation failed; returning English original"
+            )
+            return text
 
         translated = "\n".join(translated_chunks)
         logger.info(
@@ -106,19 +116,18 @@ class SarvamTranslator:
 
     # ── Private helpers ────────────────────────────────────────────────────────
 
-    def _call_sarvam(self, text: str) -> str:
+    def _call_sarvam(self, text: str) -> Optional[str]:
         """Call SarvamAI translate endpoint for a single chunk."""
         try:
             import urllib.request, urllib.error
 
             payload = json.dumps({
-                "input":           text,
-                "source_language": "en-IN",
-                "target_language": self.sarvam_lang,
-                "speaker_gender":  "Male",
-                "mode":            "formal",
-                "model":           "mayura:v1",
-                "enable_preprocessing": True,
+                "input": text,
+                "source_language_code": "en-IN",
+                "target_language_code": self.sarvam_lang,
+                "speaker_gender": "Male",
+                "mode": "formal",
+                "model": "mayura:v1",
             }).encode("utf-8")
 
             req = urllib.request.Request(
@@ -133,11 +142,11 @@ class SarvamTranslator:
 
             with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
-                return result.get("translated_text", text)
+                return result.get("translated_text") or text
 
         except Exception as exc:
             logger.error(f"SarvamAI translation failed: {exc}")
-            return text  # Return original on failure
+            return None  # Caller keeps the English original
 
     @staticmethod
     def _chunk_text(text: str, max_chars: int = 900) -> list:

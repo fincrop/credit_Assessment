@@ -148,6 +148,33 @@ def test_sub_indices_carry_weight_weakness_and_caption():
     assert vigor["is_weakest"] is True
 
 
+def test_farmer_level_scalar_sub_indices_render():
+    """A multi-farm document must not 500 the report endpoint."""
+    doc = {
+        "farmer_id": "13528946442",
+        "assessment_date": "2026-08-16T21:35:57",
+        "status": "SUCCESS",
+        "index_version": "index_v5",
+        "farmer_level": {
+            "index_score": 70.8,
+            "raw_index": 79.6,
+            "risk_category": "LOW",
+            "confidence_gate": 0.89,
+            "weights": {"landuse": 30, "vigor": 25, "stability": 20, "weather": 25},
+            "sub_indices": {
+                "landuse": 62.8, "vigor": 82.9, "stability": 97.6, "weather": 65.9,
+                "data_confidence": 72.4,
+            },
+            "weak_sub_indices": [],
+        },
+    }
+    p = build_report_payload(doc)
+    assert p["score"]["index_score"] == 70.8
+    landuse = next(s for s in p["sub_indices"] if s["key"] == "landuse")
+    assert landuse["score"] == 62.8
+    assert p["data_confidence"]["score"] == 72.4
+
+
 def test_captions_are_regenerated_for_older_records():
     """A record stored before captions existed must still render."""
     doc = _assessment()

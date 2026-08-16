@@ -40,6 +40,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from assessment.legacy_credit_shim import sub_index_score
 from utils.mongo_encoding import count_nulls, to_mongo, utc_now
 
 logger = logging.getLogger(__name__)
@@ -290,8 +291,9 @@ def build_score_history_entry(
         # change — otherwise a historical point cannot be explained.
         "weights": risk.get("weights"),
         "sub_index_scores": {
-            k: (v or {}).get("score")
+            k: sub_index_score(v)
             for k, v in (risk.get("sub_indices") or {}).items()
+            if sub_index_score(v) is not None
         },
         "weak_sub_indices": risk.get("weak_sub_indices") or [],
         "field_area_ha": assessment.get("field_area_ha"),

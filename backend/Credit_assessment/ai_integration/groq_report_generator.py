@@ -24,6 +24,8 @@ import json
 import logging
 from typing import Dict, List, Optional
 
+from assessment.legacy_credit_shim import risk_block, sub_index_score
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL   = "llama-3.3-70b-versatile"
@@ -35,7 +37,7 @@ def _risk_view(assessment: Dict) -> Dict:
     preferred) or the legacy `credit_assessment` (fallback). Keeps the AI layer
     working during the parallel-wiring period and after full cutover.
     """
-    ra = assessment.get("risk_assessment")
+    ra = risk_block(assessment)
     if isinstance(ra, dict) and ra.get("sub_indices"):
         subs = ra["sub_indices"]
         return {
@@ -43,7 +45,11 @@ def _risk_view(assessment: Dict) -> Dict:
             "score": float(ra.get("index_score", 50)),
             "raw_index": ra.get("raw_index"),
             "risk_category": ra.get("risk_category", "UNKNOWN"),
-            "component_scores": {k: float(v.get("score", 50)) for k, v in subs.items()},
+            "component_scores": {
+                k: sub_index_score(v, 50.0)
+                for k, v in subs.items()
+                if sub_index_score(v) is not None
+            },
             "weak_components": ra.get("weak_sub_indices", []),
             "weights": ra.get("weights", {}),
             "reason_codes": ra.get("reason_codes", []),

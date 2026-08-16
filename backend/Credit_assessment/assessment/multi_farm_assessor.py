@@ -633,26 +633,27 @@ class MultiFarmAssessor:
         # and report trend tile read. Without it a multi-plot farmer — the
         # common case — would have no farmer-level history at all.
         if hasattr(mongo, "save_score_history"):
-            fl = farmer_result.get("farmer_level") or {}
-            entry = build_score_history_entry(
-                {
-                    "farmer_id": farmer_id,
-                    "assessment_date": farmer_result.get("assessment_date"),
-                    "index_version": farmer_result.get("index_version"),
-                    "field_area_ha": fl.get("total_scored_area_ha"),
-                    # build_score_history_entry reads risk_assessment; the
-                    # aggregator's farmer_level carries the same field names.
-                    "risk_assessment": fl,
-                },
-                assessment_id=assessment_id,
-            )
-            if entry is not None:
-                entry["n_plots_scored"] = farmer_result.get("n_plots_scored")
-                entry["n_plots_total"] = farmer_result.get("n_plots_total")
-                try:
+            try:
+                fl = farmer_result.get("farmer_level") or {}
+                entry = build_score_history_entry(
+                    {
+                        "farmer_id": farmer_id,
+                        "assessment_date": farmer_result.get("assessment_date"),
+                        "index_version": farmer_result.get("index_version"),
+                        "field_area_ha": fl.get("total_scored_area_ha"),
+                        # build_score_history_entry reads risk_assessment; the
+                        # aggregator's farmer_level carries the same field names
+                        # (including scalar sub_indices).
+                        "risk_assessment": fl,
+                    },
+                    assessment_id=assessment_id,
+                )
+                if entry is not None:
+                    entry["n_plots_scored"] = farmer_result.get("n_plots_scored")
+                    entry["n_plots_total"] = farmer_result.get("n_plots_total")
                     mongo.save_score_history(entry)
-                except Exception as e:
-                    logger.warning("farmer-level score history failed: %s", e)
+            except Exception as e:
+                logger.warning("farmer-level score history failed: %s", e)
 
 
 __all__ = [
