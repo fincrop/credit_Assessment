@@ -177,8 +177,23 @@ class RiskIndexEngine:
         seasons_with = max(seasons_with, float(len(sp)))
         coverage = _clip((seasons_with / total_seasons) * 100.0) if total_seasons > 0 else _clip(min(1.0, cpi / 1.5) * 100.0)
 
-        # Fallow penalty (explicit if provided by land-utilization)
-        fallow_frac = float(ca.get("fallow_fraction", 0.0) or 0.0)
+        # Fallow penalty.
+        #
+        # fallow_fraction is only populated when land-utilization ran, and that
+        # only runs when at least one cycle was detected. So a parcel with ZERO
+        # cycles previously fell through to the 0.0 default and took NO fallow
+        # penalty at all — while a genuine farm with two cycles and long gaps
+        # was penalised. Dead ground scored better than working land.
+        #
+        # Zero cycles over the whole lookback IS total fallow; treat it as such
+        # rather than as missing data.
+        fallow_raw = ca.get("fallow_fraction")
+        if fallow_raw is None and n_complete == 0:
+            fallow_frac = 1.0
+            fallow_basis = "inferred_no_cycles"
+        else:
+            fallow_frac = float(fallow_raw or 0.0)
+            fallow_basis = "measured" if fallow_raw is not None else "default"
         fallow_penalty = _clip(fallow_frac * 100.0, 0, 40)
 
         score = _clip(0.55 * intensity + 0.30 * coverage + 0.15 * (100.0 - fallow_penalty))
@@ -187,7 +202,8 @@ class RiskIndexEngine:
             "inputs": {"n_complete_cycles": n_complete, "years": years,
                        "cycles_per_year": round(cpi, 2),
                        "season_coverage": round(coverage, 1),
-                       "fallow_fraction": round(fallow_frac, 3)},
+                       "fallow_fraction": round(fallow_frac, 3),
+                       "fallow_basis": fallow_basis},
             "drivers": {"intensity": round(intensity, 1), "coverage": round(coverage, 1)},
         }
 
@@ -211,7 +227,19 @@ class RiskIndexEngine:
             # this is currently 0 — and no output may claim otherwise.
             if str(yd.get("yield_index_basis") or "") == "peer_nirv":
                 n_peer_scored += 1
-        mean_yield = float(np.mean(yields)) if yields else float(pa.get("average_yield_score", 50.0))
+        # With no scored cycles there is no yield evidence. Defaulting to a
+        # neutral 50 treated "we saw nothing grow" as an average farm.
+        if yields:
+            mean_yield = float(np.mean(yields))
+        elif pa.get("average_yield_score") is not None:
+            mean_yield = float(pa["average_yield_score"])
+        else:
+            mean_yield = float(getattr(PipelineConfig, "VIGOR_NO_EVIDENCE_SCORE", 25.0))
+
+        # Cap the peak term. peak_cvi/0.75 saturates at 100 for any persistently
+        # green surface, so dense forest maxed this out — scoring better on
+        # vigor than a real crop. Vegetation denser than a crop canopy is not
+        # evidence of a better crop.
         peak_score = _clip(float(np.mean(peaks)) / 0.75 * 100.0) if peaks else mean_yield
         score = _clip(0.70 * mean_yield + 0.30 * peak_score)
         return {
@@ -271,10 +299,25 @@ class RiskIndexEngine:
             stability_cv = 60.0  # neutral when too few cycles
 
         score = _clip(0.6 * anomaly_free + 0.4 * stability_cv)
+
+        # No cycles at all means no evidence of stable cultivation — not
+        # evidence of stability.
+        #
+        # This sub-index rewards the ABSENCE of stress anomalies, and nothing
+        # stressful ever happens to a parking lot. With zero cycles the anomaly
+        # count is zero and the CV term falls to its neutral 60, so barren land
+        # scored 84/100 here — its single strongest pillar. Absence of evidence
+        # must not read as evidence of good behaviour (rule P-1).
+        no_evidence = len(sp) == 0
+        if no_evidence:
+            score = float(getattr(PipelineConfig, "STABILITY_NO_EVIDENCE_SCORE", 25.0))
+
         return {
             "score": round(score, 1),
             "inputs": {"anomalies_high": n_h, "anomalies_medium": n_m, "anomalies_low": n_l,
                        "anomaly_penalty": round(penalty, 2),
+                       "n_seasons_observed": len(sp),
+                       "no_cultivation_evidence": no_evidence,
                        "vigor_cv": round(cv, 3) if len(vig) >= 2 and np.mean(vig) > 0 else None},
             "drivers": {"anomaly_free": round(anomaly_free, 1), "consistency": round(stability_cv, 1)},
         }

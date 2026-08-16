@@ -77,6 +77,11 @@ class SatelliteDataCollector:
         'kNDVI_mean',
         'LSWI_mean',
         'GCVI_mean',
+        # Land-cover discriminators — consumed by crop_analysis.land_cover_gate
+        # to decide whether the parcel is farmland at all.
+        'NDBI_mean',
+        'BSI_mean',
+        'MNDWI_mean',
     )
 
     def __init__(self, verbose: bool = True):
@@ -954,7 +959,10 @@ class SatelliteDataCollector:
         continuous_data["vs_smooth"] = [round(float(v), 4) for v in vs_smooth]
         continuous_data["signal_source"] = [labels.get(int(x), "optical") for x in source]
         continuous_data["bin_quality"] = [round(float(q), 3) for q in quality]
-        for nm in ("MSAVI2", "NIRv", "LSWI", "GCVI", "kNDVI"):
+        # Vigor / context series, plus the land-cover discriminators the gate
+        # reads (NDBI / BSI / MNDWI). These must be exposed as RAW series —
+        # the gate deliberately does not use the normalised composite.
+        for nm in ("MSAVI2", "NIRv", "LSWI", "GCVI", "kNDVI", "NDBI", "BSI", "MNDWI"):
             continuous_data[f"{nm.lower()}_values"] = _rnd_list(_idx_series(nm))
         if sar_arr is not None:
             continuous_data["rvi_values"] = _rnd_list(sar_arr)
@@ -1096,7 +1104,20 @@ class SatelliteDataCollector:
             ).rename("MSAVI2")
             nirv = ndvi.multiply(NIR).rename("NIRv")
 
-            band_list = [ndvi, evi, ndmi, ndwi, ndre, psri, lswi, msavi2, nirv]
+            # Land-cover discriminators. Same reduceRegion call, no extra
+            # aggregation cost — these answer "is this farmland at all?" rather
+            # than "how vigorous is it".
+            ndbi = masked.normalizedDifference(["B11", "B8"]).rename("NDBI")
+            mndwi = masked.normalizedDifference(["B3", "B11"]).rename("MNDWI")
+            bsi = masked.expression(
+                "((SWIR1 + RED) - (NIR + BLUE)) / ((SWIR1 + RED) + (NIR + BLUE) + 1e-6)",
+                {"SWIR1": SWIR1, "RED": RED, "NIR": NIR, "BLUE": BLUE},
+            ).rename("BSI")
+
+            band_list = [
+                ndvi, evi, ndmi, ndwi, ndre, psri, lswi, msavi2, nirv,
+                ndbi, mndwi, bsi,
+            ]
             if enable_gcvi:
                 band_list.append(NIR.divide(GREEN.add(1e-6)).subtract(1).rename("GCVI"))
             if enable_kndvi:
@@ -1254,6 +1275,10 @@ class SatelliteDataCollector:
                 "LSWI_mean": self._safe_float(p.get("LSWI_mean")),
                 "GCVI_mean": self._safe_float(p.get("GCVI_mean")),
                 "kNDVI_mean": self._safe_float(p.get("kNDVI_mean")),
+                # Land-cover discriminators (crop_analysis.land_cover_gate)
+                "NDBI_mean": self._safe_float(p.get("NDBI_mean")),
+                "BSI_mean": self._safe_float(p.get("BSI_mean")),
+                "MNDWI_mean": self._safe_float(p.get("MNDWI_mean")),
             }
             prev = by_day.get(ds)
             if prev is None or self._gee_scene_preferred(prev, scene_stats):
@@ -1806,6 +1831,32 @@ class SatelliteDataCollector:
             indices['GCVI_mean'] = float(np.nanmean(DataProcessor.calculate_gcvi(nir, green)))
         else:
             indices['GCVI_mean'] = np.nan
+
+        # ---- Land-cover discriminators (is this farmland at all?) ----------
+        # All from bands already downloaded. Consumed by land_cover_gate.
+
+        # NDBI — built-up. Positive over concrete/asphalt, negative over crops.
+        if all(b in bands for b in ['B11', 'B08']):
+            swir1, nir = DataProcessor.align_arrays([bands['B11'], bands['B08']])
+            indices['NDBI_mean'] = float(np.nanmean(DataProcessor.calculate_ndbi(swir1, nir)))
+        else:
+            indices['NDBI_mean'] = np.nan
+
+        # BSI — bare soil / rock. Separates permanently barren from fallow farmland.
+        if all(b in bands for b in ['B11', 'B04', 'B08', 'B02']):
+            swir1, red, nir, blue = DataProcessor.align_arrays(
+                [bands['B11'], bands['B04'], bands['B08'], bands['B02']]
+            )
+            indices['BSI_mean'] = float(np.nanmean(DataProcessor.calculate_bsi(swir1, red, nir, blue)))
+        else:
+            indices['BSI_mean'] = np.nan
+
+        # MNDWI — open water. Preferred over NDWI: fewer built-up false positives.
+        if all(b in bands for b in ['B03', 'B11']):
+            green, swir1 = DataProcessor.align_arrays([bands['B03'], bands['B11']])
+            indices['MNDWI_mean'] = float(np.nanmean(DataProcessor.calculate_mndwi(green, swir1)))
+        else:
+            indices['MNDWI_mean'] = np.nan
 
         return indices
 

@@ -71,6 +71,12 @@ from data_acquisition.satellite_collector import SatelliteDataCollector
 from data_acquisition.weather_analyzer import WeatherAnalyzer
 from crop_analysis.crop_detector import CropDetector
 from crop_analysis.crop_cycle_detector import CropCycleDetector
+from crop_analysis.land_cover_gate import (
+    classify_land_cover,
+    confidence_gate_penalty,
+    FLAG as LC_FLAG,
+    REJECT as LC_REJECT,
+)
 from crop_analysis.land_utilization_analyzer import LandUtilizationAnalyzer
 from crop_analysis.performance_analyzer import CropPerformanceAnalyzer
 from assessment.risk_index_engine import RiskIndexEngine, INDEX_VERSION
@@ -709,6 +715,54 @@ class SatelliteBasedCreditPipeline:
                     f"Too few usable satellite observations ({n_valid}); "
                     "need at least 12 clear bins for analysis."
                 )
+
+            # ── LAND COVER GATE ──────────────────────────────────────────
+            # Is this parcel farmland at all? Runs post-acquisition (so it can
+            # use the observed series) and pre-analysis (so we never spend
+            # effort producing a credit signal for a lake).
+            #
+            # The verdict is stamped on the assessment either way — including
+            # on a pass — so a lender can see the evidence, not just the answer.
+            if bool(getattr(PipelineConfig, 'LANDCOVER_GATE_ENABLED', True)):
+                land_cover = classify_land_cover(
+                    continuous_data,
+                    n_cycles=None,          # cycles are not detected yet
+                    field_area_ha=assessment.get('field_area_ha'),
+                    location={'latitude': clat, 'longitude': clon},
+                    agro_profile=eco_profile,
+                    registry_crop=crop_hint,
+                )
+                assessment['land_cover'] = land_cover
+                assessment['pipeline_stages'].append('2b_land_cover')
+
+                if land_cover['outcome'] == LC_REJECT:
+                    # Distinct terminal state, NOT a failure: nothing went
+                    # wrong, we simply decline to score non-agricultural land.
+                    # Surfacing this as FAILED would make "we refuse to score a
+                    # lake" indistinguishable from "Earth Engine timed out".
+                    assessment['status'] = 'REJECTED_NOT_AGRICULTURAL'
+                    assessment['rejection_reason'] = land_cover['reason']
+                    assessment['rejection_class'] = land_cover['class']
+                    assessment['processing_time_seconds'] = (
+                        datetime.now() - start_time
+                    ).total_seconds()
+                    logger.warning(
+                        "Assessment stopped: %s (%s, confidence %.2f)",
+                        land_cover['reason'], land_cover['class'],
+                        land_cover['confidence'],
+                    )
+                    if save_to_db and self.use_mongodb:
+                        try:
+                            self.db.save_assessment(assessment)
+                        except Exception as e:
+                            logger.error("Could not persist rejection: %s", e)
+                    gc.collect()
+                    return assessment
+
+                if land_cover['outcome'] == LC_FLAG:
+                    assessment['warnings'].append(
+                        f"Land cover flagged: {land_cover['reason']}"
+                    )
 
             # Initialize analyzers with location
             self.weather_analyzer = WeatherAnalyzer(

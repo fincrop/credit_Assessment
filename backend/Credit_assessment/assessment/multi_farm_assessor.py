@@ -266,6 +266,27 @@ class MultiFarmAssessor:
             try:
                 assessment = self._assess_one(farmer_id, farm, farmer_benefits)
                 status = str(assessment.get("status", "")).upper()
+
+                if status == "REJECTED_NOT_AGRICULTURAL":
+                    # Counts as SKIPPED, not FAILED. counters_from_farm_assessments
+                    # buckets on the reason prefix: only "error:" is a failure.
+                    # A plot that is not farmland is a legitimate exclusion, and
+                    # reporting it as a failure would make a farmer's holding
+                    # look broken rather than partly non-agricultural.
+                    lc = assessment.get("land_cover") or {}
+                    rec = self._skipped_record(
+                        farm, tf,
+                        f"not_agricultural:{lc.get('class', 'UNKNOWN')}",
+                    )
+                    rec["land_cover"] = {
+                        "class": lc.get("class"),
+                        "confidence": lc.get("confidence"),
+                        "reason": lc.get("reason"),
+                    }
+                    per_farm.append(rec)
+                    _emit()
+                    continue
+
                 if status and status != "SUCCESS":
                     err = assessment.get("error") or (
                         (assessment.get("errors") or ["pipeline_non_success"])[0]

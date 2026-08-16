@@ -273,15 +273,38 @@ def process_assessment_job(
 
         slim_result = slim_assessment_for_api(raw_result, include_heavy=False)
 
-        pipeline_ok = str(raw_result.get("status", "")).upper() == "SUCCESS"
-        job_status = "SUCCESS" if pipeline_ok else "FAILED"
+        raw_status = str(raw_result.get("status", "")).upper()
+        pipeline_ok = raw_status == "SUCCESS"
+
+        # A rejection is NOT a failure. Nothing went wrong — we declined to
+        # score land that is not agricultural. Collapsing it into FAILED (as
+        # this branch previously did for every non-SUCCESS status) makes
+        # "we refuse to score a lake" indistinguishable from "Earth Engine
+        # timed out", so the UI cannot explain either one.
+        rejected = raw_status == "REJECTED_NOT_AGRICULTURAL"
+
         if pipeline_ok:
-            err_msg = None
+            job_status, err_msg = "SUCCESS", None
             warns = raw_result.get("warnings") or []
             if warns:
                 # Surface partial plot failures without failing the job
                 slim_result.setdefault("warnings", warns)
+        elif rejected:
+            job_status = "REJECTED_NOT_AGRICULTURAL"
+            err_msg = None
+            slim_result.setdefault("land_cover", raw_result.get("land_cover"))
+            slim_result.setdefault(
+                "rejection_reason", raw_result.get("rejection_reason")
+            )
+            slim_result.setdefault(
+                "rejection_class", raw_result.get("rejection_class")
+            )
+            logger.info(
+                "[JOB %s] Rejected as non-agricultural: %s",
+                job_id, raw_result.get("rejection_reason"),
+            )
         else:
+            job_status = "FAILED"
             err_msg = raw_result.get("error")
             errs = raw_result.get("errors")
             if not err_msg and isinstance(errs, list) and errs:

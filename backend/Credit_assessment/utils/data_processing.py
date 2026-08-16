@@ -453,6 +453,74 @@ class DataProcessor:
             gcvi = np.where(np.isfinite(gcvi), np.clip(gcvi, -1, 12), np.nan)
         return gcvi
 
+    # ── Land-cover discriminators ────────────────────────────────────────
+    #
+    # These three exist to answer "is this parcel farmland at all?", not to
+    # measure crop vigor. All are computed from bands already downloaded
+    # (B02 blue, B03 green, B04 red, B08 NIR, B11 SWIR1), so they add no
+    # acquisition cost. Threshold guidance in land_cover_gate.py cites the
+    # source for each; the formulas below are the standard published forms.
+
+    @staticmethod
+    def calculate_ndbi(swir1, nir):
+        """
+        NDBI (Normalized Difference Built-up Index) = (SWIR1 - NIR) / (SWIR1 + NIR).
+
+        Built-up surfaces reflect more in SWIR than NIR, so NDBI goes positive
+        over concrete/asphalt and negative over vegetation. This is the primary
+        built-up discriminator and was NOT previously computed — B11 was
+        downloaded and used only for NDMI/LSWI.
+
+        Note NDBI is the sign-flipped twin of NDMI; it is kept separate because
+        the two are read with different intent (moisture vs impervious surface)
+        and conflating them has caused bugs elsewhere in this file's history.
+        """
+        swir1 = np.asarray(swir1, dtype=float)
+        nir = np.asarray(nir, dtype=float)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            ndbi = (swir1 - nir) / (swir1 + nir + _EPS)
+            ndbi = np.where(np.isfinite(ndbi), np.clip(ndbi, -1, 1), np.nan)
+        return ndbi
+
+    @staticmethod
+    def calculate_bsi(swir1, red, nir, blue):
+        """
+        BSI (Bare Soil Index)
+            = ((SWIR1 + RED) - (NIR + BLUE)) / ((SWIR1 + RED) + (NIR + BLUE))
+
+        Positive over exposed soil and rock, negative over vegetation and water.
+        Distinguishes genuinely barren ground from a fallow field, which matters
+        because a fallow farm is still farmland and must not be rejected.
+        """
+        swir1 = np.asarray(swir1, dtype=float)
+        red = np.asarray(red, dtype=float)
+        nir = np.asarray(nir, dtype=float)
+        blue = np.asarray(blue, dtype=float)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            num = (swir1 + red) - (nir + blue)
+            den = (swir1 + red) + (nir + blue)
+            bsi = num / (den + _EPS)
+            bsi = np.where(np.isfinite(bsi), np.clip(bsi, -1, 1), np.nan)
+        return bsi
+
+    @staticmethod
+    def calculate_mndwi(green, swir1):
+        """
+        MNDWI (Modified Normalized Difference Water Index)
+            = (GREEN - SWIR1) / (GREEN + SWIR1).
+
+        Preferred over NDWI for open water: it suppresses the built-up
+        false-positives that NDWI is prone to, because water absorbs SWIR far
+        more strongly than built surfaces do. Strongly positive over water
+        bodies, negative over vegetation and soil.
+        """
+        green = np.asarray(green, dtype=float)
+        swir1 = np.asarray(swir1, dtype=float)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            mndwi = (green - swir1) / (green + swir1 + _EPS)
+            mndwi = np.where(np.isfinite(mndwi), np.clip(mndwi, -1, 1), np.nan)
+        return mndwi
+
     @staticmethod
     def calculate_kndvi(nir, red):
         """
@@ -460,7 +528,10 @@ class DataProcessor:
 
         Saturation-resistant, higher SNR variant of NDVI. Simplified fixed-
         sigma form (sigma = 0.5*(NIR+RED)) which reduces to tanh(NDVI^2).
-        Candidate backbone for the smoothed detection signal.
+
+        ⚠ NOT suitable for discrimination: squaring NDVI discards its sign, so
+        open water (NDVI -0.30) and sparse crop (NDVI +0.30) both map to 0.0876.
+        Fine as a vigor index; do not use it to tell surfaces apart.
         """
         nir = np.asarray(nir, dtype=float)
         red = np.asarray(red, dtype=float)

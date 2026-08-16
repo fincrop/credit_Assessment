@@ -334,6 +334,76 @@ class PipelineConfig:
     CROP_DETECTOR_CYCLE_SCENE_PADDING_DAYS = 5
 
     # ========================================================================
+    # LAND COVER GATE — is this parcel farmland at all?
+    # ========================================================================
+    # Runs after the satellite pull and before cycle detection. See
+    # crop_analysis/land_cover_gate.py. Thresholds below are on RAW index
+    # values, never the normalised composite.
+    #
+    # These are not tuned parameters — we have no ground truth to tune against.
+    # Each corresponds to a documented surface behaviour, and the temporal
+    # stream (which needs no external calibration) carries the decisions that
+    # spectral evidence alone cannot support.
+    LANDCOVER_GATE_ENABLED = True
+
+    # Minimum usable observations before a verdict is attempted. Below this the
+    # parcel is FLAGGED as UNKNOWN, never rejected — we cannot reject a parcel
+    # we were unable to look at.
+    LANDCOVER_MIN_OBSERVATIONS = 8
+
+    # Confidence bands (decision D-1).
+    #   >= reject_confidence and non-agricultural  -> REJECTED, no score
+    #   >= flag_confidence                          -> scored, flagged, gate discounted
+    #   below                                       -> flagged as UNKNOWN
+    LANDCOVER_REJECT_CONFIDENCE = 0.75
+    LANDCOVER_FLAG_CONFIDENCE = 0.45
+    # Data-confidence gate multiplier for a flagged parcel: a plot we are unsure
+    # about must not score as if it were clean cropland.
+    LANDCOVER_FLAG_GATE_PENALTY = 0.85
+
+    # NDVI reference levels (raw scale).
+    #   bare soil    below ~0.20 there is no meaningful canopy
+    #   vegetated    above ~0.45 a canopy has clearly formed
+    #   evergreen    above ~0.55 sustained year-round indicates woody cover
+    LANDCOVER_NDVI_BARE_SOIL = 0.20
+    LANDCOVER_NDVI_VEGETATED = 0.45
+    LANDCOVER_NDVI_EVERGREEN = 0.55
+    # Minimum p90-p10 NDVI swing for "this land is worked". Cropland greens up
+    # and senesces; water, rock and rooftops do not.
+    LANDCOVER_MIN_NDVI_AMPLITUDE = 0.18
+    # A perennial planting essentially never returns to bare ground.
+    LANDCOVER_EVERGREEN_BARE_FRACTION = 0.05
+
+    # Fraction of observations that must be positive to call a surface
+    # water / built-up. A majority, not a single date — one flooded scene is a
+    # paddy transplant, not a lake.
+    LANDCOVER_WATER_FRACTION = 0.60
+    LANDCOVER_BUILTUP_FRACTION = 0.60
+    # Bare Soil Index level indicating exposed soil or rock rather than a
+    # cultivable surface. Note we do not attempt to finely separate a quarry
+    # from a rooftop — the evidence does not support it and both are rejected
+    # either way.
+    LANDCOVER_BSI_BARE = 0.35
+
+    # Third-party LULC (ESA WorldCover / Dynamic World). OFF pending rule P-6:
+    # record the published per-class accuracy for cropland over South Asia
+    # before relying on it. 10 m global products are weakest on sub-hectare
+    # fields, which is exactly our population — so the headline global figure
+    # must not be assumed to apply.
+    # Sub-index scores when there is NO evidence of cultivation at all (zero
+    # detected cycles). Deliberately low, not neutral: "we observed nothing
+    # growing here" is a negative finding, not a missing one. Previously these
+    # fell back to 50 (vigor) and 84 (stability, which rewards the absence of
+    # stress events — and nothing stressful happens to a parking lot), so
+    # barren land scored well on its two strongest pillars.
+    VIGOR_NO_EVIDENCE_SCORE = 25.0
+    STABILITY_NO_EVIDENCE_SCORE = 25.0
+
+    LANDCOVER_USE_EXTERNAL_LULC = False
+    LANDCOVER_EXTERNAL_LULC_SOURCE = None
+    LANDCOVER_EXTERNAL_LULC_ACCURACY = None   # {"cropland_producers": .., "region": ..}
+
+    # ========================================================================
     # CROP CYCLE DETECTION (continuous series -> sowing / harvest windows)
     # ========================================================================
     # Irrigated triple-crop (e.g. Rabi veg -> Zaid maize -> Kharif rice) needs
