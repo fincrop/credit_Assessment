@@ -71,6 +71,7 @@ from data_acquisition.satellite_collector import SatelliteDataCollector
 from data_acquisition.weather_analyzer import WeatherAnalyzer
 from crop_analysis.crop_detector import CropDetector
 from crop_analysis.crop_cycle_detector import CropCycleDetector
+from crop_analysis.crop_verification import verify_declared_crop
 from crop_analysis.land_cover_gate import (
     classify_land_cover,
     confidence_gate_penalty,
@@ -310,6 +311,32 @@ class SatelliteBasedCreditPipeline:
         season_results: List[Dict] = []
         n_cycles = len(crop_cycles)
 
+        # Check the declared crop against the phenology we actually observed.
+        #
+        # This is what makes a self-reported crop usable. Trusting it outright
+        # would let a wrong label swing 45% of the index; ignoring it (the old
+        # behaviour — crop_confidence hardcoded 0.0 against a >= 0.25 gate) left
+        # the ICAR reference curves and the per-stage weather analysis dead.
+        cycle_kind = (
+            'perennial'
+            if any(
+                str(_get(c, 'cycle_kind') or 'annual').lower() == 'perennial'
+                for c in crop_cycles
+            )
+            else 'annual'
+        )
+        crop_check = verify_declared_crop(
+            crop_cycles, registry_crop, cycle_kind=cycle_kind
+        ) if bool(getattr(PipelineConfig, 'CROP_VERIFY_ENABLED', True)) else {
+            "outcome": "indeterminate", "confidence": 0.0,
+            "canonical_crop": None, "reason": "verification disabled",
+        }
+        crop_confidence = float(crop_check.get("confidence") or 0.0)
+        verified_crop = (
+            crop_check.get("canonical_crop")
+            if crop_check.get("outcome") == "consistent" else None
+        )
+
         for i, cycle in enumerate(crop_cycles, 1):
             start_str  = _get(cycle, 'start_date')
             end_str    = _get(cycle, 'end_date')
@@ -336,13 +363,20 @@ class SatelliteBasedCreditPipeline:
                 'end_date':             end_str,
                 'crop_detected':        True,
                 'cultivation_signal':   cultivation_signal,
-                'predicted_crop':       registry_crop,
-                'crop_confidence':      0.0,
+                # The canonical name only when the declaration was corroborated
+                # by observed phenology; otherwise the raw declaration is kept
+                # as a label but carries no confidence, so downstream
+                # crop-specific paths stay closed.
+                'predicted_crop':       verified_crop or registry_crop,
+                'crop_confidence':      crop_confidence,
                 'crop_label_source':    (
-                    'registry_self_report' if registry_crop else 'unclassified'
+                    'registry_verified' if verified_crop
+                    else 'registry_self_report' if registry_crop
+                    else 'unclassified'
                 ),
+                'crop_verification':    crop_check.get('outcome'),
                 'classification_note':  (
-                    'registry_crop_as_predicted_crop'
+                    crop_check.get('reason')
                     if registry_crop
                     else 'classification_skipped_by_feature_flag'
                 ),
@@ -382,7 +416,8 @@ class SatelliteBasedCreditPipeline:
         return {
             'season_results':           season_results,
             'crops_detected':           crops_detected,
-            'dominant_crop':            registry_crop,
+            'dominant_crop':            verified_crop or registry_crop,
+            'crop_verification':        crop_check,
             'cropping_intensity':       cycles_per_year,  # alias kept for scorers
             'cycles_per_year':          cycles_per_year,
             'land_utilization_fraction': land_utilization_fraction,

@@ -1,0 +1,90 @@
+# generated 2026-08-16T12:33:00.934743+00:00
+
+========================================================================
+SCORE DRIFT REPORT
+========================================================================
+
+Farmers examined        : 10
+Directly comparable     : 4
+  newly_rejected        : 2
+  now_insufficient_data : 4
+
+!! SMALL SAMPLE (4). Treat the
+   distribution below as indicative, not representative.
+
+-- Score movement (n=4) ------------------------------
+  mean              -16.8
+  median            -20.4
+  p10 / p90         -21.5 /    -9.1
+  largest rise       -4.5
+  largest fall      -21.8
+  improved / worsened / unchanged : 0 / 4 / 0
+  moves >= 15 points : 3
+
+-- Risk band migration ---------------------------------------------
+  LOW->MEDIUM                     3  <-- changed
+  MEDIUM->MEDIUM                  1
+  bands improved / worsened : 0 / 3
+
+-- What drove the movement -----------------------------------------
+  landuse                         4 farmer(s)
+
+-- Newly rejected as non-agricultural ------------------------------
+  2 parcel(s) previously scored are now refused.
+    BUILTUP                       1
+    WATER                         1
+  These are excluded from the movement statistics above:
+  they have no new score, and counting them as a large fall
+  would corrupt the distribution.
+
+  EVERY rejection below should be eyeballed against imagery before
+  this is trusted. A false rejection refuses a real farmer.
+
+    6a7e2e8b06e485e13f575fb2 was 55.2 -> BUILTUP (confidence 0.79)
+      NDVI p10/p50/p90 : 0.1019 / 0.1369 / 0.1732
+      NDVI amplitude   : 0.0712
+      water+ fraction  : 0.0 (mndwi)
+      built-up+ frac   : 0.9889   BSI p50: 0.1
+      observations     : 90
+      - spectral: NDBI positive in 99% of observations with NDVI peaking at only 0.17
+      - temporal: no seasonal variation (amplitude 0.07) and never vegetated
+
+    6a7e300006e485e13f575fb3 was 48.9 -> WATER (confidence 0.91)
+      NDVI p10/p50/p90 : -0.3623 / -0.1245 / -0.0297
+      NDVI amplitude   : 0.3326
+      water+ fraction  : 0.8989 (mndwi)
+      built-up+ frac   : 0.1798   BSI p50: -0.0339
+      observations     : 89
+      - spectral: water index positive in 90% of observations and NDVI never exceeded 0.20
+      - temporal: temporal behaviour inconclusive
+
+-- Now reported as insufficiently observed -------------------------
+  4 parcel(s) previously scored cannot
+  honestly be assessed: no cycles were found, but the record has a
+  blind stretch long enough to have hidden an entire season.
+  Scoring these would deny credit on the satellite's cloud luck.
+
+    10450078010              was 79.2   [parcel_size]
+      effective area    : 0.08261362631613857 ha (~8 pixels)
+      polygon/registered: 0.058x
+      (stopped before imagery — no observation record)
+    10624684679              was 71.1   [parcel_size]
+      effective area    : 0.09264136989717811 ha (~9 pixels)
+      polygon/registered: 0.457x
+      (stopped before imagery — no observation record)
+    12520694333              was 71.2   [parcel_size]
+      effective area    : 0.09937419757883542 ha (~9 pixels)
+      polygon/registered: 0.654x
+      (stopped before imagery — no observation record)
+    17468146693              was 70.5   [parcel_size]
+      effective area    : 0.0477361803321939 ha (~4 pixels)
+      polygon/registered: 4.774x
+      (stopped before imagery — no observation record)
+
+-- Largest movements (top 3) ----------------------------------
+  farmer                     before    after    delta  driver
+  14414799256                  82.2     60.4    -21.8  landuse (-34.1)
+  6a743f02e7f98e19f0ddd1ce     82.6     61.8    -20.8  landuse (-34.9)
+  14322905350                  77.4     57.5    -19.9  landuse (-17.8)
+
+========================================================================

@@ -354,6 +354,30 @@ class PipelineConfig:
     # Each corresponds to a documented surface behaviour, and the temporal
     # stream (which needs no external calibration) carries the decisions that
     # spectral evidence alone cannot support.
+    # ── Declared-crop verification ───────────────────────────────────────
+    # A registry crop name is self-reported and unverified. Rather than trusting
+    # it (a wrong label swings 45% of the index) or ignoring it (which left the
+    # ICAR reference curves and per-stage weather analysis permanently dead), we
+    # check it against the phenology actually observed. See
+    # crop_analysis/crop_verification.py.
+    CROP_VERIFY_ENABLED = True
+    # How far outside the reference duration band a cycle may fall and still
+    # count as consistent. Real sowing dates vary with monsoon onset, and our
+    # own dates are quantised to 10-day bins, so a tight band would reject
+    # genuine matches.
+    CROP_VERIFY_DURATION_TOLERANCE = 0.30
+    # Peak canopy is checked as a FLOOR only — outperforming the reference curve
+    # is not evidence against a declaration.
+    CROP_VERIFY_PEAK_NDVI_TOLERANCE = 0.25
+    CROP_VERIFY_MIN_CYCLES = 1
+    CROP_VERIFY_MIN_CONSISTENT_SHARE = 0.5
+    # Ceiling on the confidence a verified declaration may earn. A match is
+    # corroboration, not measurement: wheat and mustard both run ~130 days in
+    # rabi and both peak near 0.8, so agreement makes a declaration plausible
+    # without establishing it. Sits above the 0.25 gate that unlocks
+    # crop-specific scoring, and well below anything that reads as a detection.
+    CROP_VERIFY_MAX_CONFIDENCE = 0.55
+
     # ── Parcel viability ─────────────────────────────────────────────────
     # Can this parcel be honestly measured at 10 m? See
     # assessment/parcel_viability.py. A Sentinel-2 pixel is 0.01 ha.
