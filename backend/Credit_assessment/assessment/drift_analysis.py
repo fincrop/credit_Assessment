@@ -46,6 +46,7 @@ __all__ = [
     "compare_many",
     "summarise",
     "format_report",
+    "describe_document",
     "RiskBand",
 ]
 
@@ -153,6 +154,39 @@ def _is_perennial(doc: Optional[Dict]) -> bool:
         str((c or {}).get("cycle_kind", "")).lower() == "perennial"
         for c in cycles if isinstance(c, dict)
     )
+
+
+def describe_document(doc: Optional[Dict]) -> Dict:
+    """
+    Compact description of a stored assessment: what shape it is, and whether a
+    score can be recovered from it.
+
+    Used by --plan so the operator can see WHY a baseline is or is not usable,
+    rather than just seeing a blank. A document with no recoverable score is a
+    finding in itself — it means that assessment cannot participate in drift
+    measurement, and knowing which shape it is says how to fix that.
+    """
+    if not isinstance(doc, dict):
+        return {"shape": "missing", "score": None, "band": None}
+
+    if doc.get("assessment_type") == "multi_farm" or "farmer_level" in doc:
+        shape = "multi_farm"
+    elif "risk_assessment" in doc:
+        shape = "single_farm_v5"
+    elif "component_scores" in doc or "credit_score" in doc:
+        shape = "single_farm_legacy"
+    else:
+        shape = "unrecognised"
+
+    return {
+        "shape": shape,
+        "score": _score_of(doc),
+        "band": _band_of(doc),
+        "status": doc.get("status"),
+        "n_plots_scored": doc.get("n_plots_scored"),
+        "index_version": doc.get("index_version"),
+        "top_level_keys": sorted(k for k in doc if not k.startswith("_"))[:12],
+    }
 
 
 def compare_one(farmer_id: str, baseline: Optional[Dict], current: Optional[Dict]) -> Dict:

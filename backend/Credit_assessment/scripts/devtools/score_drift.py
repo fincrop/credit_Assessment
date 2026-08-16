@@ -47,6 +47,7 @@ import logging
 import os
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 # The report contains non-ASCII (em dashes, arrows) and Windows consoles
 # default to cp1252, which raises UnicodeEncodeError mid-write. Degrade
@@ -57,13 +58,17 @@ for _stream in (sys.stdout, sys.stderr):
     except (AttributeError, ValueError):  # pragma: no cover - older/odd streams
         pass
 
-sys.path.insert(
-    0,
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-)
+_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ROOT))
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(_ROOT / ".env")
+except Exception:
+    pass
 
 from assessment.drift_analysis import (  # noqa: E402
-    compare_many, format_report, summarise,
+    compare_many, describe_document, format_report, summarise,
 )
 
 logger = logging.getLogger("score_drift")
@@ -124,6 +129,27 @@ def load_baselines(db, current_signal_version: str, limit: int | None) -> dict:
             "version — they are not a baseline.", skipped_already_new,
         )
     return baselines
+
+
+def build_pipeline():
+    """
+    Construct the pipeline the same way worker.py does, so the drift report
+    measures what production actually runs.
+    """
+    from config import resolve_package_path
+    from main import SatelliteBasedCreditPipeline
+
+    model_path = str(
+        resolve_package_path(
+            os.environ.get("CROP_MODEL_PATH", "models/crop_classifier_model.joblib")
+        )
+    )
+    return SatelliteBasedCreditPipeline(
+        crop_model_path=model_path,
+        ml_mode=os.environ.get("ML_MODE", "rule_based"),
+        verbose=False,
+        use_mongodb=True,
+    )
 
 
 def rerun(pipeline, farmer_ids: list, persist: bool = False) -> dict:
@@ -200,12 +226,34 @@ def main() -> int:
         print(f"Current signal version     : {current_signal_version}")
 
         if args.plan:
-            print("\n--plan: no assessments run. Farmers that would be compared:")
+            print("\n--plan: no assessments run. Farmers that would be compared:\n")
+            print(f"  {'farmer':28s} {'shape':20s} {'score':>8s} {'band':10s} date")
+            usable = 0
+            shapes: dict = {}
             for fid in farmer_ids:
-                doc = baselines[fid]
-                score = doc.get("index_score") or doc.get("credit_score")
-                print(f"  {fid:28s} baseline={score}  "
-                      f"date={doc.get('assessment_date')}")
+                d = describe_document(baselines[fid])
+                shapes[d["shape"]] = shapes.get(d["shape"], 0) + 1
+                if d["score"] is not None:
+                    usable += 1
+                score_txt = "—" if d["score"] is None else f"{d['score']:.1f}"
+                date = str(baselines[fid].get("assessment_date"))[:19]
+                print(f"  {fid:28s} {d['shape']:20s} {score_txt:>8s} "
+                      f"{str(d['band'] or '—'):10s} {date}")
+
+            print(f"\n  Document shapes: "
+                  + ", ".join(f"{k}={v}" for k, v in sorted(shapes.items())))
+            print(f"  Baselines with a recoverable score: {usable}/{len(farmer_ids)}")
+
+            if usable == 0:
+                print("\n  !! NONE of these baselines carries a usable score, so drift")
+                print("     cannot be measured against them. Inspect one with:")
+                print("       python scripts/devtools/inspect_assessment.py <farmer_id>")
+                return 1
+            if usable < len(farmer_ids):
+                print(f"\n  {len(farmer_ids) - usable} baseline(s) have no recoverable")
+                print("  score and will be reported as 'no_baseline' rather than")
+                print("  compared — they are not counted as drift.")
+
             print(f"\nRe-running these would make {len(farmer_ids)} satellite-backed "
                   f"assessment(s). Use --limit to sample first.")
             return 0
@@ -217,14 +265,11 @@ def main() -> int:
                 print("Run without --no-rerun to generate them.")
                 return 1
         else:
-            from main import SatelliteBasedCreditPipeline
             print(f"\nRe-assessing {len(farmer_ids)} farmer(s). This pulls imagery "
                   f"and will take a while...")
             print(f"Writing results to credit_assessments: "
                   f"{'YES (--persist)' if args.persist else 'no'}\n")
-            currents = rerun(
-                SatelliteBasedCreditPipeline(), farmer_ids, persist=args.persist
-            )
+            currents = rerun(build_pipeline(), farmer_ids, persist=args.persist)
 
         comparisons = compare_many(baselines, currents)
         summary = summarise(comparisons)
