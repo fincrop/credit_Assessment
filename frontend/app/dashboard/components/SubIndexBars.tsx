@@ -9,6 +9,7 @@ import {
   subIndexLabel,
   SUBSTANTIVE_SUBINDEX_KEYS,
 } from '../../lib/formatRisk';
+import { scoreColor } from '../../lib/kbsScore';
 
 interface Props {
   view: RiskView;
@@ -55,7 +56,7 @@ export function SubIndexBars({ view, compact, hideGate }: Props) {
                 {subIndexLabel(k)}
                 {w != null && (
                   <span
-                    className="text-stone-400 ml-1"
+                    className="text-ink-muted ml-1"
                     title={`Weight ${w}% of additive index (provisional)`}
                   >
                     ({formatScoreOne(w)}%)
@@ -66,13 +67,10 @@ export function SubIndexBars({ view, compact, hideGate }: Props) {
                 {formatScoreOne(v)}
               </span>
             </div>
-            <div className="h-1.5 bg-[#E8E4DB] rounded-full overflow-hidden">
+            <div className="h-1.5 bg-rule-strong rounded-full overflow-hidden">
               <div
                 className="h-full rounded-full"
-                style={{
-                  width: `${pct}%`,
-                  background: pct > 65 ? '#16a34a' : pct > 40 ? '#d97706' : '#dc2626',
-                }}
+                style={{ width: `${pct}%`, background: scoreColor(pct) }}
               />
             </div>
           </div>
@@ -80,16 +78,16 @@ export function SubIndexBars({ view, compact, hideGate }: Props) {
       })}
 
       {gateFrac != null && (
-        <div className={compact ? 'pt-1' : 'pt-2 border-t border-[#E4DFD4]'}>
+        <div className={compact ? 'pt-1' : 'pt-2 border-t border-rule'}>
           <div className="flex justify-between text-xs mb-1">
             <span className="text-stone-600">
-              Data confidence <span className="text-stone-400">(multiplicative gate)</span>
+              Data confidence <span className="text-ink-muted">(multiplicative gate)</span>
             </span>
             <span className="text-stone-800 font-mono">
               {formatGateMultiplier(view.gate)}
             </span>
           </div>
-          <div className="h-1.5 bg-[#E8E4DB] rounded-full overflow-hidden">
+          <div className="h-1.5 bg-rule-strong rounded-full overflow-hidden">
             <div
               className="h-full rounded-full bg-sky-600"
               style={{ width: `${gateFrac * 100}%` }}
@@ -106,7 +104,7 @@ export function SubIndexBars({ view, compact, hideGate }: Props) {
       )}
 
       {!hideGate && (
-        <p className="text-[10px] text-stone-400">Weights are provisional (AHP-style).</p>
+        <p className="text-[10px] text-ink-muted">Weights are provisional (AHP-style).</p>
       )}
     </div>
   );

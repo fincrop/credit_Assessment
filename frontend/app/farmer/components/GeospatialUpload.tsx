@@ -44,7 +44,7 @@ export function GeospatialUpload({ farms, onFarmsChange }: Props) {
         className={`border-2 border-dashed rounded-xl px-6 py-10 text-center transition-colors ${
           busy
             ? 'border-emerald-400 bg-emerald-50/50'
-            : 'border-[#E4DFD4] bg-[#FFFEFA] hover:border-emerald-400/60 hover:bg-emerald-50/30'
+            : 'border-rule bg-paper-raised hover:border-emerald-400/60 hover:bg-emerald-50/30'
         }`}
         onDragOver={(e) => {
           e.preventDefault();

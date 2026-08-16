@@ -62,9 +62,9 @@ export function StreamingFarmList({
 }) {
   return (
     <div
-      className={`bg-white rounded-xl border border-[#E4DFD4] overflow-hidden flex flex-col ${className}`}
+      className={`bg-white rounded-xl border border-rule overflow-hidden flex flex-col ${className}`}
     >
-      <div className="px-5 py-4 border-b border-[#E4DFD4] flex items-center justify-between gap-3 flex-wrap shrink-0">
+      <div className="px-5 py-4 border-b border-rule flex items-center justify-between gap-3 flex-wrap shrink-0">
         <div>
           <h3 className="text-sm font-bold text-stone-900 uppercase tracking-wider">
             Farms
@@ -78,7 +78,7 @@ export function StreamingFarmList({
         </p>
       </div>
 
-      <ul className="divide-y divide-[#E4DFD4] overflow-y-auto flex-1 min-h-0">
+      <ul className="divide-y divide-rule overflow-y-auto flex-1 min-h-0">
         {rows.map((row) => {
           const badge = statusBadge(row.status);
           const a = row.assessment;
@@ -107,7 +107,7 @@ export function StreamingFarmList({
               className={`px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 cursor-pointer transition-colors ${
                 selected
                   ? 'bg-amber-50/80 border-l-4 border-l-amber-400'
-                  : 'hover:bg-[#F5F2EB]/70 border-l-4 border-l-transparent'
+                  : 'hover:bg-paper/70 border-l-4 border-l-transparent'
               }`}
             >
               <div className="min-w-0">
@@ -156,7 +156,7 @@ export function StreamingFarmList({
                     Details
                   </Link>
                 ) : (
-                  <span className="text-sm text-stone-300 px-3 py-1.5">Details</span>
+                  <span className="text-sm text-ink-muted px-3 py-1.5">Details</span>
                 )}
               </div>
             </li>

@@ -73,14 +73,14 @@ export default function HomePage() {
 
   if (loading || !user) {
     return (
-      <div className="min-h-screen bg-[#F5F2EB] flex items-center justify-center text-stone-500 text-sm">
+      <div className="min-h-screen bg-paper flex items-center justify-center text-stone-500 text-sm">
         Loading…
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F2EB] text-stone-800 relative overflow-hidden">
+    <div className="min-h-screen bg-paper text-stone-800 relative overflow-hidden">
       {/* Atmosphere */}
       <div
         className="pointer-events-none absolute inset-0"
@@ -99,7 +99,7 @@ export default function HomePage() {
 
       <header className="relative z-10 flex items-center justify-between px-6 py-5 max-w-6xl mx-auto w-full">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-[#F5F2EB] text-sm">
+          <div className="w-9 h-9 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-paper text-sm">
             A
           </div>
           <div>
@@ -137,7 +137,7 @@ export default function HomePage() {
         <div className="grid md:grid-cols-2 gap-6">
           <Link
             href="/agristack/connect?next=/dashboard"
-            className="group relative rounded-2xl border border-[#E4DFD4] bg-white/80 backdrop-blur-md p-8 hover:border-emerald-400 hover:bg-emerald-50 transition-all duration-300 animate-slide-in"
+            className="group relative rounded-2xl border border-rule bg-white/80 backdrop-blur-md p-8 hover:border-emerald-400 hover:bg-emerald-50 transition-all duration-300 animate-slide-in"
             style={{ animationDelay: '0.05s' }}
           >
             <div
@@ -162,7 +162,7 @@ export default function HomePage() {
 
           <Link
             href="/farmer"
-            className="group relative rounded-2xl border border-[#E4DFD4] bg-white/80 backdrop-blur-md p-8 hover:border-emerald-400 hover:bg-emerald-50 transition-all duration-300 animate-slide-in"
+            className="group relative rounded-2xl border border-rule bg-white/80 backdrop-blur-md p-8 hover:border-emerald-400 hover:bg-emerald-50 transition-all duration-300 animate-slide-in"
             style={{ animationDelay: '0.12s' }}
           >
             <div
@@ -205,7 +205,7 @@ export default function HomePage() {
           {historyLoading ? (
             <p className="text-sm text-stone-500 py-8">Loading your history…</p>
           ) : farmers.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#E4DFD4] bg-white/50 px-6 py-10 text-center">
+            <div className="rounded-2xl border border-dashed border-rule bg-white/50 px-6 py-10 text-center">
               <p className="text-stone-600 text-sm">
                 No assessments yet — start Farmer Assessment or connect AgriStack.
               </p>
@@ -218,7 +218,7 @@ export default function HomePage() {
                 return (
                   <li
                     key={f._id}
-                    className="rounded-xl border border-[#E4DFD4] bg-white/80 px-5 py-4 flex flex-wrap items-center justify-between gap-3"
+                    className="rounded-xl border border-rule bg-white/80 px-5 py-4 flex flex-wrap items-center justify-between gap-3"
                   >
                     <div className="min-w-0">
                       <p className="font-semibold text-stone-900 truncate">

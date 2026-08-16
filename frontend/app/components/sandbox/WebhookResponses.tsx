@@ -416,7 +416,7 @@ export default function WebhookResponses({ onFarmersSaved }: Props) {
                                                     <div>
                                                         <h3 className="text-lg font-semibold text-gray-800 mb-3 border-b pb-2">Farmer Profile</h3>
                                                         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                                                            <table className="w-full text-sm text-left text-stone-400">
+                                                            <table className="w-full text-sm text-left text-ink-muted">
                                                                 <tbody>
                                                                     {Object.entries(payload.FarmerData).filter(([k]) => !k.includes('hash')).map(([key, value]) => (
                                                                         <tr key={key} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
@@ -439,7 +439,7 @@ export default function WebhookResponses({ onFarmersSaved }: Props) {
                                                     <div>
                                                         <h3 className="text-lg font-semibold text-gray-800 mb-3 border-b pb-2">Land Records ({payload.land_data.length})</h3>
                                                         <div className="overflow-x-auto border border-gray-200 rounded-lg">
-                                                            <table className="w-full text-sm text-left text-stone-400">
+                                                            <table className="w-full text-sm text-left text-ink-muted">
                                                                 <thead className="bg-gray-50 border-b border-gray-200">
                                                                     <tr>
                                                                         <th className="px-4 py-3 font-medium text-gray-900 border-r border-gray-100">Farm ID</th>

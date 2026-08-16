@@ -7,8 +7,8 @@ export function SignalQualityStrip({ data }: { data: AssessmentPayload }) {
   const sq = data.signal_quality_summary;
   if (!sq || (sq.valid_fraction == null && sq.n_valid_bins == null)) {
     return (
-      <div className="bg-white rounded-xl border border-dashed border-[#E4DFD4] px-4 py-3">
-        <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-1">
+      <div className="bg-white rounded-xl border border-dashed border-rule px-4 py-3">
+        <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-1">
           Signal quality
         </p>
         <p className="text-xs text-stone-500">
@@ -32,8 +32,8 @@ export function SignalQualityStrip({ data }: { data: AssessmentPayload }) {
       : null;
 
   return (
-    <div className="bg-white rounded-xl border border-[#E4DFD4] px-4 py-3">
-      <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-2">
+    <div className="bg-white rounded-xl border border-rule px-4 py-3">
+      <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-2">
         Signal quality
       </p>
       <div className="flex flex-wrap gap-4 text-xs text-stone-700">

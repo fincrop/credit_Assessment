@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
+import { MAP_COLORS } from '../../lib/mapStyle';
 type Geom = { type?: string; coordinates?: unknown } | null | undefined;
 
 export type MapPlot = {
@@ -16,21 +17,21 @@ export type MapPlot = {
 type LayerWithKey = L.Layer & { __plotKey?: string };
 
 const STYLE_DIM = {
-  color: '#86efac',
+  color: MAP_COLORS.boundaryFill,
   weight: 1.5,
-  fillColor: '#22c55e',
+  fillColor: MAP_COLORS.boundary,
   fillOpacity: 0.15,
 };
 const STYLE_ACTIVE = {
-  color: '#fbbf24',
+  color: MAP_COLORS.warnFill,
   weight: 3,
-  fillColor: '#f59e0b',
+  fillColor: MAP_COLORS.warn,
   fillOpacity: 0.4,
 };
 const STYLE_SINGLE = {
-  color: '#22c55e',
+  color: MAP_COLORS.boundary,
   weight: 2,
-  fillColor: '#22c55e',
+  fillColor: MAP_COLORS.boundary,
   fillOpacity: 0.25,
 };
 
@@ -95,8 +96,8 @@ function applySelectionStyles(group: L.LayerGroup, selectedKey: string | null, m
     if (layer instanceof L.CircleMarker) {
       layer.setStyle({
         radius: active ? 11 : 8,
-        color: active ? '#f59e0b' : '#22c55e',
-        fillColor: active ? '#fbbf24' : '#22c55e',
+        color: active ? MAP_COLORS.warn : MAP_COLORS.boundary,
+        fillColor: active ? MAP_COLORS.warnFill : MAP_COLORS.boundary,
         fillOpacity: 0.85,
         weight: active ? 3 : 2,
       });
@@ -248,8 +249,8 @@ export default function PlotBoundaryMapInner({
       if (center) {
         const marker = L.circleMarker([center.lat, center.lng], {
           radius: isActive ? 11 : 8,
-          color: isActive ? '#f59e0b' : '#22c55e',
-          fillColor: isActive ? '#fbbf24' : '#22c55e',
+          color: isActive ? MAP_COLORS.warn : MAP_COLORS.boundary,
+          fillColor: isActive ? MAP_COLORS.warnFill : MAP_COLORS.boundary,
           fillOpacity: 0.85,
           weight: isActive ? 3 : 2,
         }) as L.CircleMarker & LayerWithKey;
@@ -343,13 +344,13 @@ export default function PlotBoundaryMapInner({
 
   return (
     <div
-      className="relative rounded-xl overflow-hidden border border-[#E4DFD4] bg-[#F5F2EB] h-full"
+      className="relative rounded-xl overflow-hidden border border-rule bg-paper h-full"
       style={{ minHeight }}
     >
       <div ref={containerRef} style={{ width: '100%', height: '100%', minHeight }} />
       {!hasAny && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[500]">
-          <p className="text-xs text-stone-600 bg-white/90 px-3 py-1.5 rounded-lg border border-[#E4DFD4]">
+          <p className="text-xs text-stone-600 bg-white/90 px-3 py-1.5 rounded-lg border border-rule">
             No boundary geometry for this plot
           </p>
         </div>

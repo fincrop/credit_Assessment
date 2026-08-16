@@ -126,7 +126,7 @@ export default function ResponseSection({ response, isLoading }: ResponseSection
                         onClick={() => setViewMode('json')}
                         className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'json'
                             ? 'bg-white text-green-700 shadow-sm'
-                            : 'text-stone-400 hover:text-gray-800'
+                            : 'text-ink-muted hover:text-gray-800'
                             }`}
                     >
                         JSON
@@ -135,7 +135,7 @@ export default function ResponseSection({ response, isLoading }: ResponseSection
                         onClick={() => setViewMode('table')}
                         className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${viewMode === 'table'
                             ? 'bg-white text-green-700 shadow-sm'
-                            : 'text-stone-400 hover:text-gray-800'
+                            : 'text-ink-muted hover:text-gray-800'
                             }`}
                     >
                         Table

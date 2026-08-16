@@ -45,7 +45,7 @@ function TriStateSelect({
           const v = e.target.value;
           onChange(v === 'yes' ? true : v === 'no' ? false : null);
         }}
-        className="w-full bg-[#F5F2EB] border border-[#E4DFD4] text-stone-800 rounded-lg p-3 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+        className="w-full bg-paper border border-rule text-stone-800 rounded-lg p-3 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
       >
         <option value="unknown">Unknown</option>
         <option value="yes">Yes</option>
@@ -59,7 +59,7 @@ export default function DashboardPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#F5F2EB] flex items-center justify-center text-stone-500 text-sm">
+        <div className="min-h-screen bg-paper flex items-center justify-center text-stone-500 text-sm">
           Loading dashboard…
         </div>
       }
@@ -541,11 +541,11 @@ function DashboardPageContent() {
       : undefined;
 
   return (
-    <div className="min-h-screen bg-[#F5F2EB] text-stone-800 selection:bg-emerald-500/30">
-      <header className="bg-white border-b border-[#E4DFD4] sticky top-0 z-20 no-print">
+    <div className="min-h-screen bg-paper text-stone-800 selection:bg-emerald-500/30">
+      <header className="bg-white border-b border-rule sticky top-0 z-20 no-print">
         <div className="flex h-16 items-center px-6 max-w-7xl mx-auto w-full justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-[#F5F2EB]">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-paper">
               A
             </div>
             <div>
@@ -557,15 +557,15 @@ function DashboardPageContent() {
             <Link href="/" className="text-stone-500 hover:text-emerald-700 font-medium transition-colors">
               Home
             </Link>
-            <span className="text-[#E4DFD4]">|</span>
+            <span className="text-rule">|</span>
             <Link href="/agristack" className="text-stone-500 hover:text-emerald-700 font-medium transition-colors">
               API sandbox
             </Link>
-            <span className="text-[#E4DFD4]">|</span>
+            <span className="text-rule">|</span>
             <Link href="/farmer" className="text-stone-500 hover:text-emerald-700 font-medium transition-colors">
               Farmer Journey
             </Link>
-            <span className="text-[#E4DFD4]">|</span>
+            <span className="text-rule">|</span>
             <span className="text-emerald-700 font-medium">Dashboard</span>
           </nav>
         </div>
@@ -583,7 +583,7 @@ function DashboardPageContent() {
         )}
 
         {status === 'IDLE' && !data && !historyLoading && (
-          <div className="bg-white border border-[#E4DFD4] rounded-xl p-8 max-w-2xl mx-auto mt-12 shadow-sm">
+          <div className="bg-white border border-rule rounded-xl p-8 max-w-2xl mx-auto mt-12 shadow-sm">
             <h2 className="text-xl font-bold mb-2 text-stone-900">Run New Assessment</h2>
             <p className="text-sm text-stone-500 mb-6">
               Enter a Farmer ID. We fetch AgriStack land records in the background, then you
@@ -622,7 +622,7 @@ function DashboardPageContent() {
                   value={farmerId}
                   onChange={(e) => setFarmerId(e.target.value)}
                   placeholder="e.g. 10001921019"
-                  className="w-full bg-[#F5F2EB] border border-[#E4DFD4] text-stone-800 rounded-lg p-3 placeholder-stone-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors font-mono text-sm"
+                  className="w-full bg-paper border border-rule text-stone-800 rounded-lg p-3 placeholder-stone-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors font-mono text-sm"
                   required
                 />
               </div>
@@ -633,7 +633,7 @@ function DashboardPageContent() {
               <button
                 type="submit"
                 disabled={!farmerId.trim()}
-                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-stone-200 disabled:text-stone-400 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-stone-200 disabled:text-ink-muted text-white font-bold py-3 px-4 rounded-lg transition-colors"
               >
                 Prepare farms
               </button>
@@ -642,11 +642,11 @@ function DashboardPageContent() {
         )}
 
         {status === 'PREPARING' && (
-          <div className="bg-white border border-[#E4DFD4] rounded-xl p-8 max-w-2xl mx-auto mt-12 shadow-sm text-center space-y-3">
+          <div className="bg-white border border-rule rounded-xl p-8 max-w-2xl mx-auto mt-12 shadow-sm text-center space-y-3">
             <div className="mx-auto w-10 h-10 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
             <h2 className="text-lg font-bold text-stone-900">Preparing farms</h2>
             <p className="text-sm text-stone-500">{loadingMsg || 'Working…'}</p>
-            <p className="text-xs text-stone-400 font-mono">{farmerId}</p>
+            <p className="text-xs text-ink-muted font-mono">{farmerId}</p>
           </div>
         )}
 
@@ -694,7 +694,7 @@ function DashboardPageContent() {
                   <button
                     type="button"
                     onClick={() => window.print()}
-                    className="bg-white hover:bg-[#F5F2EB] border border-[#E4DFD4] text-stone-700 px-4 py-2 rounded-lg text-sm font-medium"
+                    className="bg-white hover:bg-paper border border-rule text-stone-700 px-4 py-2 rounded-lg text-sm font-medium"
                   >
                     Print / PDF
                   </button>
@@ -711,7 +711,7 @@ function DashboardPageContent() {
                 <button
                   type="button"
                   onClick={resetToIdle}
-                  className="bg-white hover:bg-[#F5F2EB] border border-[#E4DFD4] text-stone-700 px-4 py-2 rounded-lg text-sm font-medium"
+                  className="bg-white hover:bg-paper border border-rule text-stone-700 px-4 py-2 rounded-lg text-sm font-medium"
                 >
                   ← New Assessment
                 </button>
@@ -770,7 +770,7 @@ function DashboardPageContent() {
                 selectedPlotKey={focusedPlotKey}
                 onSelectPlot={setFocusedPlotKey}
               />
-              <div className="bg-white rounded-xl border border-[#E4DFD4] p-3 shadow-sm flex flex-col min-h-[520px] max-h-[640px]">
+              <div className="bg-white rounded-xl border border-rule p-3 shadow-sm flex flex-col min-h-[520px] max-h-[640px]">
                 <p className="text-xs font-medium text-stone-500 mb-2 px-1 shrink-0">
                   {focusedPlotKey
                     ? `Focused · ${focusedPlotKey}`

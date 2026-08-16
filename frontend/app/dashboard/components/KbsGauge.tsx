@@ -62,7 +62,7 @@ export function KbsGauge({
               key={b.id}
               d={arcPath(t0, t1)}
               fill="none"
-              stroke={placeholder ? '#E8E4DB' : b.color}
+              stroke={placeholder ? 'var(--color-rule-strong)' : b.color}
               strokeWidth={stroke}
               strokeLinecap="butt"
               opacity={placeholder ? 0.7 : 1}
@@ -145,8 +145,8 @@ export function KbsGauge({
       <div className={`text-center ${compact ? '-mt-1' : '-mt-2'}`}>
         {placeholder || score == null ? (
           <>
-            <p className={`${compact ? 'text-2xl' : 'text-3xl'} font-bold text-stone-400`}>—</p>
-            <p className="text-[11px] text-stone-400 mt-0.5">out of {KBS_MAX}</p>
+            <p className={`${compact ? 'text-2xl' : 'text-3xl'} font-bold text-ink-muted`}>—</p>
+            <p className="text-[11px] text-ink-muted mt-0.5">out of {KBS_MAX}</p>
           </>
         ) : (
           <>

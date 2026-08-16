@@ -17,14 +17,14 @@ export function LocationStrip({ data }: { data: AssessmentPayload }) {
   const { pm_kisan, has_crop_insurance } = view.benefits;
 
   return (
-    <div className="bg-white rounded-xl border border-[#E4DFD4] p-5">
+    <div className="bg-white rounded-xl border border-rule p-5">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-sm">
             👤
           </div>
           <div>
-            <p className="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">
+            <p className="text-[10px] text-ink-muted font-semibold uppercase tracking-wider">
               Farmer
             </p>
             <p className="text-sm font-semibold text-stone-800 font-mono">
@@ -33,11 +33,11 @@ export function LocationStrip({ data }: { data: AssessmentPayload }) {
           </div>
         </div>
 
-        <div className="h-8 w-px bg-[#E4DFD4]" />
+        <div className="h-8 w-px bg-rule" />
 
         {loc?.latitude != null && loc?.longitude != null && (
           <div>
-            <p className="text-[10px] text-stone-400 font-semibold uppercase tracking-wider mb-0.5">
+            <p className="text-[10px] text-ink-muted font-semibold uppercase tracking-wider mb-0.5">
               Location
             </p>
             <p className="text-xs font-mono text-stone-500">
@@ -48,7 +48,7 @@ export function LocationStrip({ data }: { data: AssessmentPayload }) {
 
         {loc?.region && (
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">
+            <span className="text-[10px] text-ink-muted font-semibold uppercase tracking-wider">
               Region:
             </span>
             <span className="text-xs px-2 py-0.5 rounded-full bg-sky-50 border border-sky-200 text-sky-800">
@@ -59,7 +59,7 @@ export function LocationStrip({ data }: { data: AssessmentPayload }) {
 
         {data.field_area_ha != null && (
           <div>
-            <p className="text-[10px] text-stone-400 font-semibold uppercase tracking-wider mb-0.5">
+            <p className="text-[10px] text-ink-muted font-semibold uppercase tracking-wider mb-0.5">
               Field Area
             </p>
             <p className="text-sm font-semibold text-stone-800">
@@ -67,14 +67,14 @@ export function LocationStrip({ data }: { data: AssessmentPayload }) {
                 view.totalScoredAreaHa ?? data.field_area_ha,
                 2
               )}{' '}
-              <span className="text-stone-400 text-xs">ha</span>
+              <span className="text-ink-muted text-xs">ha</span>
             </p>
           </div>
         )}
 
         {view.nPlotsTotal != null && (
           <div>
-            <p className="text-[10px] text-stone-400 font-semibold uppercase tracking-wider mb-0.5">
+            <p className="text-[10px] text-ink-muted font-semibold uppercase tracking-wider mb-0.5">
               Plots
             </p>
             <p className="text-sm font-semibold text-stone-800">
@@ -91,7 +91,7 @@ export function LocationStrip({ data }: { data: AssessmentPayload }) {
 
         {data.assessment_date && (
           <div>
-            <p className="text-[10px] text-stone-400 font-semibold uppercase tracking-wider mb-0.5">
+            <p className="text-[10px] text-ink-muted font-semibold uppercase tracking-wider mb-0.5">
               Assessed
             </p>
             <p className="text-xs text-stone-500 font-mono">
@@ -104,7 +104,7 @@ export function LocationStrip({ data }: { data: AssessmentPayload }) {
         )}
       </div>
 
-      <div className="mt-3 pt-3 border-t border-[#E4DFD4] flex flex-wrap items-center gap-3">
+      <div className="mt-3 pt-3 border-t border-rule flex flex-wrap items-center gap-3">
         <span
           className={`text-[11px] px-2.5 py-1 rounded-full border ${benefitChipClass(pm_kisan)}`}
         >
@@ -121,13 +121,13 @@ export function LocationStrip({ data }: { data: AssessmentPayload }) {
           </span>
         )}
         {data.sowing_date && (
-          <span className="text-[11px] text-stone-400">
+          <span className="text-[11px] text-ink-muted">
             Sowing (DB):{' '}
             <span className="font-mono text-stone-500">{data.sowing_date}</span>
           </span>
         )}
         {data.ml_mode && (
-          <span className="text-[11px] px-2 py-0.5 rounded bg-[#F5F2EB] border border-[#E4DFD4] text-stone-500 font-mono ml-auto">
+          <span className="text-[11px] px-2 py-0.5 rounded bg-paper border border-rule text-stone-500 font-mono ml-auto">
             mode: {data.ml_mode}
           </span>
         )}

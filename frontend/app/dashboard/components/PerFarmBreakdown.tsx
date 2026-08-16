@@ -32,14 +32,14 @@ export function PerFarmBreakdown({
   if (!farms?.length) return null;
 
   return (
-    <div className="bg-white rounded-xl border border-[#E4DFD4] p-5">
+    <div className="bg-white rounded-xl border border-rule p-5">
       <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-1">
         Per-farm breakdown
       </h2>
       <p className="text-xs text-stone-500 mb-4">
         Each plot scored individually; farmer index aggregates tenure-weighted sub-indices.
       </p>
-      <ul className="divide-y divide-[#E4DFD4] border border-[#E4DFD4] rounded-lg overflow-hidden">
+      <ul className="divide-y divide-rule border border-rule rounded-lg overflow-hidden">
         {farms.map((f, i) => {
           const id = f.farm_id || `plot_${i}`;
           const open = openId === id;
@@ -57,7 +57,7 @@ export function PerFarmBreakdown({
             >
               <button
                 type="button"
-                className="w-full text-left px-4 py-3 flex flex-wrap items-center gap-3 hover:bg-[#F5F2EB]/60"
+                className="w-full text-left px-4 py-3 flex flex-wrap items-center gap-3 hover:bg-paper/60"
                 onClick={() => {
                   setOpenId(open ? null : id);
                   onSelectFarm?.(selected ? null : id);
@@ -72,7 +72,7 @@ export function PerFarmBreakdown({
                 {f.crop && (
                   <span className="text-xs text-stone-500">{f.crop}</span>
                 )}
-                <span className="text-xs text-stone-400">
+                <span className="text-xs text-ink-muted">
                   {formatScoreOne(f.area_ha)} ha · w={formatScoreOne(f.tenure_factor)}
                 </span>
                 <span className="ml-auto flex items-center gap-2">
@@ -86,7 +86,7 @@ export function PerFarmBreakdown({
                   )}
                   <span
                     className={`text-sm font-semibold tabular-nums ${
-                      dimmed ? 'text-stone-400' : 'text-stone-800'
+                      dimmed ? 'text-ink-muted' : 'text-stone-800'
                     }`}
                   >
                     {f.included ? formatScoreWhole(f.index_score ?? null) : '—'}
@@ -100,7 +100,7 @@ export function PerFarmBreakdown({
                   )}
                   {topReason && <p>{topReason}</p>}
                   {f.included && f.sub_indices && Object.keys(f.sub_indices).length > 0 && (
-                    <p className="font-mono text-[11px] text-stone-400">
+                    <p className="font-mono text-[11px] text-ink-muted">
                       {Object.entries(f.sub_indices)
                         .map(([k, v]) => `${k}:${formatScoreOne(v)}`)
                         .join(' · ')}

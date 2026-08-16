@@ -6,7 +6,7 @@ import type { MapPlot } from './PlotBoundaryMapInner';
 const PlotBoundaryMapInner = dynamic(() => import('./PlotBoundaryMapInner'), {
   ssr: false,
   loading: () => (
-    <div className="flex items-center justify-center text-sm text-stone-500 min-h-[320px] h-full bg-[#F5F2EB] rounded-xl border border-[#E4DFD4]">
+    <div className="flex items-center justify-center text-sm text-stone-500 min-h-[320px] h-full bg-paper rounded-xl border border-rule">
       Loading map…
     </div>
   ),

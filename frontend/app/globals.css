@@ -1,19 +1,60 @@
 @import "tailwindcss";
 
 /* =========================================================
-   Design tokens — cream / off-white platform theme
+   Design tokens — "editorial dossier"
+
+   Declared in @theme, so Tailwind generates real utilities from them:
+   bg-paper, border-rule, text-ink-muted, shadow-card, and so on. The
+   previous :root block declared tokens no component ever referenced —
+   242 hex literals were pasted around them instead — so a palette change
+   meant a find-and-replace across 30 files. Use the utility, not the hex.
+
+   SURFACES are named by elevation, not by colour, so a retheme doesn't
+   leave every class lying about what it does.
    ========================================================= */
+@theme {
+  /* Surfaces — page plane → card plane */
+  --color-paper: #F5F2EB;
+  --color-paper-raised: #FFFEFA;
+  --color-card: #FFFFFF;
+
+  /* Rules and tracks */
+  --color-rule: #E4DFD4;
+  --color-rule-soft: #EFEBE1;
+  --color-rule-strong: #E8E4DB;
+
+  /* Ink. --color-ink-muted (#78716C) is the FLOOR for text below 13px —
+     it clears 4.5:1 on paper. stone-400 (#A8A29E) measures 2.3:1 and must
+     not carry text; it was doing so in ~140 places. */
+  --color-ink: #1C1917;
+  --color-ink-2: #57534E;
+  --color-ink-muted: #78716C;
+
+  /* Brand / interactive */
+  --color-accent: #15803D;
+  --color-accent-gold: #B4842A;
+
+  /* Depth. Three levels, ever. Warm-tinted (28,25,23) — a cool grey
+     shadow on cream reads as dirt. */
+  --shadow-card: 0 1px 2px rgba(28, 25, 23, 0.05), 0 1px 1px rgba(28, 25, 23, 0.03);
+  --shadow-raised: 0 2px 6px rgba(28, 25, 23, 0.06), 0 1px 2px rgba(28, 25, 23, 0.04);
+  --shadow-overlay: 0 8px 28px rgba(28, 25, 23, 0.12);
+
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+/* Legacy aliases for the handful of plain-CSS rules further down this
+   file. New work should use the Tailwind utilities above. */
 :root {
-  --bg: #F5F2EB;
-  --bg-elevated: #FFFEFA;
-  --bg-card: #FFFFFF;
-  --border: #E4DFD4;
-  --text: #1C1917;
-  --text-muted: #6B6560;
-  --accent: #16a34a;
-  --accent-gold: #c9972e;
-  --warn: #d97706;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --bg: var(--color-paper);
+  --bg-elevated: var(--color-paper-raised);
+  --bg-card: var(--color-card);
+  --border: var(--color-rule);
+  --text: var(--color-ink);
+  --text-muted: var(--color-ink-muted);
+  --accent: var(--color-accent);
+  --accent-gold: var(--color-accent-gold);
+  --warn: #B4842A;
 }
 
 /* =========================================================
@@ -27,8 +68,21 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  background: var(--bg);
   color: var(--text);
+}
+
+/* The page plane. ~2% luminance range — enough to give the sheet a light
+   source so cards read as paper on a desk, invisible if you look for it.
+   Legitimate because the page's extent encodes nothing (see the gradient
+   rule: never along an axis that carries a value). */
+body {
+  background-color: var(--color-paper);
+  background-image: radial-gradient(
+    120% 80% at 50% 0%,
+    #FAF8F1 0%,
+    var(--color-paper) 60%
+  );
+  background-attachment: fixed;
 }
 
 /* =========================================================
@@ -60,6 +114,17 @@ html, body {
 .animate-spin { animation: spin 0.9s linear infinite; }
 .animate-pulse { animation: pulse-glow 2s ease-in-out infinite; }
 .animate-slide-in { animation: slide-in 0.3s ease-out both; }
+
+/* Motion is an enhancement, never the only way something is conveyed.
+   Honour the OS setting: jump to the final state. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 /* =========================================================
    Agristack sandbox (light theme) — legacy component support

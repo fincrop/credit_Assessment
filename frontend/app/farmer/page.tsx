@@ -17,7 +17,7 @@ export default function FarmerJourneyPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#F5F2EB] flex items-center justify-center text-stone-500 text-sm">
+        <div className="min-h-screen bg-paper flex items-center justify-center text-stone-500 text-sm">
           Loading…
         </div>
       }
@@ -174,7 +174,7 @@ function FarmerJourneyContent() {
 
   if (loading || loadingEdit) {
     return (
-      <div className="min-h-screen bg-[#F5F2EB] flex items-center justify-center text-stone-500 text-sm">
+      <div className="min-h-screen bg-paper flex items-center justify-center text-stone-500 text-sm">
         {loadingEdit ? 'Loading farmer…' : 'Loading…'}
       </div>
     );
@@ -253,14 +253,14 @@ function FarmerJourneyContent() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F2EB] text-stone-800">
-      <header className="bg-[#FFFEFA]/95 backdrop-blur border-b border-[#E4DFD4] sticky top-0 z-20">
+    <div className="min-h-screen bg-paper text-stone-800">
+      <header className="bg-paper-raised/95 backdrop-blur border-b border-rule sticky top-0 z-20">
         <div className="flex h-14 items-center px-6 max-w-7xl mx-auto w-full justify-between">
           <div className="flex items-center gap-4">
             <Link href="/" className="text-stone-500 hover:text-emerald-700 text-sm font-medium">
               Home
             </Link>
-            <span className="text-[#E4DFD4]">|</span>
+            <span className="text-rule">|</span>
             <h1 className="text-sm font-bold text-stone-900">
               {farmerDocId ? 'Edit Farmer' : 'Farmer Assessment Journey'}
             </h1>
@@ -321,7 +321,7 @@ function FarmerJourneyContent() {
             </p>
             <div className="space-y-3 mb-4">
               {farms.length === 0 ? (
-                <p className="text-xs text-stone-500 border border-dashed border-[#E4DFD4] rounded-lg p-3">
+                <p className="text-xs text-stone-500 border border-dashed border-rule rounded-lg p-3">
                   No farms yet. Draw a polygon on the map, then save it — or upload a file below.
                 </p>
               ) : (

@@ -8,6 +8,7 @@ import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import type { FarmPolygon } from '../types';
 import { polygonAreaHa, polygonCentroid, CROP_OPTIONS, FARM_COLORS } from '../types';
 
+import { MAP_COLORS } from '../../lib/mapStyle';
 interface Props {
   farms: FarmPolygon[];
   onFarmsChange: (farms: FarmPolygon[]) => void;
@@ -68,9 +69,9 @@ export default function FarmBoundaryMapInner({
         { type: 'Feature', properties: {}, geometry: f.boundary } as GeoJSON.Feature,
         {
           style: {
-            color: f.color || '#22c55e',
+            color: f.color || MAP_COLORS.boundary,
             weight: 2,
-            fillColor: f.color || '#22c55e',
+            fillColor: f.color || MAP_COLORS.boundary,
             fillOpacity: 0.25,
           },
         }
@@ -89,10 +90,10 @@ export default function FarmBoundaryMapInner({
         } as GeoJSON.Feature,
         {
           style: {
-            color: '#f59e0b',
+            color: MAP_COLORS.warn,
             weight: 3,
             dashArray: '8 4',
-            fillColor: '#fbbf24',
+            fillColor: MAP_COLORS.warnFill,
             fillOpacity: 0.35,
           },
         }
@@ -262,8 +263,8 @@ export default function FarmBoundaryMapInner({
     }
     searchMarkerRef.current = L.circleMarker([pair.lat, pair.lng], {
       radius: 7,
-      color: '#2563eb',
-      fillColor: '#3b82f6',
+      color: MAP_COLORS.draw,
+      fillColor: MAP_COLORS.drawFill,
       fillOpacity: 0.85,
       weight: 2,
     })
@@ -284,7 +285,7 @@ export default function FarmBoundaryMapInner({
     const map = mapRef.current;
     if (map) {
       map.setView([pair.lat, pair.lng], Math.max(map.getZoom(), 13));
-      L.circleMarker([pair.lat, pair.lng], { radius: 4, color: '#22c55e' }).addTo(map);
+      L.circleMarker([pair.lat, pair.lng], { radius: 4, color: MAP_COLORS.boundary }).addTo(map);
     }
   };
 
@@ -304,7 +305,7 @@ export default function FarmBoundaryMapInner({
         <button
           type="button"
           onClick={clearAll}
-          className="text-xs px-3 py-1.5 rounded-lg border border-[#E4DFD4] text-red-600 hover:bg-red-50"
+          className="text-xs px-3 py-1.5 rounded-lg border border-rule text-red-600 hover:bg-red-50"
         >
           Clear All
         </button>
@@ -324,7 +325,7 @@ export default function FarmBoundaryMapInner({
                 searchCoords();
               }
             }}
-            className="flex-1 min-w-[200px] bg-white border border-[#E4DFD4] rounded-lg px-3 py-1.5 text-sm text-stone-800 placeholder-stone-400"
+            className="flex-1 min-w-[200px] bg-white border border-rule rounded-lg px-3 py-1.5 text-sm text-stone-800 placeholder-stone-400"
           />
           <button
             type="button"
@@ -336,7 +337,7 @@ export default function FarmBoundaryMapInner({
           <button
             type="button"
             onClick={addManualVertex}
-            className="px-3 py-1.5 rounded-lg border border-[#E4DFD4] text-sky-700 text-xs font-medium hover:bg-sky-50"
+            className="px-3 py-1.5 rounded-lg border border-rule text-sky-700 text-xs font-medium hover:bg-sky-50"
           >
             Add vertex
           </button>
@@ -365,7 +366,7 @@ export default function FarmBoundaryMapInner({
               <div key={f.farm_id} className="farm-map-legend-item">
                 <span
                   className="farm-map-legend-swatch"
-                  style={{ background: f.color || '#22c55e' }}
+                  style={{ background: f.color || MAP_COLORS.boundary }}
                 />
                 <span className="truncate">{f.farm_name}</span>
               </div>
@@ -381,19 +382,19 @@ export default function FarmBoundaryMapInner({
           </h3>
           <div className="grid sm:grid-cols-2 gap-3">
             <input
-              className="bg-white border border-[#E4DFD4] rounded-lg px-3 py-2 text-sm text-stone-800"
+              className="bg-white border border-rule rounded-lg px-3 py-2 text-sm text-stone-800"
               placeholder="Farm name"
               value={draft.farm_name}
               onChange={(e) => setDraft({ ...draft, farm_name: e.target.value })}
             />
             <input
-              className="bg-white border border-[#E4DFD4] rounded-lg px-3 py-2 text-sm text-stone-800"
+              className="bg-white border border-rule rounded-lg px-3 py-2 text-sm text-stone-800"
               placeholder="Farm / Katha number"
               value={draft.farm_number}
               onChange={(e) => setDraft({ ...draft, farm_number: e.target.value })}
             />
             <select
-              className="bg-white border border-[#E4DFD4] rounded-lg px-3 py-2 text-sm text-stone-800"
+              className="bg-white border border-rule rounded-lg px-3 py-2 text-sm text-stone-800"
               value={draft.primary_crop}
               onChange={(e) => setDraft({ ...draft, primary_crop: e.target.value })}
             >
@@ -405,7 +406,7 @@ export default function FarmBoundaryMapInner({
             </select>
             <input
               type="date"
-              className="bg-white border border-[#E4DFD4] rounded-lg px-3 py-2 text-sm text-stone-800"
+              className="bg-white border border-rule rounded-lg px-3 py-2 text-sm text-stone-800"
               value={draft.sowing_date}
               onChange={(e) => setDraft({ ...draft, sowing_date: e.target.value })}
             />

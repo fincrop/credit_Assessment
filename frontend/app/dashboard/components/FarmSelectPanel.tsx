@@ -54,20 +54,20 @@ export function FarmSelectPanel({
           type="button"
           onClick={onBack}
           disabled={busy}
-          className="text-sm text-stone-600 hover:text-stone-900 px-3 py-1.5 rounded-lg border border-[#E4DFD4] bg-white"
+          className="text-sm text-stone-600 hover:text-stone-900 px-3 py-1.5 rounded-lg border border-rule bg-white"
         >
           ← Change farmer
         </button>
       </div>
 
       <div className="grid lg:grid-cols-[1fr_1.1fr] gap-5 items-start">
-        <div className="bg-white border border-[#E4DFD4] rounded-xl p-4 shadow-sm space-y-3">
+        <div className="bg-white border border-rule rounded-xl p-4 shadow-sm space-y-3">
           <div className="flex gap-2 flex-wrap">
             <button
               type="button"
               onClick={onSelectAll}
               disabled={busy}
-              className="text-xs font-medium px-3 py-1.5 rounded-md bg-[#F5F2EB] border border-[#E4DFD4] text-stone-700 hover:bg-emerald-50"
+              className="text-xs font-medium px-3 py-1.5 rounded-md bg-paper border border-rule text-stone-700 hover:bg-emerald-50"
             >
               Select all
             </button>
@@ -75,12 +75,12 @@ export function FarmSelectPanel({
               type="button"
               onClick={onClearAll}
               disabled={busy}
-              className="text-xs font-medium px-3 py-1.5 rounded-md bg-[#F5F2EB] border border-[#E4DFD4] text-stone-700 hover:bg-red-50"
+              className="text-xs font-medium px-3 py-1.5 rounded-md bg-paper border border-rule text-stone-700 hover:bg-red-50"
             >
               Clear
             </button>
           </div>
-          <ul className="divide-y divide-[#E4DFD4] max-h-[420px] overflow-y-auto">
+          <ul className="divide-y divide-rule max-h-[420px] overflow-y-auto">
             {farms.map((f, i) => {
               const key = keyOf(f, i);
               const checked = selectedKeys.has(key);
@@ -90,7 +90,7 @@ export function FarmSelectPanel({
                   : '—';
               return (
                 <li key={key}>
-                  <label className="flex items-start gap-3 py-3 cursor-pointer hover:bg-[#F5F2EB]/50 px-1 rounded-md">
+                  <label className="flex items-start gap-3 py-3 cursor-pointer hover:bg-paper/50 px-1 rounded-md">
                     <input
                       type="checkbox"
                       className="mt-1 accent-emerald-600"
@@ -114,7 +114,7 @@ export function FarmSelectPanel({
           </ul>
         </div>
 
-        <div className="bg-white border border-[#E4DFD4] rounded-xl p-3 shadow-sm min-h-[320px]">
+        <div className="bg-white border border-rule rounded-xl p-3 shadow-sm min-h-[320px]">
           <p className="text-xs font-medium text-stone-500 mb-2 px-1">
             Preview:{' '}
             {selectedFarm
@@ -146,7 +146,7 @@ export function FarmSelectPanel({
           type="button"
           disabled={busy || selectedKeys.size === 0}
           onClick={onAssessSelected}
-          className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-stone-200 disabled:text-stone-400 text-white font-bold py-3 px-5 rounded-lg transition-colors"
+          className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-stone-200 disabled:text-ink-muted text-white font-bold py-3 px-5 rounded-lg transition-colors"
         >
           {busy ? 'Starting…' : `Assess selected (${selectedKeys.size})`}
         </button>
@@ -154,7 +154,7 @@ export function FarmSelectPanel({
           type="button"
           disabled={busy || farms.length === 0}
           onClick={onAssessAll}
-          className="bg-white hover:bg-[#F5F2EB] border border-[#E4DFD4] text-stone-800 font-semibold py-3 px-5 rounded-lg transition-colors disabled:opacity-50"
+          className="bg-white hover:bg-paper border border-rule text-stone-800 font-semibold py-3 px-5 rounded-lg transition-colors disabled:opacity-50"
         >
           Assess all farms
         </button>

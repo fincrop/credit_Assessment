@@ -16,7 +16,7 @@ export default function Header({ activeTab, onTabChange }: HeaderProps) {
       <nav className="flex items-center gap-6">
         <Link
           href="/"
-          className="flex items-center gap-1.5 text-stone-400 hover:text-green-600 font-medium transition-colors pb-1"
+          className="flex items-center gap-1.5 text-ink-muted hover:text-green-600 font-medium transition-colors pb-1"
           title="Home"
         >
           <span aria-hidden>🏠</span>
@@ -24,7 +24,7 @@ export default function Header({ activeTab, onTabChange }: HeaderProps) {
         </Link>
         <Link
           href="/dashboard"
-          className="text-stone-400 hover:text-green-600 font-medium transition-colors pb-1"
+          className="text-ink-muted hover:text-green-600 font-medium transition-colors pb-1"
         >
           Dashboard
         </Link>
@@ -34,7 +34,7 @@ export default function Header({ activeTab, onTabChange }: HeaderProps) {
           className={`font-medium transition-colors pb-1 ${
             activeTab === 'sandbox'
               ? 'text-green-600 border-b-2 border-green-600'
-              : 'text-stone-400 hover:text-green-600'
+              : 'text-ink-muted hover:text-green-600'
           }`}
         >
           API Catalogue
@@ -44,7 +44,7 @@ export default function Header({ activeTab, onTabChange }: HeaderProps) {
           className={`font-medium transition-colors pb-1 ${
             activeTab === 'webhook'
               ? 'text-green-600 border-b-2 border-green-600'
-              : 'text-stone-400 hover:text-green-600'
+              : 'text-ink-muted hover:text-green-600'
           }`}
         >
           Webhook On-Seek

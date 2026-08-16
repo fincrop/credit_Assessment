@@ -89,7 +89,7 @@ export function AgriStackLoginForm({
           </Link>
         </div>
       )}
-      <div className="bg-white/90 border border-[#E4DFD4] rounded-2xl p-8 shadow-sm">
+      <div className="bg-white/90 border border-rule rounded-2xl p-8 shadow-sm">
         <div className="mb-6">
           <p className="text-[10px] font-mono text-sky-600 uppercase tracking-wider mb-1">
             AgriStack path
@@ -165,7 +165,7 @@ export function AgriStackLoginForm({
 
 export function AgriStackLoginShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#F5F2EB] text-stone-800 relative overflow-hidden flex items-center justify-center p-4">
+    <div className="min-h-screen bg-paper text-stone-800 relative overflow-hidden flex items-center justify-center p-4">
       <div
         className="pointer-events-none absolute inset-0"
         style={{

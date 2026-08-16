@@ -6,8 +6,8 @@ import { yieldBasisLabel } from '../../lib/formatRisk';
 
 function KpiCard({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-3">
-      <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-1.5">
+    <div className="bg-paper rounded-lg border border-rule p-3">
+      <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-1.5">
         {label}
       </p>
       <p className="font-semibold text-stone-800">{value ?? '—'}</p>
@@ -20,11 +20,11 @@ export function PerformanceSection({ data }: { data: AssessmentPayload }) {
 
   if (!pa) {
     return (
-      <div className="bg-white rounded-xl border border-[#E4DFD4] p-6">
+      <div className="bg-white rounded-xl border border-rule p-6">
         <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-2">
           Crop Performance
         </h2>
-        <p className="text-sm text-stone-400">No performance_analysis in this payload.</p>
+        <p className="text-sm text-ink-muted">No performance_analysis in this payload.</p>
       </div>
     );
   }
@@ -32,7 +32,7 @@ export function PerformanceSection({ data }: { data: AssessmentPayload }) {
   const rows = pa.seasonal_performance ?? [];
 
   return (
-    <div className="bg-white rounded-xl border border-[#E4DFD4] p-6 space-y-5">
+    <div className="bg-white rounded-xl border border-rule p-6 space-y-5">
       <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider">
         Crop Performance (Per Cycle / Season)
       </h2>
@@ -47,11 +47,11 @@ export function PerformanceSection({ data }: { data: AssessmentPayload }) {
       </div>
 
       {rows.length === 0 ? (
-        <p className="text-sm text-stone-400">No seasonal performance rows.</p>
+        <p className="text-sm text-ink-muted">No seasonal performance rows.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-[#E4DFD4]">
+        <div className="overflow-x-auto rounded-lg border border-rule">
           <table className="w-full text-sm">
-            <thead className="bg-[#F5F2EB]">
+            <thead className="bg-paper">
               <tr>
                 {['Season', 'Year', 'Crop', 'Health', 'Yield', 'Method', 'Anomalies'].map((h) => (
                   <th
@@ -63,7 +63,7 @@ export function PerformanceSection({ data }: { data: AssessmentPayload }) {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#E4DFD4]">
+            <tbody className="divide-y divide-rule">
               {rows.map((r, i) => {
                 const an = r.anomaly_events ?? [];
                 const nHigh = an.filter((e) => e.impact === 'HIGH').length;
@@ -80,7 +80,7 @@ export function PerformanceSection({ data }: { data: AssessmentPayload }) {
                 const yb = yieldBasisLabel(basis, pct);
 
                 return (
-                  <tr key={i} className="hover:bg-[#F5F2EB]/60 transition-colors">
+                  <tr key={i} className="hover:bg-paper/60 transition-colors">
                     <td className="px-4 py-3 font-medium text-stone-700">
                       {(r.season ?? '—').toString().toUpperCase()}
                     </td>
@@ -129,7 +129,7 @@ export function PerformanceSection({ data }: { data: AssessmentPayload }) {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 flex-wrap">
-                        <span className="px-1.5 py-0.5 rounded bg-[#F5F2EB] border border-[#E4DFD4] text-[10px] text-stone-500 font-mono">
+                        <span className="px-1.5 py-0.5 rounded bg-paper border border-rule text-[10px] text-stone-500 font-mono">
                           {r.scoring_method ?? '—'}
                         </span>
                         {r.is_active_cycle && (

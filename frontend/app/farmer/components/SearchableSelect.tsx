@@ -64,18 +64,18 @@ export function SearchableSelect({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className="w-full text-left bg-white border border-[#E4DFD4] rounded-lg px-3 py-2.5 text-sm text-stone-800 focus:outline-none focus:border-emerald-500 disabled:opacity-40 flex items-center justify-between gap-2"
+        className="w-full text-left bg-white border border-rule rounded-lg px-3 py-2.5 text-sm text-stone-800 focus:outline-none focus:border-emerald-500 disabled:opacity-40 flex items-center justify-between gap-2"
       >
-        <span className={selected || freeTextValue ? 'text-stone-800 truncate' : 'text-stone-400'}>
+        <span className={selected || freeTextValue ? 'text-stone-800 truncate' : 'text-ink-muted'}>
           {loading
             ? 'Loading…'
             : selected?.label || freeTextValue || placeholder}
         </span>
-        <span className="text-stone-400 text-xs">▾</span>
+        <span className="text-ink-muted text-xs">▾</span>
       </button>
 
       {open && !disabled && (
-        <div className="absolute z-30 mt-1 w-full bg-white border border-[#E4DFD4] rounded-lg shadow-xl overflow-hidden">
+        <div className="absolute z-30 mt-1 w-full bg-white border border-rule rounded-lg shadow-xl overflow-hidden">
           <input
             autoFocus
             value={q}
@@ -84,11 +84,11 @@ export function SearchableSelect({
               if (allowFreeText && onFreeText) onFreeText(e.target.value);
             }}
             placeholder="Type to search…"
-            className="w-full bg-[#F5F2EB] border-b border-[#E4DFD4] px-3 py-2 text-sm text-stone-800 outline-none"
+            className="w-full bg-paper border-b border-rule px-3 py-2 text-sm text-stone-800 outline-none"
           />
           <ul className="max-h-48 overflow-y-auto">
             {filtered.length === 0 && (
-              <li className="px-3 py-2 text-xs text-stone-400">
+              <li className="px-3 py-2 text-xs text-ink-muted">
                 {allowFreeText ? 'No matches — free text will be used' : 'No matches'}
               </li>
             )}
@@ -96,7 +96,7 @@ export function SearchableSelect({
               <li key={o.value}>
                 <button
                   type="button"
-                  className={`w-full text-left px-3 py-2 text-sm hover:bg-[#F5F2EB] ${
+                  className={`w-full text-left px-3 py-2 text-sm hover:bg-paper ${
                     o.value === value ? 'text-emerald-700' : 'text-stone-700'
                   }`}
                   onClick={() => {
@@ -107,7 +107,7 @@ export function SearchableSelect({
                 >
                   {o.label}
                   {o.meta && (
-                    <span className="block text-[10px] text-stone-400 font-mono">{o.meta}</span>
+                    <span className="block text-[10px] text-ink-muted font-mono">{o.meta}</span>
                   )}
                 </button>
               </li>

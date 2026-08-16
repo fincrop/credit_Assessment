@@ -60,7 +60,7 @@ export default function SavedFarmsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F5F2EB] flex items-center justify-center text-stone-500 text-sm">
+      <div className="min-h-screen bg-paper flex items-center justify-center text-stone-500 text-sm">
         Loading…
       </div>
     );
@@ -81,14 +81,14 @@ export default function SavedFarmsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F2EB] text-stone-800">
-      <header className="bg-white border-b border-[#E4DFD4] sticky top-0 z-20">
+    <div className="min-h-screen bg-paper text-stone-800">
+      <header className="bg-white border-b border-rule sticky top-0 z-20">
         <div className="flex h-14 items-center px-6 max-w-7xl mx-auto w-full justify-between">
           <div className="flex items-center gap-4 text-sm">
             <Link href="/" className="text-stone-500 hover:text-emerald-700 font-medium">
               Home
             </Link>
-            <span className="text-[#E4DFD4]">|</span>
+            <span className="text-rule">|</span>
             <h1 className="font-bold text-stone-900">Saved Farms</h1>
           </div>
           <div className="flex items-center gap-3 text-sm">
@@ -115,7 +115,7 @@ export default function SavedFarmsPage() {
         {fetching ? (
           <p className="text-sm text-stone-500">Loading farms…</p>
         ) : farmers.length === 0 ? (
-          <div className="text-center py-20 border border-dashed border-[#E4DFD4] rounded-xl">
+          <div className="text-center py-20 border border-dashed border-rule rounded-xl">
             <p className="text-stone-500 mb-4">No saved farmers yet.</p>
             <Link href="/farmer" className="text-emerald-700 hover:text-emerald-300 text-sm font-medium">
               Start Farmer Journey →
@@ -123,7 +123,7 @@ export default function SavedFarmsPage() {
           </div>
         ) : (
           <div className="grid lg:grid-cols-[1fr_320px] gap-6">
-            <div className="overflow-x-auto border border-[#E4DFD4] rounded-xl">
+            <div className="overflow-x-auto border border-rule rounded-xl">
               <table className="w-full text-sm text-left">
                 <thead className="bg-white text-stone-500 text-xs uppercase tracking-wider">
                   <tr>
@@ -164,7 +164,7 @@ export default function SavedFarmsPage() {
                               Assessed
                             </span>
                           ) : (
-                            <span className="text-[11px] text-stone-400">Not assessed</span>
+                            <span className="text-[11px] text-ink-muted">Not assessed</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-stone-500 text-xs">
@@ -200,24 +200,24 @@ export default function SavedFarmsPage() {
               </table>
             </div>
 
-            <aside className="bg-white border border-[#E4DFD4] rounded-xl p-4 h-fit sticky top-20">
+            <aside className="bg-white border border-rule rounded-xl p-4 h-fit sticky top-20">
               <h2 className="text-sm font-semibold text-stone-700 mb-3">Details</h2>
               {!selected ? (
-                <p className="text-xs text-stone-400">Click a row to view details.</p>
+                <p className="text-xs text-ink-muted">Click a row to view details.</p>
               ) : (
                 <div className="space-y-3 text-sm">
                   <div>
-                    <p className="text-[10px] text-stone-400 uppercase tracking-wider">Name</p>
+                    <p className="text-[10px] text-ink-muted uppercase tracking-wider">Name</p>
                     <p className="text-stone-900 font-medium">{selected.farmer_name}</p>
                   </div>
                   {selected.agristack_farmer_id && (
                     <div>
-                      <p className="text-[10px] text-stone-400 uppercase tracking-wider">AgriStack ID</p>
+                      <p className="text-[10px] text-ink-muted uppercase tracking-wider">AgriStack ID</p>
                       <p className="font-mono text-emerald-700 text-xs">{selected.agristack_farmer_id}</p>
                     </div>
                   )}
                   <div>
-                    <p className="text-[10px] text-stone-400 uppercase tracking-wider">Location</p>
+                    <p className="text-[10px] text-ink-muted uppercase tracking-wider">Location</p>
                     <p className="text-stone-500 text-xs">
                       {[
                         selected.location?.village?.name,
@@ -230,7 +230,7 @@ export default function SavedFarmsPage() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-stone-400 uppercase tracking-wider mb-1">Farms</p>
+                    <p className="text-[10px] text-ink-muted uppercase tracking-wider mb-1">Farms</p>
                     <ul className="space-y-1">
                       {(selected.farms || []).map((farm, i) => (
                         <li key={i} className="text-xs text-stone-500">

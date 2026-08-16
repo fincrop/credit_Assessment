@@ -426,7 +426,7 @@ export default function AgristackPage() {
 
   if (!sessionChecked) {
     return (
-      <div className="min-h-screen bg-[#F5F2EB] flex items-center justify-center text-stone-500 text-sm">
+      <div className="min-h-screen bg-paper flex items-center justify-center text-stone-500 text-sm">
         Loading AgriStack session…
       </div>
     );

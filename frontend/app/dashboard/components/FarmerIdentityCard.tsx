@@ -50,13 +50,13 @@ export function FarmerIdentityCard({
     cropInsurance ?? farmInfo?.farmer_benefits?.has_crop_insurance ?? null;
 
   return (
-    <div className="bg-white rounded-xl border border-[#E4DFD4] p-4 h-full flex flex-col">
+    <div className="bg-white rounded-xl border border-rule p-4 h-full flex flex-col">
       <div className="flex items-start gap-2.5 mb-3">
         <div className="w-9 h-9 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center text-base shrink-0">
           👤
         </div>
         <div className="min-w-0">
-          <p className="text-[10px] text-stone-400 font-semibold uppercase tracking-wider">
+          <p className="text-[10px] text-ink-muted font-semibold uppercase tracking-wider">
             Farmer
           </p>
           <p className="text-base font-bold text-stone-900 truncate">{name}</p>
@@ -91,7 +91,7 @@ export function FarmerIdentityCard({
         )}
       </dl>
 
-      <div className="flex flex-wrap gap-2 mt-3 pt-2.5 border-t border-[#E4DFD4]">
+      <div className="flex flex-wrap gap-2 mt-3 pt-2.5 border-t border-rule">
         <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium border ${benefitChipClass(pm)}`}>
           PM-KISAN: {triStateLabel(pm)}
         </span>
@@ -101,7 +101,7 @@ export function FarmerIdentityCard({
       </div>
 
       {portfolioSummary && (
-        <p className="mt-2.5 text-[11px] text-stone-500 leading-relaxed border-t border-dashed border-[#E4DFD4] pt-2.5">
+        <p className="mt-2.5 text-[11px] text-stone-500 leading-relaxed border-t border-dashed border-rule pt-2.5">
           {portfolioSummary}
         </p>
       )}

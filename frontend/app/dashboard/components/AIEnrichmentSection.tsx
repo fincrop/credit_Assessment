@@ -16,7 +16,7 @@ function DriverList({
 }) {
   const isPositive = sign === '+';
   return (
-    <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-4">
+    <div className="bg-paper rounded-lg border border-rule p-4">
       <p
         className={`text-[11px] font-semibold uppercase tracking-wider mb-3 ${
           isPositive ? 'text-emerald-700' : 'text-red-600'
@@ -45,7 +45,7 @@ function DriverList({
                   </span>
                 )}
                 {d.value != null && (
-                  <span className="text-[10px] text-stone-400">({formatNumber(d.value)})</span>
+                  <span className="text-[10px] text-ink-muted">({formatNumber(d.value)})</span>
                 )}
               </div>
             </li>
@@ -62,7 +62,7 @@ export function AIEnrichmentSection({ data }: { data: AssessmentPayload }) {
 
   if (!ai) {
     return (
-      <div className="bg-white rounded-xl border border-[#E4DFD4] p-6 space-y-4">
+      <div className="bg-white rounded-xl border border-rule p-6 space-y-4">
         <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider">
           AI &amp; Explainability
         </h2>
@@ -109,7 +109,7 @@ export function AIEnrichmentSection({ data }: { data: AssessmentPayload }) {
       : [];
 
   return (
-    <div className="bg-white rounded-xl border border-[#E4DFD4] p-6 space-y-6">
+    <div className="bg-white rounded-xl border border-rule p-6 space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider">
           AI &amp; Explainability
@@ -125,7 +125,7 @@ export function AIEnrichmentSection({ data }: { data: AssessmentPayload }) {
             Groq: {ai.groq_used ? 'used' : `skipped${ai.groq_skipped_reason ? ` — ${ai.groq_skipped_reason}` : ''}`}
           </span>
           {ai.narrative_source && (
-            <span className="text-xs px-2.5 py-1 rounded-full border bg-[#F5F2EB] border-[#E4DFD4] text-stone-600 font-mono">
+            <span className="text-xs px-2.5 py-1 rounded-full border bg-paper border-rule text-stone-600 font-mono">
               narrative: {ai.narrative_source}
             </span>
           )}
@@ -137,8 +137,8 @@ export function AIEnrichmentSection({ data }: { data: AssessmentPayload }) {
         </div>
       </div>
 
-      <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-4">
-        <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-2">
+      <div className="bg-paper rounded-lg border border-rule p-4">
+        <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-2">
           Narrative (English)
         </p>
         {narrative ? (
@@ -151,8 +151,8 @@ export function AIEnrichmentSection({ data }: { data: AssessmentPayload }) {
       </div>
 
       {translated && (
-        <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-4">
-          <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-2">
+        <div className="bg-paper rounded-lg border border-rule p-4">
+          <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-2">
             Narrative (Translated)
           </p>
           <p className="text-sm text-stone-700 leading-relaxed whitespace-pre-wrap">{translated}</p>
@@ -161,7 +161,7 @@ export function AIEnrichmentSection({ data }: { data: AssessmentPayload }) {
 
       {view.reasonCodes.length > 0 && (
         <div>
-          <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-2">
+          <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-2">
             Reason codes
           </p>
           <ul className="space-y-2">
@@ -186,7 +186,7 @@ export function AIEnrichmentSection({ data }: { data: AssessmentPayload }) {
       {ex ? (
         <div>
           <div className="flex items-center gap-2 mb-3">
-            <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
+            <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider">
               Feature Drivers ({ex.method ?? 'attribution'})
             </p>
             {ex.shap_available && (
@@ -217,22 +217,22 @@ export function AIEnrichmentSection({ data }: { data: AssessmentPayload }) {
 
       {cf && (cf.scenarios?.length ?? 0) > 0 ? (
         <div>
-          <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-2">
+          <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-2">
             Counterfactual Scenarios
           </p>
-          <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-4 mb-3">
+          <div className="bg-paper rounded-lg border border-rule p-4 mb-3">
             <div className="flex items-center gap-4">
               <div className="text-center">
-                <p className="text-xs text-stone-400 mb-1">Current Score</p>
+                <p className="text-xs text-ink-muted mb-1">Current Score</p>
                 <p className="text-xl font-bold text-stone-800">{formatNumber(cf.current_score)}</p>
               </div>
-              <div className="flex-1 h-px bg-[#E4DFD4] relative">
+              <div className="flex-1 h-px bg-rule relative">
                 <span className="absolute inset-0 flex items-center justify-center text-emerald-600 text-sm">
                   →
                 </span>
               </div>
               <div className="text-center">
-                <p className="text-xs text-stone-400 mb-1">Projected (all)</p>
+                <p className="text-xs text-ink-muted mb-1">Projected (all)</p>
                 <p className="text-xl font-bold text-emerald-700">
                   {formatNumber(cf.projected_score_all_improvements)}
                 </p>
@@ -243,7 +243,7 @@ export function AIEnrichmentSection({ data }: { data: AssessmentPayload }) {
             {(cf.scenarios ?? []).map((s, i) => (
               <li
                 key={s.id ?? i}
-                className="flex items-start gap-3 bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-3"
+                className="flex items-start gap-3 bg-paper rounded-lg border border-rule p-3"
               >
                 <span className="text-emerald-700 font-bold text-sm flex-shrink-0 mt-0.5">
                   +{formatNumber(s.score_gain)} pts
@@ -255,7 +255,7 @@ export function AIEnrichmentSection({ data }: { data: AssessmentPayload }) {
                   )}
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     {s.component && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-white border border-[#E4DFD4] text-stone-500 font-mono">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-white border border-rule text-stone-500 font-mono">
                         {s.component}
                       </span>
                     )}
@@ -269,7 +269,7 @@ export function AIEnrichmentSection({ data }: { data: AssessmentPayload }) {
           </ul>
           {roadmapSteps.length > 0 && (
             <div className="mt-3">
-              <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-2">
+              <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-2">
                 Improvement roadmap
               </p>
               <ol className="space-y-1.5 list-decimal list-inside">
@@ -277,7 +277,7 @@ export function AIEnrichmentSection({ data }: { data: AssessmentPayload }) {
                   <li key={i} className="text-xs text-stone-600 leading-relaxed">
                     {step.action || '—'}
                     {(step.timeframe || step.score_gain != null) && (
-                      <span className="text-stone-400 ml-1">
+                      <span className="text-ink-muted ml-1">
                         (
                         {[
                           step.timeframe,

@@ -161,7 +161,7 @@ export function RiskScoreCard({
   const riskSurface = bandCardSurface(band);
 
   return (
-    <div className="bg-white rounded-xl border border-[#E4DFD4] p-3.5 sm:p-4 h-full flex flex-col">
+    <div className="bg-white rounded-xl border border-rule p-3.5 sm:p-4 h-full flex flex-col">
       <h2 className="text-[11px] font-semibold text-emerald-800 uppercase tracking-wider mb-0.5 bg-emerald-50/80 inline-block px-1.5 py-0.5 rounded">
         Krishi Bhoomi Score (KBS)
       </h2>
@@ -175,8 +175,8 @@ export function RiskScoreCard({
           <div className="opacity-70 min-w-0">
             <KbsGauge score={null} band={null} placeholder compact />
           </div>
-          <div className="rounded-lg border border-[#E4DFD4] bg-[#F5F2EB]/60 p-3 flex flex-col justify-center">
-            <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider mb-1">
+          <div className="rounded-lg border border-rule bg-paper/60 p-3 flex flex-col justify-center">
+            <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-wider mb-1">
               Overall risk
             </p>
             <p className="text-xs text-stone-500 leading-snug">
@@ -248,7 +248,7 @@ export function RiskScoreCard({
           </div>
 
           {/* Full-width summary strip */}
-          <div className="mt-2.5 rounded-lg border border-[#E4DFD4] bg-[#F5F2EB]/40 px-3 py-2.5 space-y-1">
+          <div className="mt-2.5 rounded-lg border border-rule bg-paper/40 px-3 py-2.5 space-y-1">
             {band ? (
               <p className="text-xs text-stone-700 leading-snug">
                 Score sits in the <span className="font-semibold">{band.name}</span> band —{' '}
@@ -276,7 +276,7 @@ export function RiskScoreCard({
                 return (
                   <div
                     key={k}
-                    className="rounded-md border border-[#E4DFD4] bg-[#F5F2EB]/40 px-2 py-1.5 space-y-1"
+                    className="rounded-md border border-rule bg-paper/40 px-2 py-1.5 space-y-1"
                   >
                     <div className="flex items-start justify-between gap-1">
                       <div className="flex items-center gap-1 min-w-0">
@@ -289,7 +289,7 @@ export function RiskScoreCard({
                         {formatScoreOne(v)}
                       </span>
                     </div>
-                    <div className="h-1 bg-[#E8E4DB] rounded-full overflow-hidden">
+                    <div className="h-1 bg-rule-strong rounded-full overflow-hidden">
                       <div
                         className="h-full rounded-full"
                         style={{ width: `${pct}%`, background: bar }}
@@ -307,7 +307,7 @@ export function RiskScoreCard({
           )}
 
           {notes.length > 0 && (
-            <details className="mt-2 rounded-md border border-[#E4DFD4] bg-[#F5F2EB]/30 px-2.5 py-1.5">
+            <details className="mt-2 rounded-md border border-rule bg-paper/30 px-2.5 py-1.5">
               <summary className="cursor-pointer text-[11px] font-semibold text-stone-600 select-none">
                 Data notes ({notes.length})
               </summary>

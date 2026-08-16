@@ -95,7 +95,7 @@ export default function Sidebar({ endpoints, activeEndpoint, onSelectEndpoint }:
                                     <span className={`${getMethodColor(endpoint.method)} text-white text-xs font-medium px-2 py-0.5 rounded mt-0.5`}>
                                         {endpoint.method}
                                     </span>
-                                    <span className={`text-sm ${activeEndpoint === endpoint.id ? 'text-green-700 font-medium' : 'text-stone-400'}`}>
+                                    <span className={`text-sm ${activeEndpoint === endpoint.id ? 'text-green-700 font-medium' : 'text-ink-muted'}`}>
                                         {endpoint.name}
                                     </span>
                                 </button>

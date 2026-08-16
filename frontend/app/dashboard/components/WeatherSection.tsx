@@ -6,8 +6,8 @@ import { readWeatherIndicator } from '../../lib/formatRisk';
 
 function MiniCard({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-3">
-      <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-1.5">
+    <div className="bg-paper rounded-lg border border-rule p-3">
+      <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-1.5">
         {label}
       </p>
       <p className="font-semibold text-stone-800">{value ?? '—'}</p>
@@ -24,8 +24,8 @@ function IndicatorsBlock({
 }) {
   if (!ind || ind.available === false) {
     return (
-      <div className="bg-[#F5F2EB] rounded-lg border border-dashed border-[#E4DFD4] p-3">
-        <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-1">
+      <div className="bg-paper rounded-lg border border-dashed border-rule p-3">
+        <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-1">
           {title}
         </p>
         <p className="text-xs text-stone-500">Weather indicators not available for this cycle.</p>
@@ -46,8 +46,8 @@ function IndicatorsBlock({
   const spi = readWeatherIndicator(ind, 'spi_like');
 
   return (
-    <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-3">
-      <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-2">
+    <div className="bg-paper rounded-lg border border-rule p-3">
+      <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-2">
         {title}
       </p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-stone-700">
@@ -95,8 +95,8 @@ function RecordPanel({
 }) {
   if (!obj || Object.keys(obj).length === 0) {
     return (
-      <div className="bg-[#F5F2EB] rounded-lg border border-dashed border-[#E4DFD4] p-4">
-        <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-1">
+      <div className="bg-paper rounded-lg border border-dashed border-rule p-4">
+        <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-1">
           {title}
         </p>
         <p className="text-xs text-stone-500">Not present in this payload.</p>
@@ -109,8 +109,8 @@ function RecordPanel({
   );
 
   return (
-    <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-4">
-      <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-2">
+    <div className="bg-paper rounded-lg border border-rule p-4">
+      <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-2">
         {title}
       </p>
       {entries.length === 0 ? (
@@ -139,11 +139,11 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
 
   if (!wa) {
     return (
-      <div className="bg-white rounded-xl border border-[#E4DFD4] p-6">
+      <div className="bg-white rounded-xl border border-rule p-6">
         <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-2">
           Weather &amp; Climate Stress
         </h2>
-        <p className="text-sm text-stone-400">No weather_analysis in this payload.</p>
+        <p className="text-sm text-ink-muted">No weather_analysis in this payload.</p>
       </div>
     );
   }
@@ -153,7 +153,7 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
   const seasonal = wa.seasonal_weather ?? [];
 
   return (
-    <div className="bg-white rounded-xl border border-[#E4DFD4] p-6 space-y-5">
+    <div className="bg-white rounded-xl border border-rule p-6 space-y-5">
       <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider">
         Weather &amp; Climate Stress
       </h2>
@@ -182,7 +182,7 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
 
       {seasonal.length > 0 && (
         <div className="space-y-2">
-          <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
+          <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider">
             Per-season weather indicators
           </p>
           {seasonal.map((s, i) => (
@@ -197,12 +197,12 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
 
       {cycles.length > 0 && (
         <div>
-          <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-2">
+          <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-2">
             Per-Cycle Weather Risk
           </p>
-          <div className="overflow-x-auto rounded-lg border border-[#E4DFD4]">
+          <div className="overflow-x-auto rounded-lg border border-rule">
             <table className="w-full text-sm">
-              <thead className="bg-[#F5F2EB]">
+              <thead className="bg-paper">
                 <tr>
                   {['Cycle', 'Risk Score', 'Events'].map((h) => (
                     <th
@@ -214,9 +214,9 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E4DFD4]">
+              <tbody className="divide-y divide-rule">
                 {cycles.map((c, i) => (
-                  <tr key={i} className="hover:bg-[#F5F2EB]/60">
+                  <tr key={i} className="hover:bg-paper/60">
                     <td className="px-4 py-3 font-mono text-[11px] text-stone-500">
                       {c.cycle_id ?? `cycle_${i}`}
                     </td>
@@ -232,12 +232,12 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
 
       {events.length > 0 && (
         <div>
-          <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-2">
+          <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-2">
             Extreme Events (sample)
           </p>
-          <div className="overflow-x-auto rounded-lg border border-[#E4DFD4]">
+          <div className="overflow-x-auto rounded-lg border border-rule">
             <table className="w-full text-sm">
-              <thead className="bg-[#F5F2EB]">
+              <thead className="bg-paper">
                 <tr>
                   {['Type', 'Severity', 'Date'].map((h) => (
                     <th
@@ -249,11 +249,11 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E4DFD4]">
+              <tbody className="divide-y divide-rule">
                 {events.slice(0, 25).map((e, i) => {
                   const ev = e as Record<string, unknown>;
                   return (
-                    <tr key={i} className="hover:bg-[#F5F2EB]/60">
+                    <tr key={i} className="hover:bg-paper/60">
                       <td className="px-4 py-3 text-stone-700">{String(ev.type ?? '—')}</td>
                       <td className="px-4 py-3">
                         <span
@@ -275,7 +275,7 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
               </tbody>
             </table>
             {events.length > 25 && (
-              <p className="px-4 py-2.5 text-[11px] text-stone-400 border-t border-[#E4DFD4]">
+              <p className="px-4 py-2.5 text-[11px] text-ink-muted border-t border-rule">
                 Showing 25 of {events.length} events.
               </p>
             )}
@@ -285,12 +285,12 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
 
       {intervalBlocks.length > 0 && (
         <div>
-          <p className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider mb-2">
+          <p className="text-[11px] font-semibold text-ink-muted uppercase tracking-wider mb-2">
             Weather Events by Crop Interval
           </p>
-          <div className="overflow-x-auto rounded-lg border border-[#E4DFD4]">
+          <div className="overflow-x-auto rounded-lg border border-rule">
             <table className="w-full text-sm">
-              <thead className="bg-[#F5F2EB]">
+              <thead className="bg-paper">
                 <tr>
                   {['Cycle', 'Window', 'Risk', 'Events'].map((h) => (
                     <th
@@ -302,9 +302,9 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E4DFD4]">
+              <tbody className="divide-y divide-rule">
                 {intervalBlocks.map((w, i) => (
-                  <tr key={i} className="hover:bg-[#F5F2EB]/60">
+                  <tr key={i} className="hover:bg-paper/60">
                     <td className="px-4 py-3 font-mono text-[11px] text-stone-500">
                       {w.cycle_id ?? '-'}
                     </td>

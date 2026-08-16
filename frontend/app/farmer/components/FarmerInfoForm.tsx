@@ -48,7 +48,7 @@ export function FarmerInfoForm({ value, onChange, optional = false }: Props) {
   const set = (patch: Partial<FarmerIdentity>) => onChange({ ...value, ...patch });
 
   const field =
-    'w-full bg-white border border-[#E4DFD4] rounded-lg px-3 py-2.5 text-sm text-stone-800 placeholder-stone-400 focus:outline-none focus:border-emerald-500';
+    'w-full bg-white border border-rule rounded-lg px-3 py-2.5 text-sm text-stone-800 placeholder-stone-400 focus:outline-none focus:border-emerald-500';
 
   return (
     <div className="space-y-3">
@@ -115,7 +115,7 @@ export function FarmerInfoForm({ value, onChange, optional = false }: Props) {
           />
           {searching && <p className="text-[11px] text-stone-500 mt-1">Searching…</p>}
           {hits.length > 0 && (
-            <ul className="mt-1 border border-[#E4DFD4] rounded-lg divide-y divide-[#E4DFD4] max-h-36 overflow-y-auto bg-white">
+            <ul className="mt-1 border border-rule rounded-lg divide-y divide-rule max-h-36 overflow-y-auto bg-white">
               {hits.map((h) => (
                 <li key={h.farmer_id}>
                   <button
@@ -128,12 +128,12 @@ export function FarmerInfoForm({ value, onChange, optional = false }: Props) {
                       setQuery(h.farmer_id);
                       setHits([]);
                     }}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-[#F5F2EB] transition-colors"
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-paper transition-colors"
                   >
                     <span className="font-mono text-emerald-700">{h.farmer_id}</span>
                     <span className="text-stone-500 ml-2">{h.farmer_name}</span>
                     {(h.district || h.state) && (
-                      <span className="text-stone-400 text-xs ml-2">
+                      <span className="text-ink-muted text-xs ml-2">
                         {[h.district, h.state].filter(Boolean).join(', ')}
                       </span>
                     )}

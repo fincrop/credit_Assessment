@@ -27,7 +27,7 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
   const dash = (pct / 100) * circumference;
 
   return (
-    <div className="bg-white rounded-xl border border-[#E4DFD4] p-6">
+    <div className="bg-white rounded-xl border border-rule p-6">
       <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-1">
         Krishi Bhoomi Score (KBS)
       </h2>
@@ -53,7 +53,7 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
       <div className="flex flex-wrap gap-6 items-center">
         <div className="relative flex-shrink-0">
           <svg width="130" height="130" viewBox="0 0 130 130">
-            <circle cx="65" cy="65" r={radius} fill="none" stroke="#E8E4DB" strokeWidth="10" />
+            <circle cx="65" cy="65" r={radius} fill="none" stroke="var(--color-rule-strong)" strokeWidth="10" />
             {!insufficient && (
               <circle
                 cx="65"
@@ -106,12 +106,12 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
               </span>
             )}
             {view.indexVersion && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#F5F2EB] border border-[#E4DFD4] text-[11px] text-stone-600 font-mono">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-paper border border-rule text-[11px] text-stone-600 font-mono">
                 {view.indexVersion}
               </span>
             )}
             {view.method && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-[#F5F2EB] border border-[#E4DFD4] text-[11px] text-stone-500 font-mono">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-paper border border-rule text-[11px] text-stone-500 font-mono">
                 {view.method}
               </span>
             )}
@@ -132,7 +132,7 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
               </p>
             )}
           {data.processing_time_seconds != null && (
-            <p className="text-[11px] text-stone-400">
+            <p className="text-[11px] text-ink-muted">
               Processed in {formatScoreOne(data.processing_time_seconds)}s ·{' '}
               {(data.pipeline_stages ?? []).length} pipeline stages
             </p>
@@ -140,19 +140,19 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
         </div>
       </div>
 
-      <div className="mt-5 pt-5 border-t border-[#E4DFD4]">
-        <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-3">
+      <div className="mt-5 pt-5 border-t border-rule">
+        <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-3">
           Sub-indices{view.source === 'farmer_level' ? ' (farmer-level)' : ''}
         </p>
         {insufficient || Object.keys(view.subIndices).length === 0 ? (
-          <p className="text-xs text-stone-400">No sub-index scores available.</p>
+          <p className="text-xs text-ink-muted">No sub-index scores available.</p>
         ) : (
           <SubIndexBars view={view} />
         )}
       </div>
 
       {view.scoringNarrative && (
-        <p className="mt-4 text-[12px] text-stone-500 leading-relaxed border-t border-[#E4DFD4] pt-4">
+        <p className="mt-4 text-[12px] text-stone-500 leading-relaxed border-t border-rule pt-4">
           {view.scoringNarrative}
         </p>
       )}

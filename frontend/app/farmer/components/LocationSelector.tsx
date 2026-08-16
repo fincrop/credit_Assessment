@@ -157,7 +157,7 @@ export function LocationSelector({ value, onChange, optional = false }: Props) {
   };
 
   const inputCls =
-    'w-full bg-white border border-[#E4DFD4] rounded-lg px-3 py-2.5 text-sm text-stone-800 focus:outline-none focus:border-emerald-500 disabled:opacity-40';
+    'w-full bg-white border border-rule rounded-lg px-3 py-2.5 text-sm text-stone-800 focus:outline-none focus:border-emerald-500 disabled:opacity-40';
 
   const req = optional ? '' : ' *';
 
@@ -172,7 +172,7 @@ export function LocationSelector({ value, onChange, optional = false }: Props) {
         <button
           type="button"
           onClick={useMyLocation}
-          className="text-xs font-medium px-3 py-2 rounded-lg border border-[#E4DFD4] text-sky-700 hover:bg-sky-50 transition-colors"
+          className="text-xs font-medium px-3 py-2 rounded-lg border border-rule text-sky-700 hover:bg-sky-50 transition-colors"
         >
           Use my location
         </button>
@@ -253,7 +253,7 @@ export function LocationSelector({ value, onChange, optional = false }: Props) {
             }}
           />
           {talukaSource && (
-            <p className="text-[10px] text-stone-400 mt-1">Source: {talukaSource}</p>
+            <p className="text-[10px] text-ink-muted mt-1">Source: {talukaSource}</p>
           )}
         </div>
 
@@ -286,7 +286,7 @@ export function LocationSelector({ value, onChange, optional = false }: Props) {
               placeholder="Select village…"
             />
           ) : (
-            <p className="text-[10px] text-stone-400">
+            <p className="text-[10px] text-ink-muted">
               {loading === 'villages' ? 'Searching villages…' : 'Free-text village is saved if DB has no match.'}
             </p>
           )}

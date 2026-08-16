@@ -38,7 +38,7 @@ export default function FarmDetailPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#F5F2EB] flex items-center justify-center text-sm text-stone-500">
+        <div className="min-h-screen bg-paper flex items-center justify-center text-sm text-stone-500">
           Loading farm…
         </div>
       }
@@ -170,7 +170,7 @@ function FarmDetailContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F5F2EB] flex items-center justify-center text-sm text-stone-500">
+      <div className="min-h-screen bg-paper flex items-center justify-center text-sm text-stone-500">
         Loading farm details…
       </div>
     );
@@ -178,8 +178,8 @@ function FarmDetailContent() {
 
   if (error === 'unavailable' || !data || !plotPayload) {
     return (
-      <div className="min-h-screen bg-[#F5F2EB] p-6">
-        <div className="max-w-lg mx-auto mt-20 bg-white border border-[#E4DFD4] rounded-xl p-8 text-center">
+      <div className="min-h-screen bg-paper p-6">
+        <div className="max-w-lg mx-auto mt-20 bg-white border border-rule rounded-xl p-8 text-center">
           <h1 className="text-lg font-bold text-stone-900 mb-2">Assessment unavailable</h1>
           <p className="text-sm text-stone-500 mb-6">
             This job may have expired or was not found. Re-run the assessment for this farmer.
@@ -198,21 +198,21 @@ function FarmDetailContent() {
   const scored = rowStatus === 'scored' && farmRow?.index_score != null;
 
   return (
-    <div className="min-h-screen bg-[#F5F2EB] text-stone-800">
-      <header className="bg-white border-b border-[#E4DFD4] sticky top-0 z-20">
+    <div className="min-h-screen bg-paper text-stone-800">
+      <header className="bg-white border-b border-rule sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
           <Link href={backHref} className="text-sm text-stone-500 hover:text-emerald-700">
             ← Assessment overview
           </Link>
-          <p className="text-xs font-mono text-stone-400 truncate max-w-[40%]">{plotKey}</p>
+          <p className="text-xs font-mono text-ink-muted truncate max-w-[40%]">{plotKey}</p>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto p-6 space-y-5">
         {/* Hero: farm identity + map | KBS */}
         <div className="grid lg:grid-cols-[38%_1fr] gap-4 items-stretch">
-          <div className="bg-white rounded-xl border border-[#E4DFD4] p-4 flex flex-col">
-            <p className="text-[10px] uppercase tracking-wider text-stone-400 font-semibold">
+          <div className="bg-white rounded-xl border border-rule p-4 flex flex-col">
+            <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">
               Farm
             </p>
             <h1 className="text-lg font-bold text-stone-900 mt-0.5 font-mono truncate">
@@ -260,7 +260,7 @@ function FarmDetailContent() {
           </div>
         )}
 
-        <div className="flex bg-white border border-[#E4DFD4] rounded-lg p-1 gap-1 overflow-x-auto">
+        <div className="flex bg-white border border-rule rounded-lg p-1 gap-1 overflow-x-auto">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -269,7 +269,7 @@ function FarmDetailContent() {
               className={`px-4 py-2 text-sm font-medium rounded-md whitespace-nowrap transition-colors ${
                 activeTab === t.id
                   ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-stone-500 hover:text-stone-800 hover:bg-[#F5F2EB]'
+                  : 'text-stone-500 hover:text-stone-800 hover:bg-paper'
               }`}
             >
               {t.label}
@@ -282,7 +282,7 @@ function FarmDetailContent() {
             {scored ? (
               <IndexInsightsCard view={farmView} scopeLabel="plot" />
             ) : (
-              <div className="bg-white rounded-xl border border-[#E4DFD4] p-6 text-sm text-stone-500">
+              <div className="bg-white rounded-xl border border-rule p-6 text-sm text-stone-500">
                 Plot-level index insights appear when this farm is scored.
               </div>
             )}
@@ -365,11 +365,11 @@ function FarmDetailContent() {
 
 function EmptyTab({ title, body }: { title: string; body: string }) {
   return (
-    <div className="bg-white rounded-xl border border-[#E4DFD4] p-6">
+    <div className="bg-white rounded-xl border border-rule p-6">
       <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-2">
         {title}
       </h2>
-      <p className="text-sm text-stone-400">{body}</p>
+      <p className="text-sm text-ink-muted">{body}</p>
     </div>
   );
 }
@@ -377,7 +377,7 @@ function EmptyTab({ title, body }: { title: string; body: string }) {
 function WeatherSubIndexFallback({ farm }: { farm: FarmAssessment }) {
   const w = farm.sub_indices?.weather;
   return (
-    <div className="bg-white rounded-xl border border-[#E4DFD4] p-5 space-y-3">
+    <div className="bg-white rounded-xl border border-rule p-5 space-y-3">
       <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider">
         Weather resilience
       </h2>
@@ -385,13 +385,13 @@ function WeatherSubIndexFallback({ farm }: { farm: FarmAssessment }) {
         Detailed weather intervals are not in this saved job. Plot weather sub-index from scoring:
       </p>
       {w != null ? (
-        <div className="rounded-lg border border-[#E4DFD4] bg-[#F5F2EB]/50 p-4 max-w-xs">
-          <p className="text-[10px] text-stone-400 uppercase font-semibold">Weather sub-index</p>
+        <div className="rounded-lg border border-rule bg-paper/50 p-4 max-w-xs">
+          <p className="text-[10px] text-ink-muted uppercase font-semibold">Weather sub-index</p>
           <p className="text-2xl font-bold font-mono text-stone-900 mt-1">{Number(w).toFixed(1)}</p>
           <p className="text-[11px] text-stone-500 mt-1">Scale 0–100 (pillar score)</p>
         </div>
       ) : (
-        <p className="text-sm text-stone-400">No weather sub-index on this plot row.</p>
+        <p className="text-sm text-ink-muted">No weather sub-index on this plot row.</p>
       )}
     </div>
   );

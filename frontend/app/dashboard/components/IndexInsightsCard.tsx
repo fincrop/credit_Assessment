@@ -25,7 +25,7 @@ export function IndexInsightsCard({
   const rawKbs = toKbsScore(view.rawIndex);
 
   return (
-    <div className="bg-white rounded-xl border border-[#E4DFD4] p-5 space-y-5">
+    <div className="bg-white rounded-xl border border-rule p-5 space-y-5">
       <div>
         <h2 className="text-sm font-semibold text-stone-500 uppercase tracking-wider mb-1">
           Index insights
@@ -37,8 +37,8 @@ export function IndexInsightsCard({
       </div>
 
       <div className="grid sm:grid-cols-3 gap-3">
-        <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-3.5">
-          <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-1.5">
+        <div className="bg-paper rounded-lg border border-rule p-3.5">
+          <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-1.5">
             KBS score
           </p>
           <p
@@ -54,19 +54,19 @@ export function IndexInsightsCard({
             </p>
           )}
         </div>
-        <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-3.5">
-          <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-1.5">
+        <div className="bg-paper rounded-lg border border-rule p-3.5">
+          <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-1.5">
             Raw (mapped)
           </p>
           <p className="font-semibold text-stone-900 text-sm font-mono">
             {rawKbs != null ? rawKbs : formatScoreOne(view.rawIndex)}
           </p>
-          <p className="text-[10px] text-stone-400 mt-1">
+          <p className="text-[10px] text-ink-muted mt-1">
             Internal {formatScoreOne(view.rawIndex)}
           </p>
         </div>
-        <div className="bg-[#F5F2EB] rounded-lg border border-[#E4DFD4] p-3.5">
-          <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-1.5">
+        <div className="bg-paper rounded-lg border border-rule p-3.5">
+          <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-1.5">
             Confidence gate
           </p>
           <p className="font-semibold text-stone-900 text-sm font-mono">
@@ -77,7 +77,7 @@ export function IndexInsightsCard({
 
       {view.weakSubIndices.length > 0 && (
         <div>
-          <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-2">
+          <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-2">
             Weak sub-indices
           </p>
           <div className="flex flex-wrap gap-2">
@@ -94,7 +94,7 @@ export function IndexInsightsCard({
       )}
 
       <div>
-        <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-widest mb-2">
+        <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest mb-2">
           Reason codes
         </p>
         {codes.length === 0 ? (
@@ -128,7 +128,7 @@ export function IndexInsightsCard({
 export function FarmSlimFallbackCard({ farm }: { farm: FarmAssessment }) {
   const seasons = farm.season_types || [];
   return (
-    <div className="bg-white rounded-xl border border-[#E4DFD4] p-5 space-y-3">
+    <div className="bg-white rounded-xl border border-rule p-5 space-y-3">
       <h3 className="text-sm font-semibold text-stone-500 uppercase tracking-wider">
         Plot snapshot
       </h3>
@@ -137,18 +137,18 @@ export function FarmSlimFallbackCard({ farm }: { farm: FarmAssessment }) {
         runs). Showing slim fields from this job:
       </p>
       <div className="grid sm:grid-cols-3 gap-2">
-        <div className="rounded-lg border border-[#E4DFD4] bg-[#F5F2EB]/50 p-3">
-          <p className="text-[10px] text-stone-400 uppercase font-semibold">Crop</p>
+        <div className="rounded-lg border border-rule bg-paper/50 p-3">
+          <p className="text-[10px] text-ink-muted uppercase font-semibold">Crop</p>
           <p className="text-sm font-semibold text-stone-800 mt-0.5">{farm.crop || '—'}</p>
         </div>
-        <div className="rounded-lg border border-[#E4DFD4] bg-[#F5F2EB]/50 p-3">
-          <p className="text-[10px] text-stone-400 uppercase font-semibold">Area</p>
+        <div className="rounded-lg border border-rule bg-paper/50 p-3">
+          <p className="text-[10px] text-ink-muted uppercase font-semibold">Area</p>
           <p className="text-sm font-semibold text-stone-800 mt-0.5 font-mono">
             {farm.area_ha != null ? `${Number(farm.area_ha).toFixed(2)} ha` : '—'}
           </p>
         </div>
-        <div className="rounded-lg border border-[#E4DFD4] bg-[#F5F2EB]/50 p-3">
-          <p className="text-[10px] text-stone-400 uppercase font-semibold">Tenure</p>
+        <div className="rounded-lg border border-rule bg-paper/50 p-3">
+          <p className="text-[10px] text-ink-muted uppercase font-semibold">Tenure</p>
           <p className="text-sm font-semibold text-stone-800 mt-0.5 font-mono">
             {formatScoreOne(farm.tenure_factor)}
           </p>

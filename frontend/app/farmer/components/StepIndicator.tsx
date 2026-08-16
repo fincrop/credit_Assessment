@@ -19,17 +19,17 @@ export function StepIndicator({ current }: { current: number }) {
               <span
                 className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border transition-colors ${
                   done
-                    ? 'bg-emerald-500 border-emerald-500 text-[#F5F2EB]'
+                    ? 'bg-emerald-500 border-emerald-500 text-paper'
                     : active
                       ? 'bg-emerald-500/20 border-emerald-500 text-emerald-700'
-                      : 'bg-white border-[#E4DFD4] text-stone-400'
+                      : 'bg-white border-rule text-ink-muted'
                 }`}
               >
                 {done ? '✓' : step.id}
               </span>
               <span
                 className={`text-xs sm:text-sm font-medium truncate ${
-                  active ? 'text-stone-900' : done ? 'text-stone-500' : 'text-stone-400'
+                  active ? 'text-stone-900' : done ? 'text-stone-500' : 'text-ink-muted'
                 }`}
               >
                 {step.label}

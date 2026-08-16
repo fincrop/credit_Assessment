@@ -42,7 +42,7 @@ export function HistoricalDataForm({
   };
 
   const inputCls =
-    'w-full bg-white border border-[#E4DFD4] rounded-lg px-3 py-2 text-sm text-stone-800 focus:outline-none focus:border-emerald-500';
+    'w-full bg-white border border-rule rounded-lg px-3 py-2 text-sm text-stone-800 focus:outline-none focus:border-emerald-500';
 
   return (
     <div className="space-y-6">
@@ -154,7 +154,7 @@ export function HistoricalDataForm({
             type="checkbox"
             checked={value.pm_kisan_enrolled}
             onChange={(e) => set({ pm_kisan_enrolled: e.target.checked })}
-            className="rounded border-[#E4DFD4] bg-white text-emerald-600"
+            className="rounded border-rule bg-white text-emerald-600"
           />
           <span className="text-sm text-stone-600">PM-KISAN enrolled</span>
         </label>
@@ -163,7 +163,7 @@ export function HistoricalDataForm({
             type="checkbox"
             checked={value.has_crop_insurance}
             onChange={(e) => set({ has_crop_insurance: e.target.checked })}
-            className="rounded border-[#E4DFD4] bg-white text-emerald-600"
+            className="rounded border-rule bg-white text-emerald-600"
           />
           <span className="text-sm text-stone-600">Has crop insurance</span>
         </label>
@@ -180,7 +180,7 @@ export function HistoricalDataForm({
       </div>
 
       {!hideReview && (
-        <div className="bg-[#F5F2EB] border border-[#E4DFD4] rounded-xl p-4 space-y-2 text-sm">
+        <div className="bg-paper border border-rule rounded-xl p-4 space-y-2 text-sm">
           <h3 className="font-semibold text-stone-800 mb-2">Review summary</h3>
           <p>
             <span className="text-stone-500">Name:</span> {identity.farmer_name || '—'}

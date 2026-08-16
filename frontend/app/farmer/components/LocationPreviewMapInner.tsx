@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
+import { MAP_COLORS } from '../../lib/mapStyle';
 interface Props {
   center?: { lat: number; lng: number } | null;
   label?: string;
@@ -48,8 +49,8 @@ export default function LocationPreviewMapInner({ center, label }: Props) {
     } else {
       const marker = L.circleMarker([center.lat, center.lng], {
         radius: 8,
-        color: '#22c55e',
-        fillColor: '#22c55e',
+        color: MAP_COLORS.boundary,
+        fillColor: MAP_COLORS.boundary,
         fillOpacity: 0.7,
         weight: 2,
       }).addTo(map);
@@ -63,7 +64,7 @@ export default function LocationPreviewMapInner({ center, label }: Props) {
       <div ref={containerRef} style={{ width: '100%', height: '100%', minHeight: 360 }} />
       {!center && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[500]">
-          <p className="text-xs text-stone-600 bg-white/90 px-3 py-1.5 rounded-lg border border-[#E4DFD4]">
+          <p className="text-xs text-stone-600 bg-white/90 px-3 py-1.5 rounded-lg border border-rule">
             Select a location to preview on the map
           </p>
         </div>

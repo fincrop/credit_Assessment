@@ -16,7 +16,7 @@ Ordered so each item is shippable on its own and nothing depends on a later one.
 | | Item | Status |
 |---|---|---|
 | 1 | One colour, one meaning | ✅ Done |
-| 2 | Make the design system real | Not started |
+| 2 | Make the design system real | ✅ Done |
 | 3 | Show what we refused to score | Not started ⭐ biggest product win |
 | 4 | Wire up the report data | Not started — needed before 5, 6, 8 |
 | 5 | Show *why* the score is that number | Not started |
@@ -40,7 +40,17 @@ Ordered so each item is shippable on its own and nothing depends on a later one.
 
 Verified: `tsc --noEmit` clean, `next build` succeeds. (`eslint` is broken repo-wide by the `brace-expansion: ^5.0.8` override in `package.json`, which minimatch can't consume — pre-existing, unrelated, worth a separate fix.)
 
-**② Make the design system real.** `globals.css` declares tokens; components reference them **zero** times and hardcode 242 hex literals instead. Today a palette change is a find-and-replace. §5.5.
+**② Make the design system real.** ✅ **Done.** Tokens moved into Tailwind 4's `@theme`, so they generate real utilities rather than sitting in a `:root` block nothing referenced.
+
+- `globals.css` rewritten: surfaces named by elevation (`paper` / `paper-raised` / `card`), rules (`rule` / `rule-soft` / `rule-strong`), a three-step ink scale, and three warm-tinted shadow levels. The old `:root` names survive as aliases for the plain-CSS rules further down the file.
+- **All 242 hex literals gone** from `.tsx`. `border-[#E4DFD4]` → `border-rule` (139), `bg-[#F5F2EB]` → `bg-paper` (63 + 18 opacity variants), and the rest. Verified zero remaining. The only arbitrary hexes left are the AgriStack sandbox's dark JSON viewer — deliberately a dark code surface, internal tooling, out of scope.
+- **107 uses of `text-stone-400` retired.** `#A8A29E` measures 2.3:1 on cream and was carrying 10px labels all over the app — a straight WCAG failure on the smallest text in the product. All now `text-ink-muted` (`#78716C`, 4.5:1+).
+- **A fifth score ramp surfaced and was killed.** `SubIndexBars.tsx:74` had a fully inline `pct > 65 ? green : pct > 40 ? amber : red` with no named function, which is why item ① 's grep missed it. Now `scoreColor()`. Item ① 's "four ramps" count was four *named* ones; the true count was five.
+- `lib/vizPalette.ts` — the validated chart palettes (vegetation sequential + discrete chips, the three-slot categorical, diverging, chart chrome), each annotated with its validator result and its usage rule.
+- `lib/mapStyle.ts` — map marks in one place instead of 35 literals across four components, with `parcelStyle()` covering the assessed / warn / focused / **declared** / drawing states. The `declared` state (greyed + dashed) is what item ⑥'s footprint-divergence banner will draw against.
+- Page plane got its ~2% radial per §6.2, and `prefers-reduced-motion` now zeroes every animation.
+
+Verified: `tsc --noEmit` clean, `next build` compiles, and the built CSS confirms `--color-paper:#f5f2eb`, `--color-rule:#e4dfd4`, `--color-ink-muted:#78716c` with `.bg-paper` / `.border-rule` / `.text-ink-muted` utilities generated.
 
 **③ Show what we refused to score.** The backend distinguishes *"we looked, it's not farmland"* from *"we couldn't see it"* from *"here's the score"*. The UI has one amber box. This turns backend rigour into visible product, and it is the highest value per line of code in the plan. §10.
 
