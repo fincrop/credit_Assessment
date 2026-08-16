@@ -1137,11 +1137,40 @@ class CropCycleDetector:
         Returns (sow_idx, biased) where biased is True only when a hint-window
         candidate was preferred over the default walk-back result.
         """
-        default_sow = max(0, peak_idx - xbin)
-        for j in range(peak_idx - mbin, max(0, peak_idx - xbin) - 1, -1):
+        lo_bound = max(0, peak_idx - xbin)
+        hi_bound = peak_idx - mbin
+
+        default_sow = lo_bound
+        crossed = False
+        for j in range(hi_bound, lo_bound - 1, -1):
             if float(cvi_smooth[j]) < low_cvi:
                 default_sow = j
+                crossed = True
                 break
+
+        if not crossed and hi_bound >= lo_bound:
+            # RELATIVE TROUGH FALLBACK.
+            #
+            # Intensively double-cropped land never returns to bare soil: one
+            # crop follows another with barely any fallow interval, and after
+            # 10-day binning plus smoothing the trough never crosses low_cvi.
+            # Requiring an absolute bare-soil crossing then walked sowing all
+            # the way back to peak - max_days, producing a duration over the cap
+            # and rejecting the cycle outright.
+            #
+            # Observed on farmer 14322905350 (western UP wheat-rice): NDVI
+            # amplitude 0.41, peaking at 0.78, never below 0.20 — unmistakably
+            # cropped, and ZERO cycles detected. The bias fell hardest on the
+            # most productive farms, which is the worst direction to be wrong in.
+            #
+            # Standard phenology practice takes the trough BETWEEN cycles rather
+            # than an absolute threshold. The rise from that trough is still
+            # checked against min_rise by the caller, so a flat signal cannot
+            # manufacture a cycle this way — it only stops a real one being
+            # thrown away for not going bare.
+            segment = cvi_smooth[lo_bound: hi_bound + 1]
+            if segment.size and np.isfinite(segment).any():
+                default_sow = lo_bound + int(np.nanargmin(segment))
 
         if sowing_hint is None:
             return default_sow, False
