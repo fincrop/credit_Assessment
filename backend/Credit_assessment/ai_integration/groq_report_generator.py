@@ -153,7 +153,11 @@ class GroqReportGenerator:
                         return report
                 except Exception as exc:
                     last_exc = exc
-                    status = getattr(getattr(exc, 'code', None), '__str__', lambda: str(exc))()
+                    # Removed a `status = ...` line here that was never read and
+                    # captured `exc` inside a lambda. Python unbinds the except
+                    # variable at the end of the block, so that closure was a
+                    # latent NameError that happened to be safe only because it
+                    # was invoked immediately. Dead code with a trap in it.
                     logger.warning("Groq attempt %d failed: %s", attempt, exc)
                     if attempt <= _MAX_RETRIES:
                         time.sleep(1.5 * attempt)  # 1.5s, 3s backoff

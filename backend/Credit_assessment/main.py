@@ -91,6 +91,7 @@ from assessment.parcel_viability import (
     NOT_VIABLE,
     assess_parcel_viability,
 )
+from utils.geometry_utils import GeometryUtils
 from utils.peer_benchmark import PeerBenchmark
 from config import PipelineConfig
 from utils.farmer_benefits import merge_farmer_benefits, normalize_farmer_benefits
