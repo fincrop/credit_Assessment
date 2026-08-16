@@ -21,7 +21,7 @@ Ordered so each item is shippable on its own and nothing depends on a later one.
 | 4 | Wire up the report data | ✅ Done |
 | 5 | Show *why* the score is that number | ✅ Done |
 | 6 | Show the field we actually saw | ✅ Done |
-| 7 | Make the map a remote-sensing map | Not started |
+| 7 | Make the map a remote-sensing map | ✅ Done — one item descoped, see below |
 | 8 | The report | Not started |
 | 9 | Rebuild the dashboard around its reader | Not started |
 | 10 | The remaining panels | Not started |
@@ -113,7 +113,18 @@ Nine assertions added to `npm run smoke` pinning the arithmetic against the engi
 
 Eighteen assertions added on the chart primitives, aimed at the properties that fail *silently*: a gap must produce a second `M` rather than an `L`, an area must close to the baseline rather than to the previous point, `NaN` must count as no observation. These are one character away from being wrong and look fine on screen when they are. One real bug fixed: `ticks()` accumulated floats and emitted `0.6000000000000001`, which reaches an axis as a label unless every caller remembers to format it.
 
-**⑦ Make the map a remote-sensing map.** Satellite base, NDVI raster overlay tied to the chart cursor, declared-vs-measured footprint drawn as two polygons, permanent legend, scale bar, Copernicus attribution. §11.
+**⑦ Make the map a remote-sensing map.** ✅ **Done, with one item descoped on evidence.**
+
+**The NDVI raster overlay I planned in §11 does not exist and cannot.** A grep for `getMapId|getThumbURL|tile_url|geotiff|\.tif` across the backend returns nothing — the pipeline emits per-parcel index *values*, never imagery. There is no raster to overlay. I built the honest version instead rather than sourcing tiles from somewhere else and letting them read as our analysis.
+
+- **Declared vs measured footprint** — the P0 from item ③, now drawn rather than asserted. `geospatial_prep.buffer_km_used` gives the real radius of the substituted circular footprint, so the measured area is drawn geometry, not an illustration. When they diverge the declared boundary is restyled greyed-and-dashed, the measured footprint solid, and the legend says *"The score describes the measured area, not the declared one."*
+- **NDVI scrubber — parcel mean, and it says so.** The polygon is tinted by its measured NDVI at the selected date, with a caption reading *"One measured value per date, shading the whole parcel — not per-pixel imagery."* Only bins carrying a value are selectable: scrubbing onto a cloud gap and seeing the previous week's colour would present a stale measurement as a current one. Suppressed on the portfolio map (many parcels, one value) and when the footprint was substituted (the polygon is not what was measured).
+- **Layer control** — imagery default, cartographic base for orientation. Imagery is the default because this is a remote-sensing product and a road map undersells what the assessment is looking at.
+- **Scale bar** — non-negotiable when the output is evidence in a credit file; a reader must be able to judge the size of what they see.
+- **Permanent legend**, not hover-revealed. A map carrying marks with no key is an illustration.
+- **Copernicus attribution** on both bases — a licence obligation, not a design choice, and it was missing entirely.
+
+Verified: `tsc` (which also checks every Leaflet call against `@types/leaflet`), `verify`, and `next build` all pass. **Not visually confirmed against a live map** — this environment has no database or pipeline credentials to render a real assessment. Worth a manual look before pilot.
 
 **⑧ The report.** A print-first dossier route driven by the report contract — replacing 232 lines of `@media print` overrides that reformat the dashboard. §9.2.
 
@@ -571,7 +582,7 @@ The map is where "we actually looked at your field" becomes credible, and it is 
 
 - **Base layers** — satellite imagery default (this is a remote-sensing product; a road map undersells it), with a toggle to a muted cartographic base. Labels only on the cartographic base.
 - **Boundary treatment** — 2px accent stroke, 12% fill. **Declared vs measured footprint drawn as two polygons** when they differ: declared dashed and greyed, measured solid and accented. Currently a divergence is invisible.
-- **NDVI raster overlay** — the §5.3 ramp with a continuous legend, opacity slider, and a date scrubber tied to the trajectory chart's cursor. Move the cursor on the chart, the map redraws for that date. This is the demo that sells the product.
+- ~~**NDVI raster overlay**~~ — **not buildable, and this was a planning error.** A grep for `getMapId|getThumbURL|tile_url|geotiff|\.tif` across the backend returns **nothing**: the pipeline emits per-parcel index *values*, never imagery. There is no raster to overlay and no tile service to serve one. What shipped instead is the honest version of the same idea — the polygon tinted by its **parcel-mean NDVI** at a scrubbed date, labelled as such. Real measurement, no implied within-field detail. Revisit only if the backend gains a tile export.
 - **Per-plot choropleth at holding level** — each plot filled by its band colour, always with its plot label rendered (§5.2 rule).
 - **Legends are mandatory and permanent**, not hover-revealed. A raster with no legend is an illustration.
 - **Scale bar and north arrow.** Non-negotiable in a geospatial product that produces evidence for a credit file.

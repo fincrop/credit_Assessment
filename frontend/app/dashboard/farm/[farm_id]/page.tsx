@@ -7,7 +7,7 @@ import type { AssessmentPayload, FarmAssessment } from '../../../types/assessmen
 import { pollJobStatusSafe } from '../../../lib/assessmentClient';
 import { plotKeyOf, assignPlotKeysClient } from '../../../lib/plotKey';
 import { rowStatusFromAssessment } from '../../../lib/streamFarms';
-import { PlotBoundaryMap } from '../../components/PlotBoundaryMap';
+import { PlotBoundaryMap, measuredFootprintOf } from '../../components/PlotBoundaryMap';
 import { FarmKbsPanel } from '../../components/FarmKbsPanel';
 import {
   IndexInsightsCard,
@@ -253,6 +253,18 @@ function FarmDetailContent() {
                 centroid={farmGeom?.centroid}
                 label={String(farmGeom?.farm_name || plotKey)}
                 minHeight={220}
+                measuredFootprint={measuredFootprintOf(
+                  plotPayload?.risk_assessment?.footprint,
+                  plotPayload?.geospatial_prep
+                )}
+                ndvi={
+                  report?.ndvi_trajectory
+                    ? {
+                        dates: report.ndvi_trajectory.dates,
+                        values: report.ndvi_trajectory.ndvi,
+                      }
+                    : null
+                }
               />
             </div>
           </div>

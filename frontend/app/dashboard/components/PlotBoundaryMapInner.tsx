@@ -1,11 +1,41 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-import { MAP_COLORS } from '../../lib/mapStyle';
+import { MAP_COLORS, parcelStyle } from '../../lib/mapStyle';
+import { vegetationAt } from '../../lib/vizPalette';
+
 type Geom = { type?: string; coordinates?: unknown } | null | undefined;
+
+/**
+ * The footprint the score was actually measured over, when it differs from
+ * the declared boundary. `bufferKm` is the real radius from
+ * `geospatial_prep.buffer_km_used`, so what gets drawn is the geometry the
+ * pipeline used — not an illustration of the idea.
+ */
+export type MeasuredFootprint = {
+  substituted: boolean;
+  bufferKm?: number | null;
+  source?: string | null;
+};
+
+/**
+ * Measured NDVI per observation bin, for tinting the parcel over time.
+ *
+ * This is a PARCEL MEAN — one value for the whole polygon per bin — not a
+ * raster. The pipeline produces no imagery layers (no tile service, no
+ * GeoTIFF, no thumbnails), so a pixel-level overlay would have to be
+ * invented. Tinting the polygon by its own measured mean is the honest
+ * version of the same idea, and the UI says which it is: implying
+ * within-field detail we do not have would be the same fabrication the
+ * trajectory chart refuses, wearing a different costume.
+ */
+export type NdviSeries = {
+  dates: string[];
+  values: (number | null)[];
+};
 
 export type MapPlot = {
   geometry?: Geom;
@@ -111,6 +141,32 @@ function applySelectionStyles(group: L.LayerGroup, selectedKey: string | null, m
   });
 }
 
+function LegendRow({
+  color,
+  label,
+  dashed,
+}: {
+  color: string;
+  label: string;
+  dashed?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 text-[10px] text-ink-2 leading-tight mt-0.5 first:mt-0">
+      {dashed ? (
+        <svg width="12" height="8" className="shrink-0">
+          <line x1="0" y1="4" x2="12" y2="4" stroke={color} strokeWidth="2" strokeDasharray="3 2" />
+        </svg>
+      ) : (
+        <span
+          className="w-3 h-2 rounded-[2px] shrink-0"
+          style={{ background: color, opacity: 0.85 }}
+        />
+      )}
+      {label}
+    </div>
+  );
+}
+
 /** Comfortable framing for plot polygons (not India-wide, not clipped). */
 const ALL_PAD = 0.55;
 const ALL_MAX_ZOOM = 16;
@@ -127,6 +183,8 @@ export default function PlotBoundaryMapInner({
   selectedPlotKey = null,
   onSelectPlot,
   minHeight = 320,
+  measuredFootprint = null,
+  ndvi = null,
 }: {
   geometry?: Geom;
   centroid?: { lat: number; lng: number } | null;
@@ -135,6 +193,8 @@ export default function PlotBoundaryMapInner({
   selectedPlotKey?: string | null;
   onSelectPlot?: (plotKey: string) => void;
   minHeight?: number;
+  measuredFootprint?: MeasuredFootprint | null;
+  ndvi?: NdviSeries | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -155,10 +215,40 @@ export default function PlotBoundaryMapInner({
       zoom: 5,
       zoomControl: true,
     });
-    L.tileLayer(
+
+    // Imagery is the default: this is a remote-sensing product, and a road
+    // map undersells what the assessment is actually looking at. The
+    // cartographic base exists for orientation — village names, roads —
+    // which imagery cannot give you.
+    const imagery = L.tileLayer(
       'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      { attribution: 'Tiles &copy; Esri', maxZoom: 19 }
+      {
+        attribution:
+          'Imagery &copy; Esri · Analysis contains modified Copernicus Sentinel-2 data',
+        maxZoom: 19,
+      }
     ).addTo(map);
+
+    const carto = L.tileLayer(
+      'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+      {
+        attribution:
+          '&copy; OpenStreetMap contributors &copy; CARTO · Analysis contains modified Copernicus Sentinel-2 data',
+        maxZoom: 19,
+      }
+    );
+
+    L.control
+      .layers({ Imagery: imagery, 'Map (names & roads)': carto }, undefined, {
+        collapsed: true,
+        position: 'topright',
+      })
+      .addTo(map);
+
+    // Non-negotiable in a geospatial product whose output is evidence in a
+    // credit file: a reader must be able to judge the size of what they see.
+    L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
+
     mapRef.current = map;
 
     const t = window.setTimeout(() => safeInvalidate(mapRef.current), 50);
@@ -267,6 +357,40 @@ export default function PlotBoundaryMapInner({
       }
     }
 
+    // ── Measured footprint, when it is NOT the declared boundary ──────────
+    //
+    // The P0 case. When the supplied polygon fails QA the collector measures
+    // a circular buffer around the centroid instead, so every number on the
+    // page can describe land NEAR the parcel rather than the parcel. Drawing
+    // only the declared polygon lets the reader believe we measured it.
+    //
+    // buffer_km_used gives the real radius, so this is drawn geometry, not an
+    // illustration of one.
+    if (measuredFootprint?.substituted && measuredFootprint.bufferKm) {
+      const single = features.length === 1 ? features[0] : null;
+      const c = single?.centroid || centroidOf(single?.geometry);
+      if (c) {
+        L.circle([c.lat, c.lng], {
+          radius: measuredFootprint.bufferKm * 1000,
+          ...parcelStyle('focused'),
+          fillOpacity: 0.1,
+        })
+          .bindTooltip(
+            `Measured footprint · ${measuredFootprint.bufferKm.toFixed(2)} km radius`
+          )
+          .addTo(group);
+        // The declared boundary is restyled as "declared" — greyed and dashed —
+        // so it cannot be mistaken for the footprint the score came from.
+        group.eachLayer((raw) => {
+          if (raw instanceof L.GeoJSON) raw.setStyle(parcelStyle('declared'));
+        });
+        const cb = L.circle([c.lat, c.lng], {
+          radius: measuredFootprint.bufferKm * 1000,
+        }).getBounds();
+        if (cb.isValid()) allBounds.extend(cb);
+      }
+    }
+
     if (cancelled || !isMapAlive(map)) return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
@@ -306,7 +430,7 @@ export default function PlotBoundaryMapInner({
       cancelled = true;
       cancelAnimationFrame(raf);
     };
-  }, [geometry, centroid, label, plots]);
+  }, [geometry, centroid, label, plots, measuredFootprint]);
 
   // Selection: restyle + zoom (no map teardown)
   useEffect(() => {
@@ -337,6 +461,38 @@ export default function PlotBoundaryMapInner({
     };
   }, [selectedPlotKey]);
 
+  // ── NDVI over time, as a parcel-mean tint ────────────────────────────────
+  // Only bins that carry a value are selectable: scrubbing onto a cloud gap
+  // and seeing the previous week's colour would present a stale measurement
+  // as a current one.
+  const observedBins = useMemo(
+    () =>
+      (ndvi?.dates ?? [])
+        .map((d, i) => ({ i, date: String(d), value: ndvi!.values[i] }))
+        .filter(
+          (b): b is { i: number; date: string; value: number } =>
+            typeof b.value === 'number' && Number.isFinite(b.value)
+        ),
+    [ndvi]
+  );
+
+  const [binPos, setBinPos] = useState<number | null>(null);
+  const activeBin =
+    observedBins.length > 0
+      ? observedBins[Math.min(binPos ?? observedBins.length - 1, observedBins.length - 1)]
+      : null;
+
+  useEffect(() => {
+    const group = layerRef.current;
+    if (!group || !activeBin || multiRef.current || measuredFootprint?.substituted) return;
+    const fill = vegetationAt(activeBin.value);
+    group.eachLayer((raw) => {
+      if (raw instanceof L.GeoJSON) {
+        raw.setStyle({ ...STYLE_SINGLE, fillColor: fill, fillOpacity: 0.72 });
+      }
+    });
+  }, [activeBin, measuredFootprint]);
+
   const hasAny =
     (plots && plots.some((p) => p.geometry || p.centroid)) ||
     geometry ||
@@ -348,6 +504,70 @@ export default function PlotBoundaryMapInner({
       style={{ minHeight }}
     >
       <div ref={containerRef} style={{ width: '100%', height: '100%', minHeight }} />
+
+      {/* Permanent, not hover-revealed. A map carrying marks with no key is
+          an illustration, and this one is evidence in a credit file. */}
+      {hasAny && (
+        <div
+          className="absolute z-[600] bottom-3 right-3 rounded-lg border border-rule bg-paper-raised/95 px-2.5 py-2 pointer-events-none max-w-[190px]"
+          aria-hidden
+        >
+          {measuredFootprint?.substituted ? (
+            <>
+              <LegendRow color={MAP_COLORS.focus} label="Measured footprint" />
+              <LegendRow color="#A8A29E" label="Declared boundary" dashed />
+              <p className="text-[10px] text-ink-muted mt-1.5 leading-snug">
+                The score describes the measured area, not the declared one.
+              </p>
+            </>
+          ) : (
+            <>
+              <LegendRow color={MAP_COLORS.boundary} label="Assessed parcel" />
+              {(plots?.length ?? 0) > 1 && (
+                <LegendRow color={MAP_COLORS.warn} label="Selected" />
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Scrubber. Absent when there is nothing to scrub, or when the tint
+          would be misleading — a portfolio map (many parcels, one value) or a
+          substituted footprint (the polygon is not what was measured). */}
+      {activeBin && !multiRef.current && !measuredFootprint?.substituted && (
+        <div className="absolute z-[600] bottom-3 left-3 right-3 sm:right-auto sm:w-[280px] rounded-lg border border-rule bg-paper-raised/95 px-3 py-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-ink-muted">
+              NDVI · parcel mean
+            </span>
+            <span className="font-mono tabular-nums text-[12px] text-ink">
+              {activeBin.value.toFixed(2)}
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={observedBins.length - 1}
+            value={binPos ?? observedBins.length - 1}
+            onChange={(e) => setBinPos(Number(e.target.value))}
+            className="w-full mt-1.5 accent-accent"
+            aria-label={`Observation date: ${activeBin.date}, NDVI ${activeBin.value.toFixed(2)}`}
+          />
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-[10px] font-mono text-ink-muted">{activeBin.date}</span>
+            <span className="text-[10px] text-ink-muted">
+              {observedBins.length} observed
+            </span>
+          </div>
+          {/* Says what it is. There is no raster behind this — one measured
+              value shades the whole parcel, and a reader must not infer
+              within-field variation from it. */}
+          <p className="text-[10px] text-ink-muted mt-1 leading-snug">
+            One measured value per date, shading the whole parcel — not per-pixel imagery.
+          </p>
+        </div>
+      )}
+
       {!hasAny && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[500]">
           <p className="text-xs text-stone-600 bg-white/90 px-3 py-1.5 rounded-lg border border-rule">

@@ -41,6 +41,27 @@ export interface Footprint {
   note?: string | null;
 }
 
+/**
+ * How the measurement footprint was derived.
+ *
+ * `buffer_km_used` is the radius of the circular footprint substituted when
+ * the supplied polygon failed QA — which makes the measured footprint real,
+ * drawable geometry rather than an abstraction. The map draws it against the
+ * declared boundary so the divergence is visible instead of asserted.
+ */
+export interface GeospatialPrep {
+  snap_logic_version?: string;
+  /** `polygon` = the supplied boundary. Anything else is a substitution. */
+  geometry_source?: string | null;
+  buffer_km_used?: number | null;
+  geometry_qa?: {
+    ok?: boolean;
+    reason?: string;
+    area_ha?: number;
+    ratio?: number;
+  } | null;
+}
+
 export interface RiskAssessment {
   index_score: number;
   raw_index?: number;
@@ -448,6 +469,7 @@ export interface AssessmentPayload {
   land_cover?: LandCover;
   parcel_viability?: ParcelViability;
   data_sufficiency?: DataSufficiency;
+  geospatial_prep?: GeospatialPrep;
   /** Set alongside status INSUFFICIENT_DATA. */
   insufficient_reason?: string;
   /** Set alongside status REJECTED_NOT_AGRICULTURAL. */
