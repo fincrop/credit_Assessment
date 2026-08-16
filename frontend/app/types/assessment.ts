@@ -27,6 +27,20 @@ export interface RiskBenefits {
   has_crop_insurance?: TriState;
 }
 
+/**
+ * What footprint the score was actually measured over.
+ *
+ * A consumer must be able to tell a score about the farmer's parcel from a
+ * score about the land around it. When `geometry_substituted` is true the
+ * polygon on screen is NOT the one we measured, and that has to be said out
+ * loud rather than left in a tooltip.
+ */
+export interface Footprint {
+  geometry_source?: string | null;
+  geometry_substituted?: boolean;
+  note?: string | null;
+}
+
 export interface RiskAssessment {
   index_score: number;
   raw_index?: number;
@@ -42,6 +56,124 @@ export interface RiskAssessment {
   positioning?: string;
   no_repayment_calibration?: boolean;
   calibration?: Record<string, unknown>;
+  footprint?: Footprint;
+  /**
+   * One grounded sentence per sub-index, built deterministically from the
+   * inputs — NOT generated text. Keyed by sub-index name plus
+   * `data_confidence` and `footprint`.
+   */
+  driver_captions?: Record<string, string>;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   The refusal layer — v6.
+
+   The backend distinguishes three terminal states, and collapsing them loses
+   exactly the information a loan officer needs:
+
+     SUCCESS                    we looked; here is the score
+     REJECTED_NOT_AGRICULTURAL  we looked; it is not farmland
+     INSUFFICIENT_DATA          we could not see it well enough to say
+
+   The last one is a statement about our view of the field, not about the
+   field. Rendering it as a low score would be a lie.
+   ───────────────────────────────────────────────────────────────────────── */
+
+export type LandCoverClass =
+  | 'CROPLAND'
+  | 'WATER'
+  | 'BUILTUP'
+  | 'BARREN'
+  | 'FOREST'
+  | 'PLANTATION'
+  | 'UNKNOWN'
+  | string;
+
+/** Gate verdicts: pass = farmland, flag = odd but scored, reject = not scored. */
+export type GateOutcome = 'pass' | 'flag' | 'reject' | string;
+
+export interface LandCover {
+  outcome?: GateOutcome;
+  class?: LandCoverClass;
+  confidence?: number;
+  reason?: string;
+  is_cultivable?: boolean;
+  insufficient_data?: boolean;
+  gate_version?: string;
+  evidence?: {
+    streams?: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+}
+
+export type ViabilityOutcome = 'viable' | 'marginal' | 'not_viable' | string;
+
+/** Can this parcel be honestly measured at 10 m at all? Runs pre-acquisition. */
+export interface ParcelViability {
+  version?: string;
+  outcome?: ViabilityOutcome;
+  reason?: string;
+  evidence?: {
+    registered_ha?: number;
+    geometry_ha?: number;
+    effective_ha?: number;
+    approx_pixels?: number;
+    area_ratio?: number;
+    areas_disagree?: boolean;
+    thresholds?: {
+      min_pixels_hard?: number;
+      min_pixels_reliable?: number;
+      area_ratio_range?: number[];
+    };
+  };
+}
+
+export type SufficiencyOutcome = 'sufficient' | 'insufficient' | string;
+
+/** Did we observe the parcel often enough to say anything about it? */
+export interface DataSufficiency {
+  version?: string;
+  outcome?: SufficiencyOutcome;
+  reason?: string;
+  evidence?: {
+    n_bins?: number;
+    n_observed_bins?: number;
+    observed_fraction?: number;
+    /** Including radar — the blind gap is measured against this, not optical alone. */
+    n_bins_with_any_signal?: number;
+    any_signal_fraction?: number;
+    n_sar_only_bins?: number;
+    largest_blind_gap_days?: number;
+    largest_blind_gap_span?: string[];
+    n_cycles_detected?: number;
+    field_area_ha?: number;
+    thresholds?: {
+      blind_gap_days?: number;
+      min_observed_fraction?: number;
+    };
+  };
+}
+
+export type CropVerificationOutcome =
+  | 'consistent'
+  | 'inconsistent'
+  | 'indeterminate'
+  | string;
+
+/**
+ * Declared crop vs observed phenology.
+ *
+ * `inconsistent` is as often a data-entry error as it is misrepresentation.
+ * Present it neutrally.
+ */
+export interface CropVerification {
+  version?: string;
+  declared_crop?: string | null;
+  canonical_crop?: string | null;
+  outcome?: CropVerificationOutcome;
+  confidence?: number;
+  reason?: string;
+  evidence?: Record<string, unknown>;
 }
 
 export interface SignalQualitySummary {
@@ -192,6 +324,7 @@ export interface CroppingAnalysis {
   crops_detected?: Record<string, unknown> | string[];
   region?: string;
   season_results?: Record<string, unknown>[];
+  crop_verification?: CropVerification;
 }
 
 export interface ContinuousDataStats {
@@ -309,6 +442,18 @@ export interface AssessmentPayload {
     region?: string;
   };
   field_area_ha?: number;
+
+  /* ── The refusal layer. Stamped on every assessment, including passes,
+        so a lender sees the evidence and not just the answer. ── */
+  land_cover?: LandCover;
+  parcel_viability?: ParcelViability;
+  data_sufficiency?: DataSufficiency;
+  /** Set alongside status INSUFFICIENT_DATA. */
+  insufficient_reason?: string;
+  /** Set alongside status REJECTED_NOT_AGRICULTURAL. */
+  rejection_reason?: string;
+  rejection_class?: LandCoverClass;
+
   continuous_data_stats?: ContinuousDataStats;
   satellite_data?: Record<string, unknown>;
   risk_assessment?: RiskAssessment;
@@ -395,7 +540,20 @@ export interface FarmAssessment {
   confidence_gate?: number | null;
   sub_indices: Record<string, number>;
   reason_codes?: ReasonCode[];
+  /**
+   * Prefixed by kind, and the prefix carries meaning: only `error:` is a
+   * failure. `not_agricultural:` and `insufficient_observation` are legitimate
+   * exclusions and must not make a holding look broken.
+   */
   skipped_reason?: string;
+  /** Slim land-cover verdict on a plot excluded as non-agricultural. */
+  land_cover?: Pick<LandCover, 'class' | 'confidence' | 'reason'>;
+  /** Slim sufficiency verdict on a plot we could not observe. */
+  data_sufficiency?: {
+    reason?: string;
+    observed_fraction?: number;
+    largest_blind_gap_days?: number;
+  };
   /** Compact plot analysis for farm detail tabs (multi-farm slim payload). */
   detail?: {
     cropping_analysis?: CroppingAnalysis;

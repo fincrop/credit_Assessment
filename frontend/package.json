@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "smoke": "tsx scripts/smoke-logic.ts",
     "lgd:build-json": "node scripts/build-india-lgd-json.mjs",
     "lgd:import-villages": "tsx scripts/import-lgd-villages.ts"
   },

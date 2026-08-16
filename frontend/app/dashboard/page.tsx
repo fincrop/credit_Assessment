@@ -10,7 +10,10 @@ import { StreamingFarmList } from './components/StreamingFarmList';
 import { FarmSelectPanel } from './components/FarmSelectPanel';
 import { PlotBoundaryMap } from './components/PlotBoundaryMap';
 import { AssessmentPrintReport } from './components/AssessmentPrintReport';
+import { RefusalPanel } from './components/RefusalPanel';
+import { ConfidenceStrip } from './components/ConfidenceBadge';
 import { useRiskView } from '../lib/useRiskView';
+import { terminalStateOf } from '../lib/terminalState';
 import {
   buildStreamRows,
   portfolioSummaryFromRows,
@@ -99,6 +102,7 @@ function DashboardPageContent() {
   }, [status]);
 
   const riskView = useRiskView(data);
+  const refusal = useMemo(() => terminalStateOf(data), [data]);
   const showShell =
     status === 'QUEUED' ||
     status === 'RUNNING' ||
@@ -748,15 +752,24 @@ function DashboardPageContent() {
                   riskView.benefits.has_crop_insurance
                 }
               />
-              <RiskScoreCard
-                data={status === 'SUCCESS' && data ? data : null}
-                placeholder={status !== 'SUCCESS' || !data}
-                statusMessage={
-                  status === 'FAILED'
-                    ? errorMsg || 'No farmer score — see plot outcomes below.'
-                    : loadingMsg || 'Analyzing plots…'
-                }
-              />
+              {/* A refusal replaces the score block — it never sits beside it.
+                  An empty gauge next to "not farmland" reads as a zero. */}
+              {refusal.state === 'NOT_FARMLAND' || refusal.state === 'UNOBSERVED' ? (
+                <RefusalPanel data={data} />
+              ) : (
+                <div className="space-y-2.5">
+                  <RiskScoreCard
+                    data={status === 'SUCCESS' && data ? data : null}
+                    placeholder={status !== 'SUCCESS' || !data}
+                    statusMessage={
+                      status === 'FAILED'
+                        ? errorMsg || 'No farmer score — see plot outcomes below.'
+                        : loadingMsg || 'Analyzing plots…'
+                    }
+                  />
+                  {status === 'SUCCESS' && <ConfidenceStrip data={data} />}
+                </div>
+              )}
             </div>
 
             <div className="grid lg:grid-cols-2 gap-5 items-stretch min-h-[520px]">

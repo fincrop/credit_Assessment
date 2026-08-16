@@ -17,7 +17,7 @@ Ordered so each item is shippable on its own and nothing depends on a later one.
 |---|---|---|
 | 1 | One colour, one meaning | ✅ Done |
 | 2 | Make the design system real | ✅ Done |
-| 3 | Show what we refused to score | Not started ⭐ biggest product win |
+| 3 | Show what we refused to score | ✅ Done |
 | 4 | Wire up the report data | Not started — needed before 5, 6, 8 |
 | 5 | Show *why* the score is that number | Not started |
 | 6 | Show the field we actually saw | Not started ⭐ most persuasive |
@@ -52,7 +52,19 @@ Verified: `tsc --noEmit` clean, `next build` succeeds. (`eslint` is broken repo-
 
 Verified: `tsc --noEmit` clean, `next build` compiles, and the built CSS confirms `--color-paper:#f5f2eb`, `--color-rule:#e4dfd4`, `--color-ink-muted:#78716c` with `.bg-paper` / `.border-rule` / `.text-ink-muted` utilities generated.
 
-**③ Show what we refused to score.** The backend distinguishes *"we looked, it's not farmland"* from *"we couldn't see it"* from *"here's the score"*. The UI has one amber box. This turns backend rigour into visible product, and it is the highest value per line of code in the plan. §10.
+**③ Show what we refused to score.** ✅ **Done.** The backend's three terminal states now reach the screen as three distinct findings instead of one amber box.
+
+- `lib/terminalState.ts` — one resolver, `SCORED` / `NOT_FARMLAND` / `UNOBSERVED` / `FAILED` / `PENDING`, for both full payloads and the slim per-plot records. The `skipped_reason` prefix is load-bearing (`not_agricultural:` and `insufficient_observation` are *exclusions*; only `error:` is a failure), and the resolver is now the only place that knows it.
+- `RefusalPanel` — a distinct screen per refusal, each carrying its own evidence: observed land-cover class and confidence, or the weeks-observed / clear-coverage / longest-blind-gap / radar-only figures. **No gauge, no band arc, no greyed placeholder** — an empty dial beside a refusal eventually gets read as a zero.
+- The insufficiency screen distinguishes its two causes, because they have different fixes: a parcel below the measurable floor needs the *boundary* re-drawn; a cloud-gapped window just needs a later observation. And it says the sentence outright: *"This is a statement about our view of the field, not about the field."*
+- `ConfidenceStrip` / `GateBadge` / `FootprintBanner` — the gate is stated as what it did ("Score reduced 8% — limited observation") rather than as a bare `0.92` nobody can interpret. **Footprint substitution is a full-width banner**, not a footnote: when `geometry_substituted` is true, every number on the page describes different ground than the polygon on screen.
+- `OmittedPanel` / `ColdStartPanel` — ready for the report route. An omitted panel states the backend's own reason in the slot where the panel would have been, so nobody quietly fills the gap later.
+- Plot list exclusions read as findings ("Excluded — observed as water, not farmland") instead of the raw `not_agricultural:WATER` token, which made a legitimate exclusion look like a crash.
+- Holding-level: "no plot could be scored" now breaks down by cause and states plainly *"This is not a low score. No number was produced."*
+
+Types extended with the real backend shapes — `land_cover`, `parcel_viability`, `data_sufficiency`, `crop_verification`, `footprint`, `driver_captions` — read off the emitting Python, not guessed.
+
+**`npm run smoke`** added: 33 assertions over the terminal-state resolver and the colour mapping, exiting non-zero on failure. These are the two things that are *silently* wrong when broken. It caught one real bug (the `error:` prefix strip left a leading space). All pass; `tsc` clean; `next build` compiles.
 
 **④ Wire up the report data.** `/v1/report/{farmer_id}` has no client. Types, proxy route, and the extra assessment fields. Nothing can render v6 evidence before it is typed and fetched. §12.3.
 

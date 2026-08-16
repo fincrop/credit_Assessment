@@ -2,6 +2,7 @@
 
 import type { AssessmentPayload, FarmAssessment, ReasonCode } from '../../types/assessment';
 import { useRiskView } from '../../lib/useRiskView';
+import { terminalStateOfFarm } from '../../lib/terminalState';
 import {
   formatScoreOne,
   resolveWeights,
@@ -126,6 +127,46 @@ function dataNotesFromView(opts: {
 }
 
 /**
+ * No holding-level score — because no plot was scorable.
+ *
+ * "Insufficient data to score this farmer" on its own invites the reader to
+ * assume the farmer is the problem. The breakdown says which of the three
+ * things actually happened, and they have different consequences: land that
+ * is not farmland is a permanent finding, land we could not see is a timing
+ * one, and an error is ours.
+ */
+function NoHoldingScore({ farms }: { farms: FarmAssessment[] | undefined }) {
+  const tally = { NOT_FARMLAND: 0, UNOBSERVED: 0, FAILED: 0 };
+  for (const f of farms || []) {
+    const s = terminalStateOfFarm(f).state;
+    if (s === 'NOT_FARMLAND' || s === 'UNOBSERVED' || s === 'FAILED') tally[s] += 1;
+  }
+  const parts: string[] = [];
+  if (tally.NOT_FARMLAND) parts.push(`${tally.NOT_FARMLAND} not farmland`);
+  if (tally.UNOBSERVED) parts.push(`${tally.UNOBSERVED} not observable`);
+  if (tally.FAILED) parts.push(`${tally.FAILED} failed`);
+
+  return (
+    <div
+      className="mb-2 rounded-lg border px-3 py-2.5"
+      style={{ background: '#FCF0D9', borderColor: '#F5E2B8' }}
+    >
+      <p className="text-[13px] font-semibold" style={{ color: '#7A5405' }}>
+        No holding score — no plot could be scored.
+      </p>
+      {parts.length > 0 && (
+        <p className="text-[12px] text-ink-2 mt-1 leading-snug">
+          Of the plots on this holding: {parts.join(' · ')}. See the plot list for each.
+        </p>
+      )}
+      <p className="text-[11px] text-ink-muted mt-1 leading-snug">
+        This is not a low score. No number was produced.
+      </p>
+    </div>
+  );
+}
+
+/**
  * Single KBS block beside Farmer Details (60% / 40%).
  * HARD RULE: only pass `data` when job SUCCESS.
  */
@@ -186,12 +227,7 @@ export function RiskScoreCard({
         </div>
       ) : (
         <>
-          {insufficient && (
-            <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-950">
-              Insufficient data to score this farmer
-              {view.category === 'INSUFFICIENT_DATA' ? ' (no scorable plots).' : '.'}
-            </div>
-          )}
+          {insufficient && <NoHoldingScore farms={view.perFarm} />}
 
           {/* Row: gauge 70% + Overall Risk card 30% (card hugs content height) */}
           <div className="grid grid-cols-1 sm:grid-cols-[70%_1fr] gap-2.5 items-center">

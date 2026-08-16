@@ -13,6 +13,9 @@ import {
   IndexInsightsCard,
   FarmSlimFallbackCard,
 } from '../../components/IndexInsightsCard';
+import { RefusalPanel } from '../../components/RefusalPanel';
+import { ConfidenceStrip } from '../../components/ConfidenceBadge';
+import { terminalStateOfFarm } from '../../../lib/terminalState';
 import { CropCyclesSection } from '../../components/CropCyclesSection';
 import { CroppingSection } from '../../components/CroppingSection';
 import { PerformanceSection } from '../../components/PerformanceSection';
@@ -168,6 +171,10 @@ function FarmDetailContent() {
 
   const farmView = useRiskView(plotPayload);
 
+  // Per-plot refusals arrive as slim records on the multi-farm result, so this
+  // resolves from the farm row rather than from a full payload.
+  const plotRefusal = useMemo(() => terminalStateOfFarm(farmRow), [farmRow]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-paper flex items-center justify-center text-sm text-stone-500">
@@ -241,16 +248,26 @@ function FarmDetailContent() {
             </div>
           </div>
 
-          <FarmKbsPanel
-            view={scored ? farmView : null}
-            fallbackMessage={
-              !farmRow
-                ? 'This plot has no row in the assessment result.'
-                : farmRow.skipped_reason
-                  ? String(farmRow.skipped_reason).replace(/^error:/, 'Error: ')
-                  : 'This plot was not scored in this run.'
-            }
-          />
+          {/* A plot excluded as non-farmland or unobservable gets the refusal
+              screen, not a KBS panel with an apologetic fallback string. The
+              two are different findings and read differently to a lender. */}
+          {plotRefusal.state === 'NOT_FARMLAND' || plotRefusal.state === 'UNOBSERVED' ? (
+            <RefusalPanel verdict={plotRefusal} />
+          ) : (
+            <div className="space-y-2.5">
+              <FarmKbsPanel
+                view={scored ? farmView : null}
+                fallbackMessage={
+                  !farmRow
+                    ? 'This plot has no row in the assessment result.'
+                    : farmRow.skipped_reason
+                      ? String(farmRow.skipped_reason).replace(/^error:/, 'Error: ')
+                      : 'This plot was not scored in this run.'
+                }
+              />
+              {scored && <ConfidenceStrip data={plotPayload} />}
+            </div>
+          )}
         </div>
 
         {!hasDetail && farmRow && (

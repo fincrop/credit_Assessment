@@ -5,6 +5,7 @@ import type { FarmAssessment } from '../../types/assessment';
 import { plotKeyOf } from '../../lib/plotKey';
 import { formatScoreWhole } from '../../lib/formatRisk';
 import { bandForRiskCategory, bandChipStyle } from '../../lib/kbsScore';
+import { terminalStateOfFarm, landCoverLabel } from '../../lib/terminalState';
 
 export type StreamRowStatus = 'pending' | 'analyzing' | 'scored' | 'skipped' | 'failed';
 
@@ -24,6 +25,54 @@ function tenureLabel(row: StreamFarmRow): string {
   if (row.is_ror_owner === false) return 'Leased / joint';
   if ((row.tenure_factor ?? 1) < 1) return 'Partial tenure';
   return 'Tenure —';
+}
+
+/**
+ * Why a plot was left out, in words a loan officer can act on.
+ *
+ * The raw `skipped_reason` is a machine token (`not_agricultural:WATER`), and
+ * showing it raw makes a legitimate exclusion look like a crash. The three
+ * kinds have genuinely different consequences — one is a finding about the
+ * land, one is a finding about our view of it, one is our bug — so they get
+ * different words and different tones.
+ */
+function ExclusionNote({ farm }: { farm: FarmAssessment }) {
+  const v = terminalStateOfFarm(farm);
+
+  if (v.state === 'NOT_FARMLAND') {
+    const cls = landCoverLabel(farm.land_cover?.class);
+    return (
+      <p className="text-[11px] mt-1 leading-snug" style={{ color: '#7A5405' }}>
+        Excluded — observed as {cls.toLowerCase()}, not farmland.
+        {v.reason ? ` ${v.reason}` : ''}
+      </p>
+    );
+  }
+
+  if (v.state === 'UNOBSERVED') {
+    const ds = farm.data_sufficiency;
+    const detail =
+      ds?.observed_fraction != null
+        ? ` Clear on ${Math.round(ds.observed_fraction * 100)}% of the window.`
+        : '';
+    return (
+      <p className="text-[11px] mt-1 leading-snug" style={{ color: '#7A5405' }}>
+        Not scored — too little observation to say anything about this plot.{detail}
+      </p>
+    );
+  }
+
+  if (v.state === 'FAILED') {
+    return (
+      <p className="text-[11px] mt-1 leading-snug" style={{ color: '#9A2E1F' }}>
+        Error: {v.reason}
+      </p>
+    );
+  }
+
+  return (
+    <p className="text-[11px] text-ink-muted mt-1 leading-snug">{farm.skipped_reason}</p>
+  );
 }
 
 function statusBadge(status: StreamRowStatus) {
@@ -119,11 +168,7 @@ export function StreamingFarmList({
                   {row.area_ha != null ? ` · ${Number(row.area_ha).toFixed(2)} ha` : ''}
                   {row.crop ? ` · ${row.crop}` : ''}
                 </p>
-                {a?.skipped_reason && (
-                  <p className="text-[11px] text-amber-800 mt-1">
-                    {String(a.skipped_reason).replace(/^error:/, 'Error: ')}
-                  </p>
-                )}
+                {a?.skipped_reason && <ExclusionNote farm={a} />}
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
