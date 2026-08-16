@@ -856,17 +856,40 @@ Today: one golden test file covering score bounds, tri-state benefits, shim shap
 
 ### 8.2a Remaining backend work, in priority order
 
-Everything below is scoped and unblocked; none of it is a prerequisite for the
-ingest fix, which should run in parallel.
+R1–R5 are **done** (commits `23bfbc1d`, `a3237563`). R6 is frontend rendering
+and is parked with the ingest fix.
 
-| # | Item | Why it matters | Size |
+| # | Item | State | Where |
 |---|---|---|---|
-| **R1** | **Warm the peer cohort** (§6.1) | `feature_store` is already accumulating the inputs on every run. Once a zone has ≥20 assessed plots, `peer_nirv` fires and the peer language becomes true rather than removed. Needs no ground truth — a percentile among our own assessed parcels is a real, self-referential fact. | ~1 wk |
-| **R2** | **Persist LLM narratives + model snapshot** (D-62) | Text shown to a loan officer currently vanishes after the HTTP response. No audit trail. The prompt hash is already computed and then discarded. | ~2 d |
-| **R3** | **Per-sub-index driver captions** (§6.4) | Deterministic templates citing computed metrics. Required by the report, and the honest alternative to letting an LLM produce the numbers. | ~3 d |
-| **R4** | **Declared-crop phenology gate** (task 4.4) | Compare observed duration/curve against `CROP_DURATIONS` and `EXPECTED_NDVI_CURVES`. Unlocks ~1150 lines of dead ICAR config, revives per-stage weather analysis, and produces the first crop-label signal we have ever collected — which feeds F-1. | ~1 wk |
-| **R5** | **Report payload endpoint** (Phase 7) | Assemble what §7 lists as available. Blocked on R1–R3 for completeness, not for a first cut. | ~1 wk |
-| **R6** | **Report document** (Phase 8) | KBS as the gauge, 300–900 / 4 bands per D-3. Materially thinner than the mockup — the "Suggested action" panel is dropped (F-12). | 1–2 wk |
+| **R1** | **Warm the peer cohort** (§6.1) | ✅ built, **cold** | `assessment/cohort_builder.py`, `scripts/devtools/build_cohorts.py` |
+| **R2** | **Persist LLM narratives + model snapshot** (D-62) | ✅ done | `mongodb_helper._build_ai_enrichment` |
+| **R3** | **Per-sub-index driver captions** (§6.4) | ✅ done | `assessment/driver_captions.py` → `risk_assessment.driver_captions` |
+| **R4** | **Declared-crop phenology gate** (task 4.4) | ✅ done | `crop_analysis/crop_verification.py` |
+| **R5** | **Report payload endpoint** (Phase 7) | ✅ done | `api/report_payload.py`, `GET /v1/report/{farmer_id}` |
+| **R6** | **Report document** (Phase 8) | ⏸ parked | frontend rendering; contract is ready |
+
+**R1 is built but cold, and that distinction matters.** The aggregation job runs
+and is correct; no cohort has reached the 20-farmer minimum, so `PeerBenchmark`
+stays inactive and vigour remains an absolute score. That is the designed
+behaviour, not a failure — it warms with volume, and `build_cohorts.py` reports
+how many farmers each zone still needs. Until then nothing anywhere says
+"peer-relative".
+
+**What R5 refuses to emit.** The endpoint reads only — it never triggers a run,
+so a report cannot show a different number from the assessment it describes.
+Three panels in the supplied design are declared under `omitted` with a reason
+rather than left silently blank:
+
+| Panel in the design | Why it is not there |
+|---|---|
+| Suggested action / committee threshold / re-assess date | No policy engine, no validated forecast. Every field would be invented (F-12, D-9). |
+| District-median NDVI comparison line | Needs a warm cohort. A synthesised median in the most visually persuasive part of the report is the worst possible place to guess. |
+| Reviewed-by / review status | No reviewer workflow exists. |
+| Farmer PII | Supplied by the caller, not read here — masking policy is unsettled (D-5). |
+
+No loan amount, credit limit or interest rate is emitted anywhere, and
+`score.no_repayment_calibration: true` states that in the payload so a renderer
+cannot present the index as a lending decision. A test asserts it.
 
 Deliberately NOT scheduled: anything in §6.9. Those need field data, not effort.
 
@@ -883,6 +906,11 @@ python scripts/devtools/audit_geometry.py --only-flagged
 # Audit a single verdict against imagery:
 python scripts/devtools/inspect_land_cover.py <farmer_id>
 python scripts/devtools/inspect_assessment.py <farmer_id>
+
+# Peer cohorts: report how far each zone is from the 20-farmer minimum.
+# Report-only by default; nightly cron is the intended home.
+python scripts/devtools/build_cohorts.py
+python scripts/devtools/build_cohorts.py --write
 ```
 
 Run the drift report before every release. It caught three defects that the unit
