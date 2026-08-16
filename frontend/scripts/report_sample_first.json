@@ -1,0 +1,119 @@
+{
+ "success": true,
+ "report": {
+  "payload_version": "report_payload_v1",
+  "generated_at": "2026-08-16 14:54:48.980947+00:00",
+  "farmer_id": "NEWFARMER",
+  "assessment_date": "2026-08-16 10:00:00+00:00",
+  "report_id": "KBS-20260816-FE265CEE",
+  "status": "SUCCESS",
+  "farmer": {},
+  "prepared_by": {},
+  "score": {
+   "kbs": 644,
+   "scale_min": 300,
+   "scale_max": 900,
+   "band": {
+    "name": "Good",
+    "min": 600,
+    "max": 750
+   },
+   "bands": [
+    {
+     "name": "Poor",
+     "min": 300,
+     "max": 450
+    },
+    {
+     "name": "Fair",
+     "min": 450,
+     "max": 600
+    },
+    {
+     "name": "Good",
+     "min": 600,
+     "max": 750
+    },
+    {
+     "name": "Excellent",
+     "min": 750,
+     "max": 900
+    }
+   ],
+   "index_score": 57.4,
+   "raw_index": 57.4,
+   "risk_category": "MEDIUM",
+   "confidence_gate": 1.0,
+   "index_version": null,
+   "positioning": "agronomic_risk_index",
+   "no_repayment_calibration": true
+  },
+  "trend": null,
+  "sub_indices": [
+   {
+    "key": "landuse",
+    "score": 71.0,
+    "weight": 30.0,
+    "is_weakest": false,
+    "caption": "No cropping activity could be measured on this parcel."
+   },
+   {
+    "key": "vigor",
+    "score": 42.0,
+    "weight": 35.0,
+    "is_weakest": true,
+    "caption": "No crop cycle was scored, so there is no vigour evidence for this parcel."
+   }
+  ],
+  "data_confidence": {
+   "score": null,
+   "gate": 1.0,
+   "caption": null
+  },
+  "reason_codes": [],
+  "ndvi_trajectory": null,
+  "land_cover": null,
+  "parcel_viability": null,
+  "data_sufficiency": null,
+  "crop_verification": null,
+  "footprint": null,
+  "narrative": {
+   "text": null,
+   "source": null,
+   "translated": null,
+   "translation_language": null,
+   "model": null
+  },
+  "methodology": {
+   "pipeline_version": null,
+   "index_version": null,
+   "signal_version": null,
+   "satellite_provider": null,
+   "cloud_mask_version": null,
+   "window": null,
+   "weights": {
+    "landuse": 30,
+    "vigor": 35
+   },
+   "weights_note": "Expert-weighted (AHP-style); provisional, pending sign-off."
+  },
+  "omitted": {
+   "policy_action": "No policy engine exists. A recommendation, committee threshold or re-assessment date would be invented.",
+   "peer_comparison": "Requires a warm cohort of assessed parcels in this agro-zone.",
+   "review_workflow": "No reviewer workflow exists."
+  },
+  "integrity": {
+   "content_sha256": "d594a0c1392c015faa04ad99030be5b4da5c0e2607ff1cc0cee3b7b44c06f2c8",
+   "note": "Hash covers report content, excluding the generation timestamp."
+  },
+  "sections_present": {
+   "score": true,
+   "trend": false,
+   "sub_indices": true,
+   "ndvi_trajectory": false,
+   "land_cover": false,
+   "crop_verification": false,
+   "narrative": false
+  }
+ }
+}

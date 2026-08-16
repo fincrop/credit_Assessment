@@ -9,7 +9,9 @@
     "lint": "eslint",
     "smoke": "tsx scripts/smoke-logic.ts",
     "lgd:build-json": "node scripts/build-india-lgd-json.mjs",
-    "lgd:import-villages": "tsx scripts/import-lgd-villages.ts"
+    "lgd:import-villages": "tsx scripts/import-lgd-villages.ts",
+    "check:contract": "tsx scripts/check-report-contract.ts",
+    "verify": "npm run smoke && npm run check:contract && tsc --noEmit"
   },
   "dependencies": {
     "@geoman-io/leaflet-geoman-free": "^2.20.0",

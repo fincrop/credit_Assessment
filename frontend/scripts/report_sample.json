@@ -1,0 +1,229 @@
+{
+ "success": true,
+ "report": {
+  "payload_version": "report_payload_v1",
+  "generated_at": "2026-08-16 14:53:13.532419+00:00",
+  "farmer_id": "TESTFARMER1",
+  "assessment_date": "2026-08-16 10:00:00+00:00",
+  "report_id": "KBS-20260816-99AAD3D6",
+  "status": "SUCCESS",
+  "farmer": {},
+  "prepared_by": {},
+  "score": {
+   "kbs": 644,
+   "scale_min": 300,
+   "scale_max": 900,
+   "band": {
+    "name": "Good",
+    "min": 600,
+    "max": 750
+   },
+   "bands": [
+    {
+     "name": "Poor",
+     "min": 300,
+     "max": 450
+    },
+    {
+     "name": "Fair",
+     "min": 450,
+     "max": 600
+    },
+    {
+     "name": "Good",
+     "min": 600,
+     "max": 750
+    },
+    {
+     "name": "Excellent",
+     "min": 750,
+     "max": 900
+    }
+   ],
+   "index_score": 57.4,
+   "raw_index": 62.1,
+   "risk_category": "MEDIUM",
+   "confidence_gate": 0.924,
+   "index_version": "index_v5",
+   "positioning": "agronomic_risk_index",
+   "no_repayment_calibration": true
+  },
+  "trend": {
+   "previous_kbs": 606,
+   "previous_date": "2026-02-01T00:00:00",
+   "delta": 38,
+   "direction": "up"
+  },
+  "sub_indices": [
+   {
+    "key": "landuse",
+    "score": 71.0,
+    "weight": 30.0,
+    "is_weakest": false,
+    "caption": "cap-landuse"
+   },
+   {
+    "key": "vigor",
+    "score": 42.0,
+    "weight": 35.0,
+    "is_weakest": true,
+    "caption": "cap-vigor"
+   },
+   {
+    "key": "stability",
+    "score": 65.5,
+    "weight": 20.0,
+    "is_weakest": false,
+    "caption": "cap-stab"
+   },
+   {
+    "key": "weather",
+    "score": 56.0,
+    "weight": 15.0,
+    "is_weakest": false,
+    "caption": "cap-weather"
+   }
+  ],
+  "data_confidence": {
+   "score": 78.8,
+   "gate": 0.924,
+   "caption": "cap-dc"
+  },
+  "reason_codes": [
+   {
+    "code": "VIGOR_WEAK",
+    "message": "below reference",
+    "polarity": "negative"
+   }
+  ],
+  "ndvi_trajectory": {
+   "dates": [
+    "2025-06-01",
+    "2025-06-08"
+   ],
+   "ndvi": [
+    0.31,
+    0.44
+   ],
+   "signal_source": "optical",
+   "n_present": 41,
+   "n_total": 52,
+   "comparison_available": false,
+   "comparison_note": "No peer comparison is shown: a district median needs a warm cohort of assessed parcels in this zone."
+  },
+  "land_cover": {
+   "outcome": "pass",
+   "class": "CROPLAND",
+   "confidence": 0.88,
+   "reason": "ok",
+   "is_cultivable": true,
+   "gate_version": "land_cover_gate_v1"
+  },
+  "parcel_viability": {
+   "version": "parcel_viability_v1",
+   "outcome": "viable",
+   "reason": "ok",
+   "evidence": {
+    "registered_ha": 1.2,
+    "geometry_ha": 1.18,
+    "effective_ha": 1.18,
+    "approx_pixels": 118,
+    "area_ratio": 0.98,
+    "areas_disagree": false,
+    "thresholds": {
+     "min_pixels_hard": 15,
+     "min_pixels_reliable": 40,
+     "area_ratio_range": [
+      0.5,
+      2.0
+     ]
+    }
+   }
+  },
+  "data_sufficiency": {
+   "version": "data_sufficiency_v1",
+   "outcome": "sufficient",
+   "reason": "2 cycle(s) observed.",
+   "evidence": {
+    "n_bins": 52,
+    "n_observed_bins": 41,
+    "observed_fraction": 0.788,
+    "n_bins_with_any_signal": 49,
+    "any_signal_fraction": 0.942,
+    "n_sar_only_bins": 8,
+    "largest_blind_gap_days": 24,
+    "largest_blind_gap_span": [
+     "2025-07-01",
+     "2025-07-25"
+    ],
+    "n_cycles_detected": 2,
+    "field_area_ha": 1.18,
+    "thresholds": {
+     "blind_gap_days": 45,
+     "min_observed_fraction": 0.4
+    }
+   }
+  },
+  "crop_verification": {
+   "version": "crop_verification_v1",
+   "declared_crop": "wheat",
+   "canonical_crop": "wheat",
+   "outcome": "consistent",
+   "confidence": 0.8,
+   "reason": "duration and peak consistent",
+   "evidence": {
+    "checks": []
+   }
+  },
+  "footprint": {
+   "geometry_source": "registry_buffer",
+   "geometry_substituted": true,
+   "note": "Measured over a substituted footprint."
+  },
+  "narrative": {
+   "text": "Narrative.",
+   "source": "deterministic",
+   "translated": null,
+   "translation_language": null,
+   "model": {
+    "name": "n/a"
+   }
+  },
+  "methodology": {
+   "pipeline_version": "v6",
+   "index_version": "index_v5",
+   "signal_version": "sig_v3",
+   "satellite_provider": "sentinel2",
+   "cloud_mask_version": "scl_v2",
+   "window": {
+    "start": "2025-06-01",
+    "end": "2026-05-31"
+   },
+   "weights": {
+    "landuse": 30,
+    "vigor": 35,
+    "stability": 20,
+    "weather": 15
+   },
+   "weights_note": "Expert-weighted (AHP-style); provisional, pending sign-off."
+  },
+  "omitted": {
+   "policy_action": "No policy engine exists. A recommendation, committee threshold or re-assessment date would be invented.",
+   "peer_comparison": "Requires a warm cohort of assessed parcels in this agro-zone.",
+   "review_workflow": "No reviewer workflow exists."
+  },
+  "integrity": {
+   "content_sha256": "f8a927de7b6eb993707f4705f789def68e80e6f8912696ff7d72aca7e32b60eb",
+   "note": "Hash covers report content, excluding the generation timestamp."
+  },
+  "sections_present": {
+   "score": true,
+   "trend": true,
+   "sub_indices": true,
+   "ndvi_trajectory": true,
+   "land_cover": true,
+   "crop_verification": true,
+   "narrative": true
+  }
+ }
+}

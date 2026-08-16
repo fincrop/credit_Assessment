@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectToDatabase } from '../../../lib/mongodb';
 import { verifyJWT } from '../../../lib/jwt';
-import { ownerFilter, ownerFields } from '../../../lib/ownerScope';
+import { ownerFields, isFarmerOwnedBy } from '../../../lib/ownerScope';
 
 const TARGET_DB = process.env.MONGODB_DATABASE || process.env.MONGODB_DB || 'agristack';
 
@@ -31,51 +31,16 @@ function asTriState(v: unknown): boolean | null {
   return null;
 }
 
+/**
+ * Ownership now lives in lib/ownerScope so every route that reads farmer data
+ * asks the same question. This wrapper keeps the local call sites unchanged.
+ */
 async function assertFarmerOwned(
   farmerId: string,
   user: { id: string; email: string }
 ): Promise<boolean> {
   const { client } = await connectToDatabase();
-  const db = client.db(TARGET_DB);
-  const ownership = ownerFilter(user);
-
-  const farmInfo = await db.collection('farm_info').findOne(
-    { farmer_id: farmerId, ...ownership },
-    { projection: { _id: 1 } }
-  );
-  if (farmInfo) return true;
-
-  const journey = await db.collection('farmer_farms').findOne(
-    {
-      $and: [
-        ownership,
-        {
-          $or: [
-            { agristack_farmer_id: farmerId },
-            // journey docs use ObjectId string as pipeline id when no agristack id
-          ],
-        },
-      ],
-    },
-    { projection: { _id: 1 } }
-  );
-  if (journey) return true;
-
-  // Also allow journey _id as farmer_id
-  try {
-    const { ObjectId } = await import('mongodb');
-    if (ObjectId.isValid(farmerId)) {
-      const byId = await db.collection('farmer_farms').findOne(
-        { _id: new ObjectId(farmerId), ...ownership },
-        { projection: { _id: 1 } }
-      );
-      if (byId) return true;
-    }
-  } catch {
-    /* ignore */
-  }
-
-  return false;
+  return isFarmerOwnedBy(farmerId, user, client.db(TARGET_DB));
 }
 
 export async function POST(req: NextRequest) {
