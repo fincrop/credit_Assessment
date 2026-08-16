@@ -394,6 +394,17 @@ class SatelliteBasedCreditPipeline:
             'crop_label_source':        (
                 'registry_self_report' if registry_crop else 'unclassified'
             ),
+            # 'annual' | 'perennial'. Read by RiskIndexEngine._sub_landuse to
+            # pick the scoring basis: cycles-per-year is meaningless for an
+            # orchard, where the signal is canopy persistence instead.
+            'cycle_kind':               (
+                'perennial'
+                if any(
+                    str(_get(c, 'cycle_kind') or 'annual').lower() == 'perennial'
+                    for c in crop_cycles
+                )
+                else 'annual'
+            ),
         }
 
     @staticmethod

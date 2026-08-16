@@ -390,6 +390,38 @@ class PipelineConfig:
     # before relying on it. 10 m global products are weakest on sub-hectare
     # fields, which is exactly our population — so the headline global figure
     # must not be assumed to apply.
+    # ========================================================================
+    # PERENNIAL / PLANTATION DETECTION
+    # ========================================================================
+    # Orchards, banana and ratooned sugarcane never return to bare ground, so
+    # the annual sow->peak->harvest logic cannot represent them: with no trough
+    # the walked window always exceeds the duration cap and every candidate is
+    # rejected. That produced zero cycles, which downstream reads as
+    # crop_intensity 0 and fallow 1.0 — a mango grove scored as abandoned land.
+    #
+    # Thresholds describe a canopy that stays up year-round. Being permissive is
+    # the right bias: a woodlot reaching this branch will score poorly on vigor
+    # and stability regardless, whereas refusing to represent an orchard makes a
+    # fundable farmer unscoreable (decision D-6).
+    # ── Season assignment ────────────────────────────────────────────────
+    # A cycle is assigned to the season it spent the MOST DAYS in, not the one
+    # it happened to be sown in. Below this share no season dominates and the
+    # cycle is labelled 'cross_season' (which the previous month-map logic could
+    # never actually produce).
+    SEASON_MIN_DOMINANT_SHARE = 0.55
+    # Southern India's cropping calendar runs later than the north — the
+    # north-east monsoon arrives Oct-Dec, shifting rabi. This is the coarsest
+    # defensible regionalisation; it is applied only when latitude is known, and
+    # a finer state-level calendar would be a clear improvement once available.
+    SEASON_SOUTH_LATITUDE = 16.0
+    SEASON_SOUTH_SHIFT_DAYS = 30
+
+    PERENNIAL_DETECTION_ENABLED = True
+    PERENNIAL_MIN_BINS = 18                # ~6 months of 10-day bins
+    PERENNIAL_MIN_VEGETATION_VS = 0.50     # p10 of VS: a canopy is always present
+    PERENNIAL_MAX_BARE_FRACTION = 0.05     # essentially never returns to bare soil
+    PERENNIAL_MAX_AMPLITUDE = 0.30         # limited seasonal swing (vs a sown crop)
+
     # Sub-index scores when there is NO evidence of cultivation at all (zero
     # detected cycles). Deliberately low, not neutral: "we observed nothing
     # growing here" is a negative finding, not a missing one. Previously these
@@ -454,6 +486,11 @@ class PipelineConfig:
     # us miss a marginal crop; it must never invent one.
     CROP_CYCLE_RELAXED_PEAK_FLOOR = 0.46
     CROP_CYCLE_RELAXED_RISE_FLOOR = 0.10
+    # Minimum prominence: how far a peak must stand above its higher flanking
+    # trough to count as a growth event rather than a wobble on a plateau.
+    # There was no prominence test at all, so two noise wiggles 45 days apart on
+    # a flat signal both qualified as crop peaks.
+    CROP_CYCLE_MIN_PROMINENCE = 0.10
     CROP_CYCLE_MIN_DURATION_DAYS = 40
     # Raise to 360+ only for long-duration crops (e.g. sugarcane) on the same field.
     CROP_CYCLE_MAX_DURATION_DAYS = 195

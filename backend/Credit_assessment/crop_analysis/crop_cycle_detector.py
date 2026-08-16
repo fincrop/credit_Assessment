@@ -113,6 +113,11 @@ class CropCycle:
     observed_fraction:  float = 1.0
     n_observed_bins:    int   = 0
     n_bins:             int   = 0
+    # 'annual'    — a sown/harvested crop cycle
+    # 'perennial' — one production YEAR of an orchard / plantation, which has no
+    #               sowing or harvest in the annual sense. Consumers that reason
+    #               about sowing dates or cycles-per-year must branch on this.
+    cycle_kind:         str   = "annual"
     # Season
     season_label:       str   = ""
     season_type:        str   = ""
@@ -148,6 +153,7 @@ class CropCycle:
             'observed_fraction':  round(self.observed_fraction, 3),
             'n_observed_bins':    self.n_observed_bins,
             'n_bins':             self.n_bins,
+            'cycle_kind':         self.cycle_kind,
             'activity_number':    self.activity_number,
             'phenology':          self.phenology or {},
         }
@@ -597,6 +603,41 @@ class CropCycleDetector:
                 cycles, sow_bias_n = c3, bias3
                 self.last_detection_meta["density_pass"] = True
 
+        # ── Perennial / plantation branch ────────────────────────────────
+        #
+        # A crop that never returns to bare ground cannot be found by the annual
+        # logic above, and the failure is silent and total: with no trough, the
+        # sow walk-back defaults to peak-190d while harvest lands at peak+40d,
+        # giving 230 days against a 195-day cap — so EVERY candidate is rejected
+        # on duration. A productive orchard therefore returned zero cycles, and
+        # zero cycles reads downstream as crop_intensity 0 and fallow 1.0:
+        # a mango grove scored as abandoned land.
+        #
+        # The relaxation passes could never rescue it either, because they relax
+        # peak_cvi and min_rise — never low_cvi, which is the constraint that
+        # actually failed.
+        #
+        # So treat "never troughs, but persistently green" as its own SIGNAL.
+        # Emitted as one production cycle per agronomic year, which keeps every
+        # downstream stage (performance, weather, land-utilization) working
+        # unchanged while being the agronomically right unit for a perennial.
+        perennial_used = False
+        if (
+            not cycles
+            and bool(getattr(P, "PERENNIAL_DETECTION_ENABLED", True))
+        ):
+            perennial = self._detect_perennial(
+                cvi_smooth, ndvi_smooth, reg_ndvi, reg_evi, reg_ndmi,
+                reg_dates, step, low_cvi=low_cvi, observed_mask=observed_mask,
+            )
+            if perennial:
+                cycles = perennial
+                perennial_used = True
+                logger.info(
+                    "Perennial/plantation pattern detected — %d production "
+                    "year(s). Signal never returns to bare ground.", len(cycles),
+                )
+
         if sow_bias_n > 0 and sow_hint_dt is not None:
             applied_knobs['sowing_date_hint'] = sow_hint_dt.strftime('%Y-%m-%d')
             applied_knobs['sow_hint_window_days'] = _SOW_HINT_WINDOW_DAYS
@@ -611,6 +652,8 @@ class CropCycleDetector:
             "cycles_found": len(cycles),
             "years_span": round(years_span, 2),
             "expected_cycles_ceiling": expected,
+            "perennial_detected": perennial_used,
+            "cycle_kind": "perennial" if perennial_used else "annual",
             "thresholds": {
                 "low_cvi": low_cvi,
                 "peak_cvi_used": peak_cvi,
@@ -631,11 +674,22 @@ class CropCycleDetector:
                 if c.phenology is None:
                     c.phenology = {"fit_ok": False, "reason": "exception"}
 
-        # Annotate
+        # Annotate. Season is assigned once, from a single implementation, using
+        # BOTH endpoints and the regional calendar — so season_type and
+        # season_label can no longer contradict each other.
+        season_ctx = dict(agro_profile or {})
+        season_ctx.setdefault("latitude", (agro_profile or {}).get("latitude"))
         for idx, c in enumerate(cycles, 1):
             c.activity_number = idx
-            c.season_label    = self._season_label(c.sowing_date)
-            c.season_type     = self._assign_season_type(c.sowing_date, c.harvest_date)
+            if c.cycle_kind == "perennial":
+                # A perennial spans every season; forcing it into one would be
+                # a fabrication. Labelled by production year instead.
+                c.season_type = "perennial"
+                c.season_label = f"Production year {c.sowing_date.year}"
+            else:
+                c.season_type, c.season_label = self.assign_season(
+                    c.sowing_date, c.harvest_date, season_ctx
+                )
 
         logger.info("Found %d crop cycle(s)", len(cycles))
         for c in cycles:
@@ -720,13 +774,44 @@ class CropCycleDetector:
         xbin = int(max_days / bd)
         harv_max_off = max(mbin + 1, int(max_days_after_peak / bd) + 1)
 
+        # Minimum prominence: how far a peak must rise above the higher of its
+        # two flanking troughs to count as a real growth event rather than a
+        # wobble on a plateau.
+        #
+        # There was NO prominence criterion — the test below is a bare
+        # local-maximum with a 0.005 tolerance, so two noise wiggles 45 days
+        # apart on an otherwise flat signal both qualified. A config key for
+        # this (CROP_CYCLE_FALLBACK_PROMINENCE_FLOOR) existed and was never read.
+        min_prom = float(getattr(PipelineConfig, "CROP_CYCLE_MIN_PROMINENCE", 0.10))
+        # Prominence must be measured against the troughs that BOUND a cycle,
+        # not the immediate neighbourhood. Over the ±30-day peak-detection
+        # window a broad 140-day seasonal peak barely descends at all, so a
+        # narrow window would reject real crops. Half the maximum cycle length
+        # reaches the bare-soil periods either side.
+        pbin = max(wbin, xbin // 2)
+
         raw_peaks: List[Tuple[int, float]] = []
         for i in range(wbin, n - wbin):
             v = float(cvi_smooth[i])
             if v < peak_cvi:
                 continue
-            if v >= float(np.max(cvi_smooth[i - wbin: i + wbin + 1])) - 0.005:
-                raw_peaks.append((i, v))
+            if v < float(np.max(cvi_smooth[i - wbin: i + wbin + 1])) - 0.005:
+                continue
+            # The peak must stand clear of the higher of its two flanking
+            # troughs, not merely be the largest value nearby.
+            left = cvi_smooth[max(0, i - pbin): i + 1]
+            right = cvi_smooth[i: min(n, i + pbin + 1)]
+            if left.size == 0 or right.size == 0:
+                continue
+            shoulder = max(float(np.nanmin(left)), float(np.nanmin(right)))
+            prominence = v - shoulder
+            if prominence < min_prom:
+                logger.debug(
+                    "  Peak @%d rejected: prominence %.3f < %.3f",
+                    i, prominence, min_prom,
+                )
+                continue
+            raw_peaks.append((i, v))
 
         min_sep = max(2, int(getattr(PipelineConfig, "CROP_CYCLE_GREENUP_MIN_GRID_SEP", 3)))
         clean_peaks: List[int] = []
@@ -853,6 +938,153 @@ class CropCycleDetector:
             used_up_to = harv_idx
 
         return cycles
+
+    def _detect_perennial(
+        self,
+        cvi_smooth:  np.ndarray,
+        ndvi_smooth: np.ndarray,
+        reg_ndvi:    np.ndarray,
+        reg_evi:     np.ndarray,
+        reg_ndmi:    np.ndarray,
+        reg_dates:   List[datetime],
+        bin_days:    float,
+        *,
+        low_cvi: float,
+        observed_mask: Optional[np.ndarray] = None,
+    ) -> List[CropCycle]:
+        """
+        Detect a perennial planting and express it as annual production cycles.
+
+        Trigger: the signal is persistently vegetated and essentially never
+        returns to bare ground. That is the defining behaviour of an orchard,
+        banana or ratooned sugarcane — and it is exactly the pattern the annual
+        detector cannot represent.
+
+        NOT the same as "flat and green" in general: dense natural forest looks
+        similar. Separating the two is the land-cover gate's job (which has the
+        spectral evidence and a registry hint); here we only decide whether the
+        SHAPE is perennial. Being permissive is the right bias — a woodlot that
+        reaches this point will score poorly on vigor and stability anyway,
+        whereas refusing to represent an orchard makes it unscoreable.
+
+        Returns one CropCycle per agronomic year so every downstream stage
+        (performance, weather alignment, land utilization) works unchanged.
+        """
+        P = PipelineConfig
+        n = len(reg_dates)
+        if n < int(getattr(P, "PERENNIAL_MIN_BINS", 18)):
+            return []
+
+        finite = np.isfinite(cvi_smooth)
+        if finite.sum() < n * 0.5:
+            return []
+        vals = cvi_smooth[finite]
+
+        veg_floor = float(getattr(P, "PERENNIAL_MIN_VEGETATION_VS", 0.50))
+        max_bare = float(getattr(P, "PERENNIAL_MAX_BARE_FRACTION", 0.05))
+        max_amp = float(getattr(P, "PERENNIAL_MAX_AMPLITUDE", 0.30))
+
+        frac_bare = float(np.mean(vals < low_cvi))
+        p10 = float(np.percentile(vals, 10))
+        p90 = float(np.percentile(vals, 90))
+        amplitude = p90 - p10
+
+        # Persistently vegetated, essentially never bare, limited seasonal swing.
+        if not (p10 >= veg_floor and frac_bare <= max_bare and amplitude <= max_amp):
+            logger.debug(
+                "Not perennial: p10=%.3f (need >=%.2f) bare_frac=%.3f (need <=%.2f) "
+                "amplitude=%.3f (need <=%.2f)",
+                p10, veg_floor, frac_bare, max_bare, amplitude, max_amp,
+            )
+            return []
+
+        # Slice into agronomic years from the record start.
+        bins_per_year = max(1, int(round(365.0 / max(bin_days, 1.0))))
+        cycles: List[CropCycle] = []
+        start = 0
+        while start < n - 1:
+            end = min(n - 1, start + bins_per_year - 1)
+            # Trailing stub shorter than half a year is folded into the previous
+            # year rather than emitted as a partial production cycle.
+            if (end - start + 1) < bins_per_year * 0.5 and cycles:
+                break
+
+            seg = slice(start, end + 1)
+            seg_cvi = cvi_smooth[seg]
+            seg_ndvi = reg_ndvi[seg]
+            if not np.isfinite(seg_cvi).any():
+                start = end + 1
+                continue
+
+            peak_off = int(np.nanargmax(seg_cvi))
+            peak_idx = start + peak_off
+            duration = (reg_dates[end] - reg_dates[start]).days
+
+            day_offsets = np.array(
+                [(reg_dates[j] - reg_dates[start]).days for j in range(start, end + 1)],
+                dtype=float,
+            )
+
+            if observed_mask is not None and len(observed_mask) == n:
+                seg_mask = observed_mask[seg]
+                n_obs, n_win = int(np.count_nonzero(seg_mask)), int(len(seg_mask))
+                peak_observed = bool(observed_mask[peak_idx])
+            else:
+                n_obs = n_win = int(end - start + 1)
+                peak_observed = True
+
+            cycles.append(CropCycle(
+                # A perennial has no sowing or harvest in the annual sense.
+                # These carry the production-year window so downstream date
+                # handling works; cycle_kind marks what they actually mean.
+                sowing_date        = reg_dates[start],
+                harvest_date       = reg_dates[end],
+                peak_date          = reg_dates[peak_idx],
+                duration_days      = duration,
+                crop_type          = "PERENNIAL",
+                peak_ndvi          = float(np.nanmax(seg_ndvi)),
+                baseline_ndvi      = float(np.nanpercentile(seg_ndvi, 10)),
+                ndvi_rise          = float(
+                    np.nanmax(seg_ndvi) - np.nanpercentile(seg_ndvi, 10)
+                ),
+                integral_ndvi      = float(np.nansum(seg_ndvi)),
+                integral_ndvi_days = (
+                    float(np.trapz(seg_ndvi, day_offsets)) if len(seg_ndvi) > 1 else 0.0
+                ),
+                peak_evi           = float(np.nanmean(reg_evi[seg])),
+                peak_ndmi          = float(np.nanmean(reg_ndmi[seg])),
+                peak_cvi           = float(np.nanmax(seg_cvi)),
+                confidence         = self._perennial_confidence(seg_cvi, n_obs, n_win),
+                cloud_gap_days     = 0,
+                has_cloud_gap      = False,
+                peak_observed      = peak_observed,
+                observed_fraction  = (n_obs / n_win) if n_win else 0.0,
+                n_observed_bins    = n_obs,
+                n_bins             = n_win,
+                cycle_kind         = "perennial",
+            ))
+            start = end + 1
+
+        return cycles
+
+    @staticmethod
+    def _perennial_confidence(seg_cvi: np.ndarray, n_obs: int, n_win: int) -> float:
+        """
+        Confidence in a perennial production year.
+
+        Rewards a HIGH and STEADY canopy — the opposite of the annual case,
+        where variation is the signal. Also scales with how much of the window
+        was actually observed rather than reconstructed.
+        """
+        vals = seg_cvi[np.isfinite(seg_cvi)]
+        if vals.size == 0:
+            return 10.0
+        mean_v = float(np.mean(vals))
+        cv = float(np.std(vals) / mean_v) if mean_v > 0 else 1.0
+        level = float(np.clip(mean_v / 0.75, 0.0, 1.0)) * 55.0
+        steadiness = float(np.clip(1.0 - cv * 3.0, 0.0, 1.0)) * 30.0
+        coverage = (n_obs / n_win if n_win else 0.0) * 15.0
+        return float(np.clip(level + steadiness + coverage, 10.0, 100.0))
 
     @staticmethod
     def _resolve_sow_index(
@@ -1303,9 +1535,33 @@ class CropCycleDetector:
                 eos_t = float(t[i]); break
         if eos_t is None:
             eos_t = float(params["eos"])
+        # Baseline-subtracted integral over SOS->EOS ("small integral" in the
+        # TIMESAT sense): the productive signal above the parcel's own floor,
+        # which is what a biomass proxy should measure. The cycle's existing
+        # integral_ndvi_days is computed over the WALKED window on raw NDVI and
+        # is not baseline-subtracted, so it carries the soil background with it.
+        in_season = (t >= sos_t) & (t <= eos_t)
+        small_integral = (
+            float(np.trapz(np.clip(f[in_season] - base, 0.0, None), t[in_season]))
+            if in_season.sum() > 1 else 0.0
+        )
+
         return {
             "sos_offset": sos_t, "pos_offset": float(t[pos_i]), "eos_offset": eos_t,
             "base": float(base), "amp": float(amp), "peak_fitted": float(f[pos_i]),
+            # Length of season, named. Previously only implicit in the dates.
+            "los_days": float(max(0.0, eos_t - sos_t)),
+            # Green-up and senescence rates. These were FITTED by the
+            # double-logistic (params m_s / m_a) and then discarded — the single
+            # cheapest high-value loss in this file. They describe how fast the
+            # canopy established and how fast it senesced, which distinguishes a
+            # vigorous establishment from a struggling one even when peak NDVI
+            # ends up similar. Units: signal units per day.
+            "greenup_rate": float(params["m_s"]) * float(amp) / 4.0,
+            "senescence_rate": float(params["m_a"]) * float(amp) / 4.0,
+            "greenup_slope_param": float(params["m_s"]),
+            "senescence_slope_param": float(params["m_a"]),
+            "small_integral": small_integral,
         }
 
     def _refine_cycle_phenology(
@@ -1374,8 +1630,21 @@ class CropCycleDetector:
             "amplitude": round(m["amp"], 3), "base": round(m["base"], 3),
             "amp_threshold_frac": amp_frac,
             "fit_duration_days": fit_dur, "walked_duration_days": walked_dur,
+            # Standard phenology metrics, previously computed and discarded.
+            "los_days": round(m["los_days"], 1),
+            "greenup_rate": round(m["greenup_rate"], 5),
+            "senescence_rate": round(m["senescence_rate"], 5),
+            "small_integral": round(m["small_integral"], 3),
             "refined_dates_adopted": adopt, **walked,
         }
+        # Goodness of fit belongs in the cycle's confidence. It was computed
+        # right here and never used, so `confidence` reflected peak height and
+        # variation only, with no measure of how well the curve actually
+        # described the observations.
+        cycle.confidence = float(np.clip(
+            cycle.confidence * (0.80 + 0.20 * float(np.clip(r2, 0.0, 1.0))),
+            10.0, 100.0,
+        ))
         if adopt:
             cycle.sowing_date, cycle.peak_date, cycle.harvest_date = sos_d, pos_d, eos_d
             cycle.duration_days = fit_dur
@@ -1478,27 +1747,131 @@ class CropCycleDetector:
             return "MEDIUM_LOW_VIGOR"
         return "LONG_DURATION"
 
-    @staticmethod
-    def _season_label(sowing_date: datetime) -> str:
-        """Human-readable season name from sowing month (North India)."""
-        m, y = sowing_date.month, sowing_date.year
-        if 6 <= m <= 9:           return f"Kharif {y}"
-        if m in (10, 11, 12):     return f"Rabi {y}/{y + 1}"
-        if m in (1, 2, 3):        return f"Rabi {y - 1}/{y}"
-        return f"Zaid {y}"
+    # ─────────────────────────────────────────────────────
+    # SEASON ASSIGNMENT — single canonical implementation
+    # ─────────────────────────────────────────────────────
+    #
+    # This replaces two functions that disagreed with each other. _season_label
+    # called Feb-Mar "Rabi" while _assign_season_type called it "Zaid", so the
+    # same cycle carried contradictory season fields. Both keyed off the sowing
+    # MONTH alone: harvest_date was accepted and ignored, making a crop sown in
+    # September and harvested in February "100% kharif". 'cross_season' was
+    # unreachable because the month branches above it covered all twelve.
+    #
+    # Two further problems this fixes:
+    #   * No region adjustment, despite latitude / LGD code / eco-region all
+    #     being in scope at the call site. Punjab wheat and Tamil Nadu samba
+    #     paddy were assigned by the same North-India month map, and southern
+    #     cropping calendars are genuinely shifted.
+    #   * Assignment by sowing month alone misclassifies any cycle that
+    #     straddles a boundary. Overlap is the honest basis: a season is the
+    #     one the crop actually spent most of its life in.
 
     @staticmethod
-    def _assign_season_type(sowing_date: datetime, harvest_date: datetime) -> str:
-        """Structured season type: 'kharif' | 'rabi' | 'zaid' | 'cross_season'."""
-        sm = sowing_date.month
-        if sm in (6, 7, 8, 9):   return 'kharif'
-        if sm in (10, 11, 12, 1): return 'rabi'
-        if sm in (2, 3, 4, 5):   return 'zaid'
-        months_span = (
-            (harvest_date.year - sowing_date.year) * 12
-            + harvest_date.month - sowing_date.month
-        )
-        return 'cross_season' if months_span > 7 else 'zaid'
+    def _season_windows(year: int, region_shift_days: int = 0) -> List[Tuple[str, datetime, datetime]]:
+        """
+        (season_type, start, end) windows for one agronomic year.
+
+        Base windows follow the standard Indian cropping calendar:
+            kharif  monsoon-sown, Jun -> Oct
+            rabi    post-monsoon, Oct -> Mar
+            zaid    short summer, Mar -> Jun
+        region_shift_days moves them for regions whose calendar runs later
+        (southern India, where the north-east monsoon drives a later rabi).
+        """
+        d = timedelta(days=int(region_shift_days))
+        return [
+            ("kharif", datetime(year, 6, 1) + d, datetime(year, 10, 15) + d),
+            ("rabi",   datetime(year, 10, 15) + d, datetime(year + 1, 3, 15) + d),
+            ("zaid",   datetime(year, 3, 15) + d, datetime(year, 6, 1) + d),
+        ]
+
+    @classmethod
+    def _region_shift_days(cls, agro_profile: Optional[Dict]) -> int:
+        """
+        Calendar shift for this location, in days.
+
+        Southern India's cropping calendar runs materially later than the north
+        (the north-east monsoon arrives Oct-Dec). Derived from latitude when
+        available — the coarsest defensible adjustment, and far better than
+        applying one national calendar. Returns 0 when we cannot tell, which
+        reproduces the previous behaviour rather than guessing.
+        """
+        P = PipelineConfig
+        if not isinstance(agro_profile, dict):
+            return 0
+        lat = agro_profile.get("latitude")
+        try:
+            lat = float(lat)
+        except (TypeError, ValueError):
+            return 0
+        south_lat = float(getattr(P, "SEASON_SOUTH_LATITUDE", 16.0))
+        shift = int(getattr(P, "SEASON_SOUTH_SHIFT_DAYS", 30))
+        return shift if lat < south_lat else 0
+
+    @classmethod
+    def assign_season(
+        cls,
+        sowing_date: datetime,
+        harvest_date: datetime,
+        agro_profile: Optional[Dict] = None,
+    ) -> Tuple[str, str]:
+        """
+        Assign (season_type, season_label) by OVERLAP, not by sowing month.
+
+        The season a cycle belongs to is the one it spent the most days in.
+        Returns 'cross_season' when no single season holds a clear majority —
+        which, unlike the previous implementation, is genuinely reachable.
+        """
+        if harvest_date < sowing_date:
+            harvest_date = sowing_date
+
+        shift = cls._region_shift_days(agro_profile)
+        total_days = max((harvest_date - sowing_date).days, 1)
+
+        overlap: Dict[str, int] = {"kharif": 0, "rabi": 0, "zaid": 0}
+        for yr in range(sowing_date.year - 1, harvest_date.year + 2):
+            for season, w_start, w_end in cls._season_windows(yr, shift):
+                lo = max(sowing_date, w_start)
+                hi = min(harvest_date, w_end)
+                if hi > lo:
+                    overlap[season] += (hi - lo).days
+
+        best = max(overlap, key=overlap.get)
+        best_days = overlap[best]
+        if best_days <= 0:
+            best = "kharif"
+            best_days = total_days
+
+        share = best_days / total_days
+        min_share = float(getattr(PipelineConfig, "SEASON_MIN_DOMINANT_SHARE", 0.55))
+        season_type = best if share >= min_share else "cross_season"
+
+        # Label uses the agronomic year the cycle STARTED in. Rabi spans a
+        # calendar boundary, so it is written 2023/2024 in the usual way.
+        anchor = sowing_date
+        if season_type == "rabi" or (season_type == "cross_season" and best == "rabi"):
+            y = anchor.year if anchor.month >= 10 else anchor.year - 1
+            label = f"Rabi {y}/{y + 1}"
+        elif season_type == "zaid":
+            label = f"Zaid {anchor.year}"
+        elif season_type == "cross_season":
+            label = f"Cross-season {anchor.year}"
+        else:
+            label = f"Kharif {anchor.year}"
+        return season_type, label
+
+    @classmethod
+    def _season_label(cls, sowing_date: datetime, harvest_date: Optional[datetime] = None,
+                      agro_profile: Optional[Dict] = None) -> str:
+        """Backwards-compatible wrapper. Prefer assign_season."""
+        return cls.assign_season(sowing_date, harvest_date or sowing_date, agro_profile)[1]
+
+    @classmethod
+    def _assign_season_type(cls, sowing_date: datetime, harvest_date: datetime,
+                            agro_profile: Optional[Dict] = None) -> str:
+        """Backwards-compatible wrapper. Prefer assign_season."""
+        return cls.assign_season(sowing_date, harvest_date, agro_profile)[0]
 
 
 __all__ = ['CropCycle', 'CropCycleDetector', 'CloudGap']

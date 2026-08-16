@@ -16,7 +16,7 @@ Key Metrics:
 
 import numpy as np
 from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Any, Dict, List
 from collections import Counter
 import logging
 
@@ -78,6 +78,9 @@ class LandUtilizationAnalyzer:
             'cycles_in_analysis_window': len(cycles),
             'fallow_analysis': fallow_analysis,
             'crop_diversity': crop_diversity,
+            # Kharif / rabi / zaid breakdown. New — nothing in the pipeline
+            # previously read season_type, so no per-season analysis existed.
+            'by_season': self._analyze_by_season(cycles, start_date, end_date),
             'total_cycles': len(cycles),
             'analysis_period_days': total_days
         }
@@ -124,22 +127,11 @@ class LandUtilizationAnalyzer:
         total_days = (end_date - start_date).days
         if total_days == 0:
             return 0.0
-        
-        # Create array of days
-        occupied_days = set()
-        
-        for cycle in cycles:
-            # Add each day from sowing to harvest
-            current = cycle.sowing_date
-            while current <= cycle.harvest_date and current <= end_date:
-                if current >= start_date:
-                    occupied_days.add(current.date())
-                current += timedelta(days=1)
-        
-        cultivation_days = len(occupied_days)
-        utilization_index = cultivation_days / total_days
-        
-        return utilization_index
+
+        # Shares one occupancy definition with _analyze_fallow_periods, so
+        # utilization + fallow always sum to 1. (Also replaces a day-by-day
+        # loop that built a set of every calendar day in a 3-year window.)
+        return self._occupied_days(cycles, start_date, end_date) / total_days
     
     def _analyze_cycle_durations(self, cycles: List) -> Dict:
         """
@@ -212,40 +204,126 @@ class LandUtilizationAnalyzer:
         """
         Analyze fallow (uncultivated) periods between crops
         """
-        if len(cycles) < 2:
-            return {
-                'fallow_periods': 0,
-                'average_fallow_days': 0,
-                'longest_fallow_days': 0,
-                'fallow_fraction': 1.0 if len(cycles) == 0 else 0.0
-            }
-        
-        # Sort cycles by sowing date
+        # Inter-cycle gaps need at least two cycles, but the fallow FRACTION does
+        # not — and the early return here used to skip it entirely, reporting
+        # fallow_fraction 0.0 for a single cycle. A lone four-month crop in a
+        # three-year window is overwhelmingly fallow land, not fully utilised.
         sorted_cycles = sorted(cycles, key=lambda c: c.sowing_date)
-        
+
         fallow_periods = []
-        
-        # Gaps between consecutive cycles
         for i in range(len(sorted_cycles) - 1):
             current_harvest = sorted_cycles[i].harvest_date
             next_sowing = sorted_cycles[i + 1].sowing_date
-            
+
             if next_sowing > current_harvest:
                 fallow_days = (next_sowing - current_harvest).days
                 fallow_periods.append(fallow_days)
-        
-        # Calculate fallow fraction
+
+        # Fallow fraction, from the SAME occupancy definition the utilization
+        # index uses.
+        #
+        # This previously summed c.duration_days, which double-counts wherever
+        # cycles overlap — and phenology refinement can push adjacent cycles
+        # into overlap. The result was that land_utilization_index (built from a
+        # union of occupied days) and fallow_fraction (built from a sum) did not
+        # add to 1, while fallow_fraction feeds the risk index at 15% weight.
         total_days = (end_date - start_date).days
-        cultivation_days = sum(c.duration_days for c in cycles)
+        cultivation_days = self._occupied_days(cycles, start_date, end_date)
         fallow_days = max(0, total_days - cultivation_days)
         fallow_fraction = fallow_days / total_days if total_days > 0 else 0
-        
+
         return {
             'fallow_periods': len(fallow_periods),
             'average_fallow_days': round(np.mean(fallow_periods), 1) if fallow_periods else 0,
             'longest_fallow_days': max(fallow_periods) if fallow_periods else 0,
-            'fallow_fraction': round(fallow_fraction, 3)
+            'fallow_fraction': round(fallow_fraction, 3),
+            'cultivated_days': cultivation_days,
+            'total_days': total_days,
+            # Both figures now derive from one occupancy set, so this holds.
+            'occupancy_basis': 'union_of_cultivated_days',
         }
+
+    @staticmethod
+    def _occupied_days(cycles: List, start_date: datetime, end_date: datetime) -> int:
+        """
+        Distinct calendar days covered by at least one cycle.
+
+        Overlap-safe by construction: the single source of truth for "how much
+        of the window was under cultivation", used by both the utilization index
+        and the fallow fraction so the two cannot disagree.
+        """
+        if not cycles:
+            return 0
+        spans = []
+        for c in cycles:
+            lo = max(c.sowing_date, start_date)
+            hi = min(c.harvest_date, end_date)
+            if hi > lo:
+                spans.append((lo, hi))
+        if not spans:
+            return 0
+
+        spans.sort(key=lambda s: s[0])
+        merged = [list(spans[0])]
+        for lo, hi in spans[1:]:
+            if lo <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], hi)
+            else:
+                merged.append([lo, hi])
+        return sum((hi - lo).days for lo, hi in merged)
+
+    def _analyze_by_season(self, cycles: List, start_date: datetime,
+                           end_date: datetime) -> Dict:
+        """
+        Per-season breakdown: kharif / rabi / zaid.
+
+        This did not exist. LandUtilizationAnalyzer never read season_type at
+        all, and neither did the risk engine — so despite every cycle carrying a
+        season label, there was no Kharif/Rabi/Zaid analysis anywhere in the
+        pipeline. This is what makes "cropped in 3 of 3 kharif seasons but only
+        1 of 3 rabi" reportable.
+        """
+        years = max(1, round((end_date - start_date).days / 365.0))
+        seasons = ('kharif', 'rabi', 'zaid')
+        out: Dict[str, Any] = {}
+
+        for season in seasons:
+            in_season = [
+                c for c in cycles
+                if str(getattr(c, 'season_type', '') or '').lower() == season
+            ]
+            durations = [c.duration_days for c in in_season]
+            peaks = [
+                float(getattr(c, 'peak_ndvi', 0.0) or 0.0)
+                for c in in_season
+                if getattr(c, 'peak_ndvi', None) is not None
+            ]
+            out[season] = {
+                'n_cycles': len(in_season),
+                # Fraction of available years in which this season was cropped.
+                'years_cropped': len({c.sowing_date.year for c in in_season}),
+                'years_available': years,
+                'utilisation': round(
+                    min(1.0, len({c.sowing_date.year for c in in_season}) / years), 3
+                ),
+                'mean_duration_days': round(float(np.mean(durations)), 1) if durations else None,
+                'mean_peak_ndvi': round(float(np.mean(peaks)), 3) if peaks else None,
+            }
+
+        cross = [
+            c for c in cycles
+            if str(getattr(c, 'season_type', '') or '').lower() == 'cross_season'
+        ]
+        perennial = [
+            c for c in cycles
+            if str(getattr(c, 'season_type', '') or '').lower() == 'perennial'
+        ]
+        out['cross_season'] = {'n_cycles': len(cross)}
+        out['perennial'] = {'n_production_years': len(perennial)}
+        out['seasons_cropped'] = sum(
+            1 for s in seasons if out[s]['n_cycles'] > 0
+        )
+        return out
     
     def _analyze_crop_diversity(self, cycles: List) -> Dict:
         """

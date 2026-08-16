@@ -486,11 +486,17 @@ def classify_land_cover(
         if outcome == FLAG:
             reason = "Parcel appears cultivated, but the evidence is weak."
     elif cls == PLANTATION:
-        # D-6: fundable, but the cycle model cannot score perennials yet.
+        # D-6: fundable, and now scoreable — the detector emits annual
+        # production cycles for perennials and the risk engine scores them on
+        # canopy persistence rather than cycles-per-year. Still FLAG rather than
+        # PASS: the spectral evidence cannot fully separate a managed planting
+        # from natural woody cover, and that residual uncertainty should be
+        # visible to a lender rather than hidden behind a clean pass.
         outcome = FLAG
         reason = (
             "Parcel appears to be a perennial planting (orchard / plantation). "
-            "Scored with caution: the cycle model is calibrated for annual crops."
+            "Scored on canopy persistence and inter-annual stability rather "
+            "than cropping cycles."
         )
     elif cls in _NON_AGRICULTURAL:
         outcome = REJECT if confidence >= reject_at else FLAG

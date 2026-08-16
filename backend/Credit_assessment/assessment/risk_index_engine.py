@@ -159,6 +159,14 @@ class RiskIndexEngine:
         years = float(ca.get("lookback_years", ca.get("years_analyzed", 3)) or 3)
         cpi = n_complete / max(years, 1e-6)   # cycles per year
 
+        # Perennial branch. For an orchard or plantation "cycles per year" is
+        # not a productivity measure — it is ~1 by construction, and the annual
+        # intensity ladder below would cap such a parcel at 60/100 no matter how
+        # well it is managed. The credit-relevant signals for a perennial are
+        # that the canopy is MAINTAINED year-round and stable between years.
+        if str(ca.get("cycle_kind", "annual")).lower() == "perennial":
+            return self._sub_landuse_perennial(ca, pa, years)
+
         # Cropping intensity (0-100)
         if cpi >= 2.0:
             intensity = 100.0
@@ -205,6 +213,68 @@ class RiskIndexEngine:
                        "fallow_fraction": round(fallow_frac, 3),
                        "fallow_basis": fallow_basis},
             "drivers": {"intensity": round(intensity, 1), "coverage": round(coverage, 1)},
+        }
+
+    def _sub_landuse_perennial(self, ca: Dict, pa: Dict, years: float) -> Dict:
+        """
+        Land-use sub-index for an orchard / plantation.
+
+        Scored on what actually indicates a well-run perennial:
+          * canopy persistence — the planting is maintained, not abandoned;
+          * production continuity — a production year observed for each year of
+            the lookback, rather than a gap suggesting removal or neglect;
+          * inter-annual stability — consistent output between years.
+
+        Deliberately NOT scored on cycles-per-year, which for a perennial is ~1
+        by construction and would cap even an exemplary orchard at 60/100.
+        """
+        sp = pa.get("seasonal_performance", []) or []
+        n_years_observed = len(sp)
+
+        # Continuity: did we see a production year for each year of the record?
+        expected_years = max(1.0, round(years))
+        continuity = _clip((n_years_observed / expected_years) * 100.0)
+
+        # Persistence: how well the canopy is held up.
+        peaks = []
+        for p in sp:
+            pk = (p.get("yield_detail") or {}).get("peak_cvi")
+            if pk is not None:
+                peaks.append(float(pk))
+        persistence = (
+            _clip(float(np.mean(peaks)) / 0.75 * 100.0) if peaks else 50.0
+        )
+
+        # Inter-annual stability of production.
+        yields = [float(p["yield_potential_score"]) for p in sp
+                  if p.get("yield_potential_score") is not None]
+        if len(yields) >= 2 and np.mean(yields) > 0:
+            cv = float(np.std(yields) / np.mean(yields))
+            stability = _clip(100.0 - cv * 200.0)
+        else:
+            # Rule P-1: one observed year is not evidence of stability. Neutral,
+            # not good.
+            stability = 55.0
+
+        score = _clip(0.40 * persistence + 0.35 * continuity + 0.25 * stability)
+        return {
+            "score": round(score, 1),
+            "inputs": {
+                "cycle_kind": "perennial",
+                "n_production_years": n_years_observed,
+                "years": years,
+                "mean_peak_cvi": round(float(np.mean(peaks)), 3) if peaks else None,
+                # Not applicable to a perennial; recorded so a consumer that
+                # expects it does not silently read a misleading zero.
+                "cycles_per_year": None,
+                "fallow_fraction": None,
+                "fallow_basis": "not_applicable_perennial",
+            },
+            "drivers": {
+                "canopy_persistence": round(persistence, 1),
+                "production_continuity": round(continuity, 1),
+                "inter_annual_stability": round(stability, 1),
+            },
         }
 
     # ------------------------------------------------------------------ #
