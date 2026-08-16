@@ -1,6 +1,6 @@
 # Frontend Enhancements — v6
 
-**Status:** Plan. Nothing built yet.
+**Status:** All eleven items complete. Three decisions still open (§15.2); two caveats a ✅ hides (§0.3).
 **Date:** 2026-08-16
 **Scope:** `frontend/` only. Backend v6 is complete (`BACKEND-ENHANCEMENTS.md`); this pass makes its output legible.
 **Design reference:** `enhancements/Farmer Assessment Report (standalone).html` — adopted for its *visual language*, not its content. Several of its panels are fabrications the backend explicitly refuses to emit (§9.3).
@@ -23,9 +23,9 @@ Ordered so each item is shippable on its own and nothing depends on a later one.
 | 6 | Show the field we actually saw | ✅ Done |
 | 7 | Make the map a remote-sensing map | ✅ Done — one item descoped, see below |
 | 8 | The report | ✅ Done — header slot open on FD-6 |
-| 9 | Rebuild the dashboard around its reader | Not started |
-| 10 | The remaining panels | Not started |
-| 11 | Make it usable for everyone | Not started |
+| 9 | Rebuild the dashboard around its reader | ✅ Done — IA yes, file split partial |
+| 10 | The remaining panels | ✅ Done |
+| 11 | Make it usable for everyone | ✅ Done |
 
 ### 0.2 What each item means
 
@@ -141,13 +141,52 @@ Verified: `tsc` (which also checks every Leaflet call against `@types/leaflet`),
 
 That second one had a process cause worth recording: `npm run verify` *did* run `tsc` and *did* fail, but I grepped its output for pass-strings only, so the failure was invisible. **Check the exit code, not the log.**
 
-**⑨ Rebuild the dashboard around its reader.** 796 lines of orchestration and layout in one file, restructured into verdict → evidence → holding → provenance. §9.1.
+**⑨ Rebuild the dashboard around its reader.** ✅ **Done for the IA; the file split is partial and I want to be exact about that.**
 
-**⑩ The remaining panels.** Land cover, crop verification, weather anomaly, peer position, score trend. §7.2.
+The reading order now runs **verdict → evidence → holding → provenance**, marked with zone comments so the next person does not re-shuffle it by accident. Reader ① (the loan officer, FD-5) gets the verdict and its qualifiers above the fold and can stop; reader ② continues into evidence and opens the provenance drawer.
 
-**⑪ Make it usable for everyone.** 12 `aria-*` attributes app-wide, 10px type at 2.3:1 contrast, no table fallbacks, no reduced-motion. §14.
+- `ProvenanceFooter` extracted — versions, window, observation counts, gate versions, geometry source, weights. **Collapsed by default**: reader ① never opens it, and provenance nobody can find is the same as provenance that does not exist, the first time a decision is audited.
+- Land cover joins the evidence zone at holding level.
 
-### 0.3 ⚠ Two items are blocked on decisions, not on code
+**What I did NOT do:** the 796-line page is now 843 lines. The layout is restructured and four components were extracted, but the job orchestration — enqueue, polling, partial-result reconciliation, URL sync — is still inline. That logic is the riskiest code on the page and the least covered by tests; extracting it into a `useAssessmentJob` hook is a refactor that deserves its own change, not a rider on an IA pass. Recorded as debt rather than claimed as done.
+
+**⑩ The remaining panels.** ✅ **Done — and two of my own types were wrong, caught by reading the emitting Python.**
+
+- **`peer_benchmarking` has no percentile and no cohort size.** My type declared `{percentile, n, activated}`; the pipeline actually emits `{cohort_key, engine, n_cycles_peer_scored}`. The cohort's size and the parcel's rank live in a `cohort_stats` collection written by a separate job and are **not on the assessment at all**. So `PeerCohortPanel` cannot say "6 of 20" — that count would be invented. It states the condition instead: peer comparison needs a warm cohort, no zone has one, vigour is scored against an absolute reference meanwhile. FD-7 answered "render the cold state"; this is the honest version of it.
+- **Land-cover streams are tuples, not objects** — `[class, confidence, notes[]]`. `LandCoverPanel` shows all three streams (spectral, temporal, external land-use) **separately**, because "the classifier says water" and "all three streams independently say water" are different strengths of evidence, and a lender refusing a parcel deserves to know which they have. No stacked composition bar: the gate emits a class per stream, not per-pixel fractions, so "62% cropland / 38% built-up" would be fabricated.
+- `CropVerificationPanel` — observed cycle length against the crop's reference band. Neutral wording throughout: a mismatch is as often a data-entry slip or a change of plan as a misstatement, so it reads as a prompt to ask, not a finding of fact.
+- `WeatherAnomalyChart` — SPI/SPEI are already standardised anomalies, which makes them the one weather figure that genuinely belongs on a diverging scale with a **neutral grey midpoint** (the middle means "normal"; a colour there would imply it means something). Replaces the grid of eight stat cards: "SPI −1.4" means nothing to a loan officer; a bar reaching left of centre reads instantly.
+- `ScoreTrendSparkline` — renders **nothing** when `trend` is null, which is the whole contract. Direction is carried by an arrow and a signed number, not by colour alone. No two-point line: the payload carries the previous point, not the series, and drawing a trajectory through two assessments would overstate them.
+
+**⑪ Make it usable for everyone.** ✅ **Done.**
+
+| | Before | After |
+|---|---|---|
+| `aria-*` attributes | 12 | 27 |
+| `role=` | ~0 | 5 |
+| Chart table fallbacks | 0 | 10 |
+| `focus-visible` styles | **0** | app-wide |
+| `text-stone-400` on small text | 107 | 0 |
+| 9px type | 2 | 0 |
+| `prefers-reduced-motion` | none | all animation zeroed |
+
+- **Focus was the worst of it.** Zero focus-visible styles meant the app fell back to a thin browser default that is close to invisible on cream — the product was effectively unusable by keyboard, and a loan officer working twenty files a day is exactly who stops reaching for the mouse. Now a 2px accent ring, `:focus-visible` rather than `:focus` so a mouse click does not leave rings behind.
+- **Skip link** as the first tab stop. A dashboard with a long farm list is otherwise ~40 tabs deep before the content starts.
+- Every chart carries a **table view** through `ChartFrame`, so no figure is available only as colour and position.
+- Print: `@page A4`, `break-inside: avoid` per section, `print-color-adjust: exact` so band tints survive the printer.
+
+Verified in the built CSS, not just in source: `focus-visible`, `skip-link`, `prefers-reduced-motion`, `print-color-adjust` and `@page` all ship (Next splits them across chunks — the first grep I ran sampled one chunk and looked like a failure).
+
+### 0.3 ⚠ What the ticks hide
+
+All eleven are code-complete, typechecked, and building. Four carry a caveat worth stating plainly:
+
+- **Nothing has been visually verified.** This environment has no database or pipeline credentials, so no screen in this document has been rendered against a real assessment. Every claim here is backed by `tsc`, `npm run verify` (98 assertions), and `next build` — not by looking. The map's dual-footprint drawing and the NDVI scrubber are the two most worth a manual pass before pilot.
+- **Item ⑦ lost a feature to reality.** The NDVI raster overlay cannot be built: the backend emits no imagery. The parcel-mean tint shipped instead.
+- **Item ⑨'s file split is partial.** The IA is restructured; the job-orchestration logic is still inline in an 843-line page. Called out rather than counted as done.
+- **`eslint` is broken repo-wide**, pre-existing, by the `brace-expansion: ^5.0.8` override in `package.json` — minimatch cannot consume it. Lint has been guarding nothing this whole time. Worth a separate fix.
+
+### 0.4 ⚠ Two items are blocked on decisions, not on code
 
 - **⑧ The report** needs the PII masking policy settled (backend D-5) before its header can be built. The payload deliberately refuses to read `farm_info` for Aadhaar or mobile.
 - **⑩'s peer panel** stays cold until a zone reaches 20 assessed farmers. It renders its own progress state; it never fakes a percentile.

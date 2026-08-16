@@ -113,6 +113,15 @@ export type LandCoverClass =
 /** Gate verdicts: pass = farmland, flag = odd but scored, reject = not scored. */
 export type GateOutcome = 'pass' | 'flag' | 'reject' | string;
 
+/**
+ * One classifier stream's verdict, stored as a TUPLE from Python:
+ * `[class | null, confidence, notes[]]`. Three independent streams vote —
+ * spectral signature, temporal behaviour, and external land-use maps — and
+ * showing them separately is the difference between "the model says water"
+ * and "all three agree this is water".
+ */
+export type LandCoverStream = [LandCoverClass | null, number, string[]];
+
 export interface LandCover {
   outcome?: GateOutcome;
   class?: LandCoverClass;
@@ -122,7 +131,12 @@ export interface LandCover {
   insufficient_data?: boolean;
   gate_version?: string;
   evidence?: {
-    streams?: Record<string, unknown>;
+    streams?: {
+      spectral?: LandCoverStream;
+      temporal?: LandCoverStream;
+      external_lulc?: LandCoverStream;
+      [key: string]: LandCoverStream | undefined;
+    };
     [key: string]: unknown;
   };
 }
@@ -283,7 +297,23 @@ export interface PerformanceAnalysis {
   n_active_cycles?: number;
   n_seasons_analyzed?: number;
   seasonal_performance?: SeasonPerformance[];
-  peer_benchmarking?: { percentile?: number; n?: number; activated?: boolean };
+  /**
+   * Peer benchmarking provenance — NOT a percentile.
+   *
+   * The pipeline emits `cohort_key`, whether a peer engine ran, and how many
+   * cycles were scored peer-relatively. It does NOT emit the cohort's size or
+   * the parcel's position within it, because no zone has yet reached the
+   * 20-farmer minimum and the cohort table is written by a separate job.
+   *
+   * A UI must therefore not promise "you rank Nth" — the data for that
+   * sentence does not exist. `n_cycles_peer_scored > 0` is the only honest
+   * signal that peer comparison influenced anything.
+   */
+  peer_benchmarking?: {
+    cohort_key?: string | null;
+    engine?: string | null;
+    n_cycles_peer_scored?: number;
+  };
 }
 
 export interface WeatherIndicators {

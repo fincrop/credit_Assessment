@@ -12,6 +12,8 @@ import { PlotBoundaryMap } from './components/PlotBoundaryMap';
 import { AssessmentPrintReport } from './components/AssessmentPrintReport';
 import { RefusalPanel } from './components/RefusalPanel';
 import { ScoreWaterfall } from './components/ScoreWaterfall';
+import { LandCoverPanel } from './components/LandCoverPanel';
+import { ProvenanceFooter } from './components/ProvenanceFooter';
 import { ConfidenceStrip } from './components/ConfidenceBadge';
 import { useRiskView } from '../lib/useRiskView';
 import { terminalStateOf } from '../lib/terminalState';
@@ -781,13 +783,22 @@ function DashboardPageContent() {
               )}
             </div>
 
-            {/* Why this number. Holding level carries no driver captions —
-                the aggregator does not emit them, only the per-plot engine
-                does — so none are passed rather than invented. */}
+            {/* ── ZONE 2 · EVIDENCE ────────────────────────────────────────
+                Why this number, and what we could see. Reader ① (the loan
+                officer) usually stops above this line; reader ② starts here.
+
+                Holding level carries no driver captions — the aggregator does
+                not emit them, only the per-plot engine does — so none are
+                passed rather than invented. */}
             {status === 'SUCCESS' && refusal.state === 'SCORED' && (
               <ScoreWaterfall view={riskView} scopeLabel="holding" />
             )}
 
+            {status === 'SUCCESS' && data?.land_cover && (
+              <LandCoverPanel landCover={data.land_cover} />
+            )}
+
+            {/* ── ZONE 3 · HOLDING ─────────────────────────────────────── */}
             <div className="grid lg:grid-cols-2 gap-5 items-stretch min-h-[520px]">
               <StreamingFarmList
                 rows={streamRows}
@@ -815,6 +826,13 @@ function DashboardPageContent() {
                 </div>
               </div>
             </div>
+
+            {/* ── ZONE 4 · PROVENANCE ──────────────────────────────────────
+                Collapsed by default. Reader ① never opens it; reader ② opens
+                nothing else, and provenance nobody can find is the same as
+                provenance that does not exist the first time a decision is
+                audited. */}
+            {status === 'SUCCESS' && <ProvenanceFooter data={data} />}
           </div>
         )}
       </main>

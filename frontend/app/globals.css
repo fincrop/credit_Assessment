@@ -86,6 +86,51 @@ body {
 }
 
 /* =========================================================
+   Focus
+
+   There were zero focus-visible styles in the app. Browser defaults are a
+   thin blue ring that is close to invisible against cream, which makes the
+   whole product unusable by keyboard — and a loan officer working through
+   twenty files a day is exactly the person who stops reaching for the mouse.
+
+   :focus-visible rather than :focus, so a mouse click does not leave a ring
+   behind on every card it touches.
+   ========================================================= */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Inputs carry the ring inside their own border so it never clips. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 0;
+}
+
+/* Skip link — the first tab stop on every page. Off-screen until focused. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 9999;
+}
+
+.skip-link:focus {
+  left: 0.75rem;
+  top: 0.75rem;
+  background: var(--color-card);
+  color: var(--color-ink);
+  border: 1px solid var(--color-rule);
+  border-radius: 8px;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-overlay);
+}
+
+/* =========================================================
    Smooth scrollbars
    ========================================================= */
 ::-webkit-scrollbar { width: 6px; height: 6px; }

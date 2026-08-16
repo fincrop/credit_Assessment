@@ -17,6 +17,10 @@ import { RefusalPanel } from '../../components/RefusalPanel';
 import { ScoreWaterfall } from '../../components/ScoreWaterfall';
 import { NdviTrajectory } from '../../components/NdviTrajectory';
 import { ObservationCalendar } from '../../components/ObservationCalendar';
+import { LandCoverPanel } from '../../components/LandCoverPanel';
+import { CropVerificationPanel } from '../../components/CropVerificationPanel';
+import { PeerCohortPanel } from '../../components/PeerCohortPanel';
+import { WeatherAnomalyChart } from '../../components/WeatherAnomalyChart';
 import { useReport } from '../../../lib/useReport';
 import { ConfidenceStrip } from '../../components/ConfidenceBadge';
 import { terminalStateOfFarm } from '../../../lib/terminalState';
@@ -354,6 +358,7 @@ function FarmDetailContent() {
                 Plot-level index insights appear when this farm is scored.
               </div>
             )}
+            <LandCoverPanel landCover={plotPayload?.land_cover ?? report?.land_cover} />
             {farmRow && !hasDetail && <FarmSlimFallbackCard farm={farmRow} />}
           </div>
         )}
@@ -365,6 +370,10 @@ function FarmDetailContent() {
             plotPayload.performance_analysis ||
             plotPayload.continuous_data_stats ? (
               <>
+                <CropVerificationPanel
+                  verification={plotPayload.cropping_analysis?.crop_verification}
+                />
+                <PeerCohortPanel performance={plotPayload.performance_analysis} />
                 <CroppingSection data={plotPayload} />
                 <PerformanceSection data={plotPayload} />
               </>
@@ -388,6 +397,7 @@ function FarmDetailContent() {
                     Showing holding-area weather (shared across plots in this assessment).
                   </p>
                 )}
+                <WeatherAnomalyChart weather={plotPayload.weather_analysis} />
                 <WeatherSection data={plotPayload} />
               </div>
             ) : farmRow ? (

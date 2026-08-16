@@ -29,8 +29,15 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        {/* First tab stop on every page. A dashboard with a long farm list
+            is otherwise ~40 tabs deep before the content starts. */}
+        <a href="#main" className="skip-link">
+          Skip to content
+        </a>
         <ReduxProvider>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            <div id="main">{children}</div>
+          </AuthProvider>
         </ReduxProvider>
       </body>
     </html>

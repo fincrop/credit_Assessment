@@ -3,14 +3,16 @@
 import { Suspense, use, useMemo } from 'react';
 import Link from 'next/link';
 import { useReport } from '../../lib/useReport';
-import { hasSection, trendLabel } from '../../lib/reportClient';
+import { hasSection } from '../../lib/reportClient';
 import { riskViewFromReport, captionsFromReport } from '../../lib/reportView';
 import { bandForIndex, NO_BAND } from '../../lib/kbsScore';
-import { landCoverLabel } from '../../lib/terminalState';
 import { ScoreWaterfall } from '../../dashboard/components/ScoreWaterfall';
 import { NdviTrajectory } from '../../dashboard/components/NdviTrajectory';
 import { ObservationCalendar } from '../../dashboard/components/ObservationCalendar';
 import { OmittedPanels } from '../../dashboard/components/OmittedPanel';
+import { LandCoverPanel } from '../../dashboard/components/LandCoverPanel';
+import { CropVerificationPanel } from '../../dashboard/components/CropVerificationPanel';
+import { ScoreTrendSparkline } from '../../dashboard/components/ScoreTrendSparkline';
 import { FootprintBanner } from '../../dashboard/components/ConfidenceBadge';
 import type { ReportPayload } from '../../types/report';
 
@@ -47,7 +49,6 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 function ScoreHeader({ report }: { report: ReportPayload }) {
   const kbs = report.score?.kbs;
   const band = bandForIndex(report.score?.index_score);
-  const trend = trendLabel(report);
 
   return (
     <section
@@ -71,9 +72,10 @@ function ScoreHeader({ report }: { report: ReportPayload }) {
           of {report.score?.scale_max ?? 900}
           {band ? ` · ${band.name}` : ''}
         </span>
-        {trend && (
-          <span className="text-[12px] text-ink-muted font-mono">{trend}</span>
-        )}
+      </div>
+      {/* Renders nothing at all on a first assessment — see the component. */}
+      <div className="mt-2">
+        <ScoreTrendSparkline report={report} />
       </div>
       <p className="text-[11px] text-ink-2 mt-2 leading-relaxed max-w-2xl">
         A field-health index scored {report.score?.scale_min ?? 300}–
@@ -135,38 +137,9 @@ function ReportBody({ report }: { report: ReportPayload }) {
         trajectory={report.ndvi_trajectory}
       />
 
-      {(hasSection(report, 'land_cover') || hasSection(report, 'crop_verification')) && (
-        <section className="rounded-xl border border-rule bg-card px-5 py-4">
-          <h2 className="text-sm font-semibold text-ink">Land and crop checks</h2>
-          <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
-            {report.land_cover && (
-              <>
-                <Field label="Land cover" value={landCoverLabel(report.land_cover.class)} />
-                <Field
-                  label="Gate verdict"
-                  value={report.land_cover.outcome ?? '—'}
-                />
-              </>
-            )}
-            {report.crop_verification && (
-              <>
-                <Field
-                  label="Declared crop"
-                  value={report.crop_verification.declared_crop ?? 'none declared'}
-                />
-                <Field
-                  label="Against phenology"
-                  value={report.crop_verification.outcome ?? '—'}
-                />
-              </>
-            )}
-          </dl>
-          {report.crop_verification?.reason && (
-            <p className="text-[11px] text-ink-muted mt-2.5 leading-relaxed">
-              {report.crop_verification.reason}
-            </p>
-          )}
-        </section>
+      {hasSection(report, 'land_cover') && <LandCoverPanel landCover={report.land_cover} />}
+      {hasSection(report, 'crop_verification') && (
+        <CropVerificationPanel verification={report.crop_verification} />
       )}
 
       {/* Panels this pipeline will not fill, in the backend's own words. */}
