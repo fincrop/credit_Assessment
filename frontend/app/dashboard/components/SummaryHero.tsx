@@ -3,7 +3,12 @@
 import type { AssessmentPayload } from '../../types/assessment';
 import { useRiskView } from '../../lib/useRiskView';
 import { formatScoreWhole, formatScoreOne } from '../../lib/formatRisk';
-import { riskBgClass } from '../../lib/format';
+import {
+  bandForIndex,
+  bandForRiskCategory,
+  bandChipStyle,
+  NO_BAND,
+} from '../../lib/kbsScore';
 import { SubIndexBars } from './SubIndexBars';
 
 export function SummaryHero({ data }: { data: AssessmentPayload }) {
@@ -11,13 +16,11 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
   const score = view.score;
   const insufficient = !!view.insufficientData || score == null;
   const pct = !insufficient && typeof score === 'number' ? Math.min(100, Math.max(0, score)) : 0;
-  const scoreColor = insufficient
-    ? '#a8a29e'
-    : pct >= 70
-      ? '#16a34a'
-      : pct >= 45
-        ? '#d97706'
-        : '#dc2626';
+  // One mapping for the whole app — see lib/kbsScore.ts. This used to be an
+  // inline 70/45 ternary that disagreed with both the pillar bars and the gauge.
+  const band = insufficient ? null : bandForIndex(pct);
+  const markColor = band?.color ?? NO_BAND.color;
+  const inkColor = band?.ink ?? NO_BAND.ink;
 
   const radius = 52;
   const circumference = 2 * Math.PI * radius;
@@ -57,7 +60,7 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
                 cy="65"
                 r={radius}
                 fill="none"
-                stroke={scoreColor}
+                stroke={markColor}
                 strokeWidth="10"
                 strokeDasharray={`${dash} ${circumference}`}
                 strokeDashoffset={circumference * 0.25}
@@ -68,12 +71,17 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
             )}
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-2xl font-bold" style={{ color: scoreColor }}>
+            <span className="text-2xl font-bold" style={{ color: inkColor }}>
               {insufficient ? '—' : formatScoreWhole(score)}
             </span>
-            <span className="text-[10px] text-stone-400 font-medium uppercase tracking-widest">
+            <span className="text-[10px] text-stone-500 font-medium uppercase tracking-widest">
               Index
             </span>
+            {band && (
+              <span className="text-[10px] font-semibold" style={{ color: inkColor }}>
+                {band.name}
+              </span>
+            )}
           </div>
         </div>
 
@@ -81,9 +89,12 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
           <div className="flex items-center gap-2 flex-wrap">
             {view.category && (
               <span
-                className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${riskBgClass(
-                  typeof view.category === 'string' ? view.category : undefined
-                )}`}
+                className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border"
+                style={bandChipStyle(
+                  bandForRiskCategory(
+                    typeof view.category === 'string' ? view.category : undefined
+                  )
+                )}
               >
                 {typeof view.category === 'string' ? view.category : '—'}
               </span>

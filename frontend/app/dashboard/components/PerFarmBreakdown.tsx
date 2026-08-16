@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { FarmAssessment } from '../../types/assessment';
 import { formatScoreOne, formatScoreWhole } from '../../lib/formatRisk';
-import { riskBgClass } from '../../lib/format';
+import { bandForRiskCategory, bandChipStyle } from '../../lib/kbsScore';
 
 function tenureBadge(f: FarmAssessment): { label: string; className: string } {
   if (!f.included) {
@@ -78,9 +78,8 @@ export function PerFarmBreakdown({
                 <span className="ml-auto flex items-center gap-2">
                   {f.included && f.risk_category && (
                     <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${riskBgClass(
-                        f.risk_category
-                      )}`}
+                      className="text-[10px] px-2 py-0.5 rounded-full border font-bold"
+                      style={bandChipStyle(bandForRiskCategory(f.risk_category))}
                     >
                       {f.risk_category}
                     </span>

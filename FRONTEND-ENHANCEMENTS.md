@@ -1,0 +1,656 @@
+# Frontend Enhancements — v6
+
+**Status:** Plan. Nothing built yet.
+**Date:** 2026-08-16
+**Scope:** `frontend/` only. Backend v6 is complete (`BACKEND-ENHANCEMENTS.md`); this pass makes its output legible.
+**Design reference:** `enhancements/Farmer Assessment Report (standalone).html` — adopted for its *visual language*, not its content. Several of its panels are fabrications the backend explicitly refuses to emit (§9.3).
+
+---
+
+## 0. Status
+
+### 0.1 The plan, in plain language
+
+Ordered so each item is shippable on its own and nothing depends on a later one.
+
+| | Item | Status |
+|---|---|---|
+| 1 | One colour, one meaning | ✅ Done |
+| 2 | Make the design system real | Not started |
+| 3 | Show what we refused to score | Not started ⭐ biggest product win |
+| 4 | Wire up the report data | Not started — needed before 5, 6, 8 |
+| 5 | Show *why* the score is that number | Not started |
+| 6 | Show the field we actually saw | Not started ⭐ most persuasive |
+| 7 | Make the map a remote-sensing map | Not started |
+| 8 | The report | Not started |
+| 9 | Rebuild the dashboard around its reader | Not started |
+| 10 | The remaining panels | Not started |
+| 11 | Make it usable for everyone | Not started |
+
+### 0.2 What each item means
+
+**① One colour, one meaning.** ✅ **Done.** There turned out to be *four* competing ramps, not three — `riskBgClass` in `lib/format.ts` was a fourth, colouring the risk pill independently of the gauge. All four are now one function.
+
+- `lib/kbsScore.ts` rewritten as the single source. Bands re-stepped to the validated set (§5.2); each band gained `ink` (text-safe step, ≥ 5:1 on cream), `surface`, `border`, `indexMin/Max`, and `riskCategory`.
+- `scoreColor(index)` is now the only score→colour entry point. `subScoreBarColor`'s 65/55 thresholds and `SummaryHero`'s inline 70/45 ternary are gone.
+- `bandForRiskCategory()` maps the backend `LOW…VERY_HIGH` enum onto the same four bands, so a risk pill and the gauge can no longer disagree. `riskBgClass` and `riskPillClass` are deleted; `bandChipStyle()` replaces both.
+- **Nine places painted text with the mark colour.** Fair (`#E5A614`) measures 1.92:1 on cream — it was unreadable as text and nobody had checked. Those now use `ink`.
+- Gauge band labels enlarged (7–9px → 8–10px) and darkened off `stone-400`. These labels are the *mandatory* relief for Fair's contrast warning, so they are load-bearing, not decoration.
+- `riskColor` and `formatRupees` deleted — both dead.
+
+Verified: `tsc --noEmit` clean, `next build` succeeds. (`eslint` is broken repo-wide by the `brace-expansion: ^5.0.8` override in `package.json`, which minimatch can't consume — pre-existing, unrelated, worth a separate fix.)
+
+**② Make the design system real.** `globals.css` declares tokens; components reference them **zero** times and hardcode 242 hex literals instead. Today a palette change is a find-and-replace. §5.5.
+
+**③ Show what we refused to score.** The backend distinguishes *"we looked, it's not farmland"* from *"we couldn't see it"* from *"here's the score"*. The UI has one amber box. This turns backend rigour into visible product, and it is the highest value per line of code in the plan. §10.
+
+**④ Wire up the report data.** `/v1/report/{farmer_id}` has no client. Types, proxy route, and the extra assessment fields. Nothing can render v6 evidence before it is typed and fetched. §12.3.
+
+**⑤ Show *why* the score is that number.** Four disconnected bars and a lonely confidence-gate number become one waterfall: weights × sub-indices, the gate as a visible haircut, arriving at the KBS. §7.3.
+
+**⑥ Show the field we actually saw.** The NDVI trajectory with per-point provenance, and an observation calendar of which weeks we could see. The pipeline's most persuasive artefact, currently not on screen at all. §7.3.
+
+**⑦ Make the map a remote-sensing map.** Satellite base, NDVI raster overlay tied to the chart cursor, declared-vs-measured footprint drawn as two polygons, permanent legend, scale bar, Copernicus attribution. §11.
+
+**⑧ The report.** A print-first dossier route driven by the report contract — replacing 232 lines of `@media print` overrides that reformat the dashboard. §9.2.
+
+**⑨ Rebuild the dashboard around its reader.** 796 lines of orchestration and layout in one file, restructured into verdict → evidence → holding → provenance. §9.1.
+
+**⑩ The remaining panels.** Land cover, crop verification, weather anomaly, peer position, score trend. §7.2.
+
+**⑪ Make it usable for everyone.** 12 `aria-*` attributes app-wide, 10px type at 2.3:1 contrast, no table fallbacks, no reduced-motion. §14.
+
+### 0.3 ⚠ Two items are blocked on decisions, not on code
+
+- **⑧ The report** needs the PII masking policy settled (backend D-5) before its header can be built. The payload deliberately refuses to read `farm_info` for Aadhaar or mobile.
+- **⑩'s peer panel** stays cold until a zone reaches 20 assessed farmers. It renders its own progress state; it never fakes a percentile.
+
+---
+
+## 0. How to read this document
+
+Same structure as the backend doc, deliberately.
+
+- **§1–§3** — what the UI does today, verified against the code, with counts. Where a claim is a measurement, the command that produced it is in the text.
+- **§4–§8** — the design system: palette, gradients, typography, form, motion. Every colour decision here was run through a validator, not eyeballed. Failures are reported as failures.
+- **§9–§12** — information architecture, component specs, and the visualization catalogue.
+- **§13–§15** — build plan, accessibility/print, and the decisions I need from you.
+
+Severity scale, matching the backend doc:
+
+| | Meaning |
+|---|---|
+| **P0** | A user reads a number and draws the wrong conclusion. Ships wrong information to a lender. |
+| **P1** | Backend evidence exists and is invisible, or the UI can't tell "no data" from "we refuse". Fix before pilot. |
+| **P2** | Consistency / maintainability debt. Fix in the v6 window. |
+| **P3** | Polish. |
+
+---
+
+## 1. Executive summary
+
+### 1.1 The one-line version
+
+**The backend now knows far more than the screen shows, and the screen is styled by hand in 242 places instead of by a system.** Backend v6 added eight capabilities — land-cover classification, parcel viability, data sufficiency, crop verification, evidence series, grounded driver captions, peer cohorts, and a report payload. The frontend renders **zero of them**. Meanwhile the design tokens declared in `globals.css` are referenced **zero times** by any component.
+
+### 1.2 The five systemic problems
+
+**① Every v6 backend field is invisible.** A grep across `frontend/app` for the fields the pipeline now emits returns nothing:
+
+```
+land_cover           (0 files)      driver_captions      (0 files)
+parcel_viability     (0 files)      footprint            (0 files)
+data_sufficiency     (0 files)      evidence / series    (0 files)
+crop_verification    (0 files)      score_history        (0 files)
+```
+
+The new `GET /v1/report/{farmer_id}` endpoint (`backend/Credit_assessment/api/app.py:560`) has no client. The whole of §3.
+
+**② There are three different colour-to-score mappings for the same number.** For an identical index value, three components disagree on whether it is green:
+
+| Source | Green at | Amber at | Red below |
+|---|---|---|---|
+| `SummaryHero.tsx:15` | ≥ 70 | ≥ 45 | 45 |
+| `kbsScore.ts:91` `subScoreBarColor` | ≥ 65 | ≥ 55 | 55 |
+| `KBS_BANDS` (the canonical bands) | ≥ 75 | ≥ 50 | 25 |
+
+An index of 68 is simultaneously amber (hero), green (sub-index bar), and Good (band). **P0** — this is the number the whole product exists to communicate. §2.2.
+
+**③ The risk-band palette fails a colour-vision check that a lending product cannot fail.** The current Good `#639922` and Excellent `#1D9E75` sit at **ΔE 8.8** for *normal* vision — below the 15 floor, meaning full-colour readers struggle to tell the two best bands apart. Under protanopia the Fair↔Good pair collapses to ΔE 7.8. Measured, not asserted (§5.2). **P0**.
+
+**④ A declared design system exists and nothing uses it.** `globals.css:6-17` declares `--bg`, `--border`, `--text`, `--accent`. Component usage:
+
+| | Count |
+|---|---|
+| `var(--bg…)` referenced in a component | **0** |
+| Literal `#E4DFD4` in `.tsx` | **155** |
+| Literal `#F5F2EB` in `.tsx` | **87** |
+| Distinct `text-stone-N` applications | **483** |
+| `bg-[#F5F2EB]` on a page root | **81** |
+
+A palette change today is a 242-site find-and-replace. **P2**, but it blocks everything in §5–§7.
+
+**⑤ Nothing on screen distinguishes "we have no data" from "we refuse to say".** The backend went to real trouble to separate `SUCCESS` / `REJECTED_NOT_AGRICULTURAL` / `INSUFFICIENT_DATA`, and to ship an explicit `omitted{}` block naming panels it will not fill. The UI has one amber box that says "Insufficient data" (`RiskScoreCard.tsx:190`) and no concept of a refusal at all. That throws away the single most defensible thing about this product. **P1**. §10.
+
+### 1.3 What is already good, and should not be rewritten
+
+Being fair to what exists:
+
+- **The cream/paper base is right.** `#F5F2EB` is a genuine differentiator against the default fintech white-or-slate. It reads as a document, which is what a credit file is. Keep it; formalise it.
+- **Hand-rolled SVG, no chart library.** `package.json` has no charting dependency, and 11 components draw their own SVG. That is the correct call for this product (§7.1) — do not "fix" it by adding Recharts.
+- **The KBS framing copy is honest.** "Field-health index… not a credit score, loan amount, or default probability" appears verbatim on both the hero and the insights card. That sentence is doing real work. It should become a component, not a copy-paste.
+- **`useRiskView` is a genuine view-model.** The farmer-level / plot-level / partial-result reconciliation in `lib/useRiskView.ts` is the hard part and it is already isolated. New panels extend it rather than re-deriving.
+
+---
+
+## 2. Current state — verified
+
+### 2.1 The surface, as built
+
+| Route | File | Lines | What it is |
+|---|---|---|---|
+| `/` | `app/page.tsx` | 264 | Landing |
+| `/login` | `app/login/page.tsx` | 265 | Auth |
+| `/farmer` | `app/farmer/page.tsx` | 384 | Farmer + plot onboarding, Leaflet/Geoman boundary drawing |
+| `/farmer/farms` | `app/farmer/farms/page.tsx` | 274 | Plot list |
+| `/dashboard` | `app/dashboard/page.tsx` | **796** | Assessment run + holding-level result |
+| `/dashboard/farm/[farm_id]` | `.../page.tsx` | 398 | Per-plot detail, 5 tabs |
+| `/agristack` | `app/agristack/page.tsx` | 625 | API sandbox (internal) |
+
+Twenty dashboard components, eleven farmer components. Stack: Next 16, React 19, Tailwind 4, Redux Toolkit, Leaflet, Geist/Geist Mono.
+
+### 2.2 The three-mappings defect, in full
+
+`SummaryHero` computes its own ramp inline:
+
+```tsx
+// SummaryHero.tsx:15-21
+const scoreColor = insufficient ? '#a8a29e'
+  : pct >= 70 ? '#16a34a'
+  : pct >= 45 ? '#d97706'
+  : '#dc2626';
+```
+
+…while `RiskScoreCard` renders the pillar bars through `subScoreBarColor` (thresholds 65/55) and the gauge through `KBS_BANDS` (thresholds at the 25/50/75 quartiles). Three ramps, three sets of hexes, one quantity. Fix in §5.1: one exported function, no inline ternaries, ever.
+
+### 2.3 Typography, measured
+
+141 uses of `text-[10px]`/`text-[11px]`, plus 2 of `text-[9px]`. Nine-pixel type on a screen a loan officer reads for eight hours is not a style choice, it is a defect. §6.
+
+### 2.4 Accessibility, measured
+
+Twelve `aria-*` attributes across the entire app. The gauge has an `aria-label`; almost nothing else does. No chart has a table fallback. §14.
+
+---
+
+## 3. The invisible backend — what v6 emits and nobody renders
+
+This is the section that justifies the work. Each row is data the pipeline computes, persists, and returns today, with no pixel behind it.
+
+| # | Backend field | Where it comes from | What the user loses | Sev |
+|---|---|---|---|---|
+| 1 | `land_cover` | Item 2, `ddf2cd3b` | *Why* a parcel was refused as non-agricultural. Currently a bare refusal with no evidence. | P1 |
+| 2 | `parcel_viability` | `669a9344` | That a plot is below the 0.15 ha fundable floor, and by how much. | P1 |
+| 3 | `data_sufficiency` | `b023f600` | Whether we could see the field at all — the difference between a bad farm and a cloudy quarter. | **P0** |
+| 4 | `cropping_analysis.crop_verification` | Item 5, `23bfbc1d` | Declared crop vs observed phenology. The fraud/error signal a lender most wants. | P1 |
+| 5 | `risk_assessment.driver_captions` | Item 7, `a3237563` | Grounded, per-sub-index explanations. We render bare numbers and generic pill text instead. | P1 |
+| 6 | `risk_assessment.footprint` | `588beecf` | That the score was measured over a *substituted* footprint, not the declared boundary. | **P0** |
+| 7 | `evidence.series` + `series_completeness` | Item 6, `0ce4bf4f` | The NDVI trajectory and its per-point provenance. The single most persuasive artefact the pipeline produces. | P1 |
+| 8 | score history / `trend` | `a3237563` | Movement since the last assessment. | P1 |
+| 9 | peer cohort | `a3237563` (cold) | Percentile context — **when a zone warms to n ≥ 20**. Until then the UI must say so, not fake it. | P2 |
+| 10 | `omitted{}` | `report_payload.py:269` | The backend explicitly names panels it won't fill. The UI has nowhere to put that. | P1 |
+
+Items 3 and 6 are P0 for the same reason: without them a user reads a low score as *"this farmer's land is poor"* when the true statement is *"we could not see this field"* or *"we measured a different field"*.
+
+---
+
+## 4. Who is looking at the screen
+
+Three audiences, and the current UI is designed for none of them specifically.
+
+**① The loan officer** — the primary user. Twenty files a day, wants a verdict in four seconds and the reason in twenty. Needs: score, band, the one weak pillar, and any refusal, above the fold. Everything else on demand.
+*Design consequence:* one hero, one verdict sentence, one weakest-driver callout. No four-column KPI wall.
+
+**② The credit committee / risk reviewer** — reads one file deeply, adversarially. Wants provenance, method version, what we could and could not observe, and whether the number is defensible in an audit. This is the reader the design reference's "score dossier" framing serves, and it is the reader who converts a pilot.
+*Design consequence:* an evidence layer, always available, never in the primary flow. Print/PDF is their real output format.
+
+**③ The field agent / farmer-facing operator** — mobile, outdoors, poor connection, explaining the result to the farmer in Marathi or Hindi. Needs the narrative and the map, large, in the local language.
+*Design consequence:* the narrative and boundary map must survive a 360px viewport and must not depend on hover.
+
+Right now every screen is built for reader ② at reader ①'s density, in reader ③'s absence.
+
+---
+
+## 5. Colour
+
+### 5.1 Method
+
+Colour was assigned **last**, by the job it does, and every categorical set was run through `dataviz/scripts/validate_palette.js` against **our actual surface** `#F5F2EB` — not the validator's default white. Results below are copied from the run, including the failures.
+
+Four jobs, four rules:
+
+| Job | Encoding | Where it appears |
+|---|---|---|
+| **Magnitude** (NDVI, health, sufficiency) | one hue, light→dark | trajectory fill, calendar heatmap, choropleth |
+| **Identity** (data source, crop, plot) | fixed-order categorical, ≤ 3 slots | provenance lines, plot series |
+| **Polarity** (weather anomaly, score delta) | diverging, neutral grey midpoint | rainfall vs normal, trend |
+| **State** (risk band, refusal) | reserved status palette + icon + label | gauge bands, refusal cards |
+
+### 5.2 Risk bands — the current set FAILS, and the replacement passes
+
+Current bands (`lib/kbsScore.ts:24`), validated on cream:
+
+```
+#E24B4A, #EF9F27, #639922, #1D9E75  → FAILED
+  [WARN] CVD separation     worst adjacent #639922↔#EF9F27 ΔE 7.8 (protan)
+  [FAIL] Normal-vision floor worst adjacent #1D9E75↔#639922 ΔE 8.8 — below 15
+```
+
+Good and Excellent — the two bands that decide whether a farmer is fundable — are 8.8 apart to a reader with *full* colour vision. Replacement, same semantics, re-stepped:
+
+```
+#B93A28, #E5A614, #6B9418, #00734F  → ALL CHECKS PASS
+  [PASS] Lightness band       all 4 inside L 0.43–0.77
+  [PASS] Chroma floor         all 4 >= 0.1
+  [PASS] CVD separation       worst adjacent #6B9418↔#E5A614 ΔE 10.2 (protan)
+  [PASS] Normal-vision floor  worst adjacent #00734F↔#6B9418 ΔE 15.2
+  [WARN] Contrast vs surface  #E5A614 at 1.92:1 — relief required
+```
+
+| Band | Index | KBS | New hex | Old hex |
+|---|---|---|---|---|
+| Poor | 0–25 | 300–450 | `#B93A28` | `#E24B4A` |
+| Fair | 25–50 | 450–600 | `#E5A614` | `#EF9F27` |
+| Good | 50–75 | 600–750 | `#6B9418` | `#639922` |
+| Excellent | 75–100 | 750–900 | `#00734F` | `#1D9E75` |
+
+The contrast WARN on Fair is **not dismissable**: it obliges a visible label. Which leads to the rule that matters more than the hexes —
+
+> **The risk band is never carried by colour alone.** Every band appears as *position on the arc* + *band name in text* + colour. A bare coloured chip with no adjacent word is forbidden anywhere in this app. This is not belt-and-braces: a red/amber/green scale is *structurally* unsafe under protanopia, and no re-stepping fixes that. Position and text do.
+
+### 5.3 Vegetation ramp — sequential, one hue
+
+For NDVI and any continuous field magnitude. Hue spread 19°, lightness monotone:
+
+```
+#DDEAC4  #BAD795  #94C267  #6EAB3E  #4C9028  #31741F  #1D5717
+   0.1      0.2      0.3      0.4      0.55     0.7      0.85   ← NDVI
+```
+
+Two uses, two rules:
+
+- **Continuous fill** (area under the trajectory, choropleth): use all seven. The light end is *allowed* to recede into the cream — near-zero NDVI should look like bare ground.
+- **Discrete chips** (legend swatches, calendar cells, category dots): start at step 3. `#94C267` measures 1.85:1 against cream — below the 2:1 ordinal floor — so the discrete set is `#8AB24F #67A03C #468526 #2D6A1E #194E16`, which passes all four ordinal checks.
+
+Green for vegetation is not decoration here: it matches how anyone who has looked at an NDVI raster already reads the image. Do not get clever with viridis.
+
+### 5.4 Categorical — capped at three, hard
+
+For telling *sources* apart (optical vs radar vs modelled), validated all-pairs on cream:
+
+```
+#2a78d6 (blue)  #eb6834 (orange)  #1baf7a (aqua)  → ALL CHECKS PASS
+  worst all-pairs CVD ΔE 9.2 · normal-vision ΔE 24.0
+  [WARN] contrast: #eb6834 2.86 · #1baf7a 2.52 → direct labels required
+```
+
+Fixed order, never cycled. A fourth series does not get a fourth hue — it folds into "Other", or the chart becomes small multiples. If plots ever need per-plot colour on one chart, that is a **table**, not more hues (§7.2).
+
+### 5.5 Ink, surfaces, and the paper stack
+
+Formalise what is currently 242 hex literals into one token set. Surfaces are named by elevation, not by colour:
+
+| Token | Hex | Role |
+|---|---|---|
+| `--paper` | `#F5F2EB` | page plane — the base cream |
+| `--paper-raised` | `#FFFEFA` | inset panels, mini-cards |
+| `--card` | `#FFFFFF` | the card plane |
+| `--rule` | `#E4DFD4` | hairline borders |
+| `--rule-soft` | `#EFEBE1` | internal dividers |
+| `--ink` | `#1C1917` | primary text |
+| `--ink-2` | `#57534E` | secondary text |
+| `--ink-muted` | `#78716C` | axis labels, captions — **floor for any text under 13px** |
+| `--accent` | `#15803D` | interactive/brand green |
+| `--accent-gold` | `#B4842A` | provenance, methodology, the "dossier" accent |
+
+`--ink-muted` at `#78716C` clears 4.5:1 on cream. `text-stone-400` (`#A8A29E`, currently used for 10px labels in `WeatherSection.tsx:10` and elsewhere) does **not** — it measures 2.3:1. That is a straight WCAG failure on the smallest text in the app, and it is everywhere.
+
+---
+
+## 6. Gradients — where they are allowed, and where they lie
+
+You asked specifically about gradients. Here is the position, and it is a strong one.
+
+### 6.1 The rule
+
+> **A gradient may never run along an axis that encodes a value.**
+
+A bar whose length means "68" must be a flat fill. Put a gradient on it and the eye reads the dark end as heavier — the same length now looks like a different number depending on which end you scan from. In a chart that a bank uses to price risk, that is not a style disagreement, it is a measurement error introduced by decoration.
+
+`bandCardSurface()` (`kbsScore.ts:111`) already gets this right — the gradients there are on a *card* whose size means nothing. Keep those. `subScoreBarColor` bars stay flat.
+
+### 6.2 Where gradients are correct, and earn their place
+
+| Surface | Gradient | Why it's legitimate |
+|---|---|---|
+| **Score hero band wash** | `linear-gradient(160deg, band@6% → band@0%)` over `--card` | Tints the card by band. Encodes nothing; reinforces the label. |
+| **Trajectory area fill** | vegetation hue, `18% → 0%` top-to-bottom | Vertical, while the *value* is the line's y-position at the top edge. The fade is depth, not magnitude. |
+| **Map raster overlays** | the §5.3 ramp, continuous | This *is* the data. A continuous field deserves a continuous ramp. |
+| **Page plane** | `radial-gradient` from `#FAF8F1` at top → `#F5F2EB` | ~2% luminance. Gives the page a light source so cards feel like paper on a desk. Invisible if you look for it, felt if you don't. |
+| **Skeleton shimmer** | `--paper → --paper-raised → --paper`, 1.6s | Standard loading affordance. |
+
+Everything else: flat. Specifically **no** gradient on: bars, gauge arcs (each band is one flat colour), buttons, badges, or KPI numerals.
+
+### 6.3 Depth without gradients
+
+The paper metaphor wants shadow discipline, not glow:
+
+```css
+--shadow-card:    0 1px 2px rgba(28,25,23,.05), 0 1px 1px rgba(28,25,23,.03);
+--shadow-raised:  0 2px 6px rgba(28,25,23,.06), 0 1px 2px rgba(28,25,23,.04);
+--shadow-overlay: 0 8px 28px rgba(28,25,23,.12);
+```
+
+Three levels, ever. Shadows are warm-tinted (`28,25,23`) not neutral black — a cool grey shadow on cream reads as dirt.
+
+---
+
+## 7. Form — the visualization catalogue
+
+Chart type is chosen by the data's job, before any colour. Several of these replace things that are currently bare numbers.
+
+### 7.1 No charting library. Deliberately.
+
+`package.json` carries no chart dependency and 11 components already hand-roll SVG. Keep it that way:
+
+- Nine charts, all bespoke — none of them is a generic "line chart with a config object".
+- Recharts/Nivo pull d3 (≈ 60–90 kB gzipped) and fight React 19 / RSC over refs and `useLayoutEffect`.
+- Hand-rolled SVG server-renders, prints correctly, and appears in the PDF without a headless-browser dance.
+
+The investment goes into a tiny shared `lib/chart.ts` — scale helpers, `path()` builders, an axis component, one `<ChartFrame>` with title/legend/table-toggle. Perhaps 200 lines. Not a library.
+
+### 7.2 The catalogue
+
+| # | Panel | Form | Colour job | Replaces | Backend field |
+|---|---|---|---|---|---|
+| 1 | **Score hero** | hero figure + arc gauge | status (band) | `KbsGauge` (keep, re-step) | `score` |
+| 2 | **Score build-up** | horizontal waterfall | sequential + status | 4 flat pillar bars | `sub_indices`, `weights`, `confidence_gate` |
+| 3 | **NDVI trajectory** | line + area, provenance-marked | 1 sequential hue | *nothing* | `evidence.series` |
+| 4 | **Observation calendar** | week × source heatmap | sequential | *nothing* | `data_sufficiency`, `series_completeness` |
+| 5 | **Crop verification** | dual timeline, declared vs observed | categorical (2) | *nothing* | `crop_verification` |
+| 6 | **Land cover** | single stacked bar | categorical (3 + Other) | *nothing* | `land_cover` |
+| 7 | **Weather anomaly** | diverging column vs normal | diverging | 8 mini stat cards | `weather_analysis` |
+| 8 | **Score trend** | sparkline + delta chip | 1 hue + status delta | *nothing* | `trend`, score history |
+| 9 | **Peer position** | distribution strip + marker | 1 hue + accent | *nothing* | cohort (**gated on n ≥ 20**) |
+| 10 | **Plot portfolio** | sortable table + map | none (table) | `StreamingFarmList` | `farm_assessments` |
+
+Note what is **not** on this list: a pie chart, a radar/spider chart of the four pillars, and a dual-axis anything. Radar in particular is tempting for four sub-indices and is wrong — area scales as the square of the value, so a 10% weakness looks like 20%, and the shape changes if you reorder the axes.
+
+### 7.3 The two that matter most
+
+**② Score build-up (waterfall).** Today the four pillars are four disconnected bars and the confidence gate is a lonely number in a box (`IndexInsightsCard.tsx:68`). Nobody can see how 4 sub-indices and a multiplier produced 612. The waterfall shows it as arithmetic:
+
+```
+Landuse    ×0.30  ██████████████            +21.3
+Vigour     ×0.35  ████████                  +14.7   ◀ weakest
+Stability  ×0.20  ███████████               +13.1
+Weather    ×0.15  ██████                     +8.4
+                  ─────────────────────────────────
+Raw index                                     57.5
+Confidence gate   ×0.92                       −4.6   ▼ 41 of 52 observations usable
+                  ─────────────────────────────────
+Index                                         52.9  →  KBS 617 · Good
+```
+
+Bars flat-filled (§6.1), weakest pillar carries a marker and a caption from `driver_captions`, the gate step is the diverging-negative colour. This one panel answers "why this number" better than every existing card combined.
+
+**③ NDVI trajectory with honest provenance.** The single most persuasive thing the pipeline produces, and it is currently not on screen at all. Encoding:
+
+- **Line** — the parcel's NDVI, 2px, vegetation hue at step 5.
+- **Area** — vertical fade beneath, 18% → 0%.
+- **Provenance by texture, not hue.** Optical = solid. SAR-substituted = dashed. Interpolated = dotted. Same measurement, different confidence — a hue change would falsely imply a different quantity.
+- **Gaps are gaps.** No line drawn across a period with no observation; the region gets a hatched band and the count. Interpolating a line through a cloudy fortnight is the exact fabrication the backend spent v6 eliminating.
+- **Phenology markers** — SOS / POS / EOS from `crop_cycles[].phenology`, as labelled vertical rules.
+- **No district median.** `report_payload.py:124-151` refuses to emit one until a cohort is warm, and states why. The chart renders that refusal as a footnote, not as an empty legend entry.
+
+---
+
+## 8. Motion
+
+Restrained, because this is a document, not a product tour.
+
+| Event | Motion | Duration |
+|---|---|---|
+| Card enters | fade + 8px rise | 200ms `ease-out` |
+| Gauge needle settles | rotate from 0 | 700ms `cubic-bezier(.22,1,.36,1)`, once per result |
+| Chart line draws | `stroke-dashoffset` | 500ms, once |
+| Value change | no count-up | — |
+| Skeleton | shimmer | 1.6s loop |
+| Tab / accordion | height + opacity | 160ms |
+
+All of it behind `@media (prefers-reduced-motion: reduce)` → instant final state. **No count-up animation on the score** — a number that spins past 700 on its way to 617 tells the reader something false for 400ms, and it is the number they screenshot.
+
+---
+
+## 9. Information architecture
+
+### 9.1 The dashboard, restructured
+
+`dashboard/page.tsx` is 796 lines holding orchestration, form state, polling, and layout. It splits into three zones with a clear reading order:
+
+```
+┌─ VERDICT ─────────────────────────────────────── above the fold ─┐
+│  hero gauge + band          │  verdict sentence + weakest driver  │
+│  KBS 617 · Good             │  trend chip · refusal banner        │
+├─ EVIDENCE ───────────────────────────────────────────────────────┤
+│  score build-up waterfall   │  NDVI trajectory                    │
+│  observation calendar       │  land cover · crop verification     │
+├─ HOLDING ────────────────────────────────────────────────────────┤
+│  plot table + boundary map (linked hover/selection)               │
+└─ PROVENANCE ────────────────────────── collapsed by default ──────┘
+   versions · window · weights · sources · integrity hash
+```
+
+Reader ① stops after zone 1. Reader ② reads all four. Reader ③ gets zones 1 and 3 stacked on mobile.
+
+### 9.2 New route: `/report/[farmer_id]`
+
+The `/v1/report/{farmer_id}` endpoint has no client. It gets a dedicated route rendering the dossier — one column, print-first, the design reference's visual language, driven **entirely** by `sections_present` and `omitted`. This replaces `AssessmentPrintReport.tsx` (232 lines of `@media print` overrides), which reformats the dashboard rather than rendering the report contract.
+
+### 9.3 What we do NOT build, and why
+
+The design reference contains panels the backend deliberately refuses to produce. `report_payload.py:7-27` names them. **We do not build UI for them, and we do not quietly leave a blank space where they were** — a blank slot invites someone to fill it later.
+
+| Reference panel | Verdict |
+|---|---|
+| "Suggested action · defer-30-days · committee threshold 55 · re-assess 11 Oct" | **Not built.** No policy engine, no validated forecast. Fabricating a lending recommendation is the single worst thing this UI could do. |
+| District-median NDVI comparison line | **Not built until cohorts warm.** Replaced by a stated reason, from `omitted.peer_comparison`. |
+| "Reviewed by / review status" | **Not built.** No review workflow exists. |
+| Aadhaar / DOB / mobile on the report header | **Not built.** Masking policy unsettled (backend D-5). The payload deliberately never reaches into `farm_info` for it. |
+| KBS scale 300–950, five policy bands | **Not adopted.** Scale is 300–900 over four agronomic bands (backend D-3). The reference's five *credit-policy* bands imply a policy engine we don't have. |
+
+An `<OmittedPanel>` component renders each entry in `omitted{}` as a bordered, explicitly-empty slot with the backend's own reason string. Refusals are a feature; show them.
+
+---
+
+## 10. The honesty layer
+
+This is the part with no equivalent in the current UI, and the part most worth building.
+
+### 10.1 Three terminal states, three distinct screens
+
+Not three shades of one amber box.
+
+| State | Treatment |
+|---|---|
+| `SUCCESS` | Full result. Gate multiplier shown on the waterfall if < 1.0. |
+| `REJECTED_NOT_AGRICULTURAL` | **No score. No gauge. No empty band arc.** A land-cover panel showing the observed classes, the boundary on satellite imagery, and one sentence: *"This parcel is X% built-up / water. It was not scored as farmland."* |
+| `INSUFFICIENT_DATA` | **No score.** An observation-calendar panel showing exactly which weeks had usable imagery and which did not, plus the specific cause from `data_sufficiency` — too small, cloud-gapped, or untrustworthy boundary. Then: *"Not enough observation to score this parcel. This is a statement about our view of the field, not about the field."* |
+
+That last sentence is the product. Say it in the UI.
+
+### 10.2 Confidence, everywhere it applies
+
+- **Gate < 1.0** → a visible haircut step on the waterfall, plus a bracket on the gauge showing raw vs gated position. Currently the gate is a number in a box that nobody can interpret.
+- **Footprint substituted** (`risk_assessment.footprint`) → a **persistent banner on the map**, not a footnote: *"Scored over a substituted footprint — the declared boundary failed validation."* The user is looking at a polygon; they must know it isn't the one we measured. **P0**.
+- **Crop mismatch** (`crop_verification`) → dual timeline, declared vs observed, with the disagreement highlighted. Neutral wording — this is as often a data-entry error as it is misrepresentation.
+- **Peer cohort cold** → the peer panel renders its own absence with the count: *"Peer comparison needs 20 assessed parcels in this zone. Currently 6."* A progress state, not an error.
+
+### 10.3 Never render a fabricated zero
+
+`_trend()` returns `None` on a first assessment rather than emitting a delta of 0 (`report_payload.py:97-121`) — because a "0" against a baseline that doesn't exist invents a history. The UI must honour that: when `trend` is null, there is **no trend chip**, not a chip reading "—" or "0". Same rule for every nullable field in the payload. `sections_present` is the switch; use it.
+
+---
+
+## 11. Maps and remote sensing
+
+The map is where "we actually looked at your field" becomes credible, and it is currently a boundary polygon on OSM tiles.
+
+- **Base layers** — satellite imagery default (this is a remote-sensing product; a road map undersells it), with a toggle to a muted cartographic base. Labels only on the cartographic base.
+- **Boundary treatment** — 2px accent stroke, 12% fill. **Declared vs measured footprint drawn as two polygons** when they differ: declared dashed and greyed, measured solid and accented. Currently a divergence is invisible.
+- **NDVI raster overlay** — the §5.3 ramp with a continuous legend, opacity slider, and a date scrubber tied to the trajectory chart's cursor. Move the cursor on the chart, the map redraws for that date. This is the demo that sells the product.
+- **Per-plot choropleth at holding level** — each plot filled by its band colour, always with its plot label rendered (§5.2 rule).
+- **Legends are mandatory and permanent**, not hover-revealed. A raster with no legend is an illustration.
+- **Scale bar and north arrow.** Non-negotiable in a geospatial product that produces evidence for a credit file.
+- **Attribution** — Copernicus/Sentinel-2 attribution is a licence obligation, not a design choice. The design reference already carries it ("contains modified Copernicus Sentinel-2 data"); the app does not.
+
+---
+
+## 12. Component inventory
+
+### 12.1 New
+
+| Component | Purpose |
+|---|---|
+| `ScoreHero` | Gauge + band + verdict sentence + trend chip. Replaces `SummaryHero` and `RiskScoreCard`'s top half. |
+| `ScoreWaterfall` | §7.3 build-up. |
+| `NdviTrajectory` | §7.3 chart. |
+| `ObservationCalendar` | Week × source sufficiency heatmap. |
+| `CropVerificationTimeline` | Declared vs observed phenology. |
+| `LandCoverBar` | Stacked composition + non-agri flag. |
+| `WeatherAnomalyChart` | Diverging columns vs seasonal normal. |
+| `PeerPositionStrip` | Cohort distribution, or its own cold-start state. |
+| `ScoreTrendSparkline` | History + delta. |
+| `RefusalPanel` | The `REJECTED_*` / `INSUFFICIENT_DATA` screens (§10.1). |
+| `OmittedPanel` | Renders one `omitted{}` entry (§9.3). |
+| `ConfidenceBadge` | Gate / footprint / provenance chip, consistent everywhere. |
+| `ProvenanceFooter` | Versions, window, sources, integrity hash. |
+| `ChartFrame` | Title, legend, table toggle, empty state. Every chart wraps in this. |
+| `KbsDisclaimer` | The "not a credit score" sentence, once. |
+
+### 12.2 Modified
+
+| Component | Change |
+|---|---|
+| `KbsGauge` | Re-step to §5.2 hexes; add the raw-vs-gated bracket; keep the geometry. |
+| `SubIndexBars` | Absorbed into `ScoreWaterfall`. |
+| `IndexInsightsCard` | Reason codes only; metrics move to the waterfall. |
+| `WeatherSection` | Mini-card grid → `WeatherAnomalyChart` + a stat row. |
+| `PlotBoundaryMapInner` | Layer control, NDVI overlay, dual-footprint, legend, scale bar. |
+| `StreamingFarmList` | Sortable table with band chips (chip + label, §5.2). |
+| `AssessmentPrintReport` | Retired in favour of `/report/[farmer_id]`. |
+
+### 12.3 Infrastructure
+
+- `lib/designTokens.ts` + rewritten `globals.css` — the §5.5 token set. One source.
+- `lib/chart.ts` — scales, path builders, axis, tick formatting (§7.1).
+- `lib/reportClient.ts` + `app/api/report/[farmer_id]/route.ts` — proxy to `/v1/report/{farmer_id}`, service-key-side.
+- `types/report.ts` — mirror `report_payload_v1`. **Generated from the backend contract, not hand-written**, or it drifts within a sprint.
+- `types/assessment.ts` — add `land_cover`, `parcel_viability`, `data_sufficiency`, `crop_verification`, `driver_captions`, `footprint`.
+
+---
+
+## 13. Build plan
+
+Ordered so each phase is shippable and nothing depends on a later phase.
+
+| Phase | Work | Why here | Est. |
+|---|---|---|---|
+| **F0** | Token system; kill 242 hex literals; **one** score→colour function; re-step the bands | Every later phase paints with these. Doing it after is a rewrite. | 2–3 d |
+| **F1** | `types/report.ts`, report client, API proxy, extend `assessment.ts` | Nothing can render v6 data before it is typed and fetched. | 1–2 d |
+| **F2** | Honesty layer — `RefusalPanel`, `OmittedPanel`, `ConfidenceBadge`, footprint banner, `sections_present` wiring | Highest value per line. Turns backend rigour into visible product. | 3–4 d |
+| **F3** | `ChartFrame` + `lib/chart.ts` + `ScoreWaterfall` | The "why this number" panel. | 3–4 d |
+| **F4** | `NdviTrajectory` + `ObservationCalendar` | The evidence pair. Needs F3's chart primitives. | 4–5 d |
+| **F5** | Map upgrade — layers, NDVI overlay, dual footprint, legend, scrubber | Heaviest single item; independent of F3/F4. | 4–5 d |
+| **F6** | `/report/[farmer_id]` dossier route, print stylesheet, PDF | Needs F2–F4 components to compose. | 3–4 d |
+| **F7** | Dashboard IA restructure (§9.1); split the 796-line page | Safe once the components exist. | 2–3 d |
+| **F8** | `LandCoverBar`, `CropVerificationTimeline`, `WeatherAnomalyChart`, `PeerPositionStrip`, `ScoreTrendSparkline` | The remaining panels, in value order. | 4–5 d |
+| **F9** | Accessibility pass, table fallbacks, reduced-motion, mobile (§14) | Verification, not decoration. | 2–3 d |
+
+**F0 → F2 is the minimum credible increment** (~7 days): consistent colour, and every refusal the backend makes becomes visible. That alone changes what the pilot demonstrates.
+
+---
+
+## 14. Accessibility, print, performance
+
+**Accessibility.** Twelve `aria-*` attributes today. Requirements: every chart carries an accessible name and a table-view toggle; no meaning by colour alone anywhere (§5.2); `--ink-muted` floor for text below 13px, retiring `text-stone-400` on small type; visible focus rings; full keyboard path through tabs, filters, and the map's plot list; live-region announcements for job progress.
+
+**Print.** The report route is designed print-first, not print-adapted: A4, 14mm margins, charts as SVG (they print at full resolution; the current approach loses the gauge), `break-inside: avoid` per section, provenance footer and integrity hash on every page. The status quo — `@media print` overrides on the dashboard — is why the printed output looks like a screenshot of a website.
+
+**Performance.** Charts are SVG and server-renderable; keep them RSC-compatible where they have no interaction. Leaflet stays dynamically imported (already the case). Budget: no route above 200 kB JS gzipped. Skeletons match final layout so nothing reflows on arrival.
+
+**Dark mode: explicitly not in scope.** Every hex in §5 is validated against `#F5F2EB` only. A dark theme is a *second selected palette* — re-stepped and re-validated against the dark surface, not an inversion — and this product's output is a printed credit file. Revisit after pilot. Recorded here so nobody assumes it was forgotten. (Decision **FD-4**.)
+
+---
+
+## 15. Decisions
+
+### 15.1 Settled — 2026-08-16
+
+| # | Decision | Outcome |
+|---|---|---|
+| **FD-1** | Re-step the risk bands? | **Yes.** Adopted `#B93A28 / #E5A614 / #6B9418 / #00734F`. Shipped in item ①. |
+| **FD-3** | Design reference fidelity | **Adopt its visual language, drop the unbacked panels** (§9.3). No policy-action panel, no synthesised district median, no reviewer field. |
+| **FD-4** | Dark mode | **Deferred past pilot.** Every hex in §5 is validated against `#F5F2EB` only. |
+| **FD-5** | Primary reader | **The loan officer.** Desktop, ~20 files a day, verdict in 4 seconds. The credit committee is served by the report route (item ⑧) as a secondary output; the field agent is a post-pilot concern. Phase order in §13 stands. |
+| **FD-8** | Aesthetic direction | **Editorial dossier.** Cream paper, warm shadows, hairline rules, generous type, near-zero imagery — it should read as a credit document and print as one. No stock photography, no decorative hero, no illustrated empty states. Gradients confined to §6.2. |
+
+FD-8 has a consequence worth stating plainly, since it was asked about directly: **this product does not get background images.** Imagery earns its place here only when it *is* evidence — the Sentinel-2 basemap under a parcel boundary, an NDVI raster overlay. A photograph of a wheat field behind a login form is the visual equivalent of a fabricated data point: it implies a richness the screen is not delivering. The texture in this design comes from paper, rule weight, and typography.
+
+### 15.2 Still open
+
+| # | Decision | Options | My recommendation | Blocks |
+|---|---|---|---|---|
+| **FD-2** | Report route vs dashboard print | (a) dedicated `/report/[farmer_id]` (b) keep improving `AssessmentPrintReport` | **(a).** The payload is a different contract from the dashboard's; rendering it through the dashboard guarantees drift. | item ⑧ |
+| **FD-6** | Farmer PII on the report | (a) caller supplies, masked (b) full (c) none | **(a)** — matches the backend's deliberate refusal to read `farm_info` for it. Needs backend D-5 settled. | item ⑧ header |
+| **FD-7** | Peer panel before cohorts warm | (a) render the cold-start state with the count (b) hide entirely | **(a).** "6 of 20 parcels in this zone" is a credible progress signal; hiding it makes the feature look absent rather than pending. | item ⑩ |
+
+None of these block items ②–⑦, so building continues.
+
+---
+
+## Appendix A — validator runs
+
+Reproduce from the dataviz skill directory:
+
+```bash
+node scripts/validate_palette.js "#E24B4A,#EF9F27,#639922,#1D9E75" --mode light --surface "#F5F2EB"
+node scripts/validate_palette.js "#B93A28,#E5A614,#6B9418,#00734F" --mode light --surface "#F5F2EB"
+node scripts/validate_palette.js "#2a78d6,#eb6834,#1baf7a" --mode light --surface "#F5F2EB" --pairs all
+node scripts/validate_palette.js "#8AB24F,#67A03C,#468526,#2D6A1E,#194E16" --mode light --surface "#F5F2EB" --ordinal
+```
+
+| Palette | Result |
+|---|---|
+| Risk bands, current | **FAILED** — normal-vision ΔE 8.8 |
+| Risk bands, proposed | **ALL PASS** — CVD 10.2, normal 15.2, one contrast WARN (relief: labels) |
+| Categorical trio | **ALL PASS** all-pairs — CVD 9.2, normal 24.0, two contrast WARNs |
+| Vegetation ordinal chips | **ALL PASS** — monotone L, gaps ≥ 0.06, light end 2.19:1, hue spread 15° |
+
+Every set must be re-run against `#F5F2EB` after any token change. A palette validated on white is not validated for this app.
+
+## Appendix B — measurement commands
+
+```bash
+cd frontend/app
+grep -ro 'var(--bg'    --include=*.tsx . | wc -l    # 0
+grep -ro '#E4DFD4'     --include=*.tsx . | wc -l    # 155
+grep -ro '#F5F2EB'     --include=*.tsx . | wc -l    # 87
+grep -ro 'text-stone-[0-9]*' --include=*.tsx . | wc -l   # 483
+grep -ro 'text-\[1[01]px\]'  --include=*.tsx . | wc -l   # 141
+grep -ro 'aria-'       --include=*.tsx . | wc -l    # 12
+for k in land_cover parcel_viability data_sufficiency crop_verification \
+         driver_captions footprint score_history; do
+  echo "$k: $(grep -rl "$k" --include=*.ts --include=*.tsx . | wc -l)"   # all 0
+done
+```

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import type { FarmAssessment } from '../../types/assessment';
 import { plotKeyOf } from '../../lib/plotKey';
 import { formatScoreWhole } from '../../lib/formatRisk';
-import { riskBgClass } from '../../lib/format';
+import { bandForRiskCategory, bandChipStyle } from '../../lib/kbsScore';
 
 export type StreamRowStatus = 'pending' | 'analyzing' | 'scored' | 'skipped' | 'failed';
 
@@ -136,9 +136,8 @@ export function StreamingFarmList({
                   <>
                     {a.risk_category && (
                       <span
-                        className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold border ${riskBgClass(
-                          a.risk_category
-                        )}`}
+                        className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold border"
+                        style={bandChipStyle(bandForRiskCategory(a.risk_category))}
                       >
                         {a.risk_category}
                       </span>

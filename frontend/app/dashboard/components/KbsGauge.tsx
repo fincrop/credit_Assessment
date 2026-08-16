@@ -80,17 +80,17 @@ export function KbsGauge({
                 x={p.x}
                 y={p.y}
                 textAnchor="middle"
-                className="fill-stone-500"
-                style={{ fontSize: compact ? 8 : 9, fontWeight: 600 }}
+                className="fill-stone-700"
+                style={{ fontSize: compact ? 9 : 10, fontWeight: 600 }}
               >
                 <tspan x={p.x} dy="0">
                   {b.name}
                 </tspan>
                 <tspan
                   x={p.x}
-                  dy={compact ? 9 : 11}
-                  style={{ fontWeight: 500, fontSize: compact ? 7 : 8 }}
-                  className="fill-stone-400"
+                  dy={compact ? 10 : 12}
+                  style={{ fontWeight: 500, fontSize: compact ? 8 : 9 }}
+                  className="fill-stone-500"
                 >
                   {b.min}–{b.max}
                 </tspan>
@@ -126,8 +126,8 @@ export function KbsGauge({
           x={polar(0, r - 28).x}
           y={cy + 14}
           textAnchor="middle"
-          className="fill-stone-400"
-          style={{ fontSize: 9 }}
+          className="fill-stone-500"
+          style={{ fontSize: 10 }}
         >
           300
         </text>
@@ -135,8 +135,8 @@ export function KbsGauge({
           x={polar(1, r - 28).x}
           y={cy + 14}
           textAnchor="middle"
-          className="fill-stone-400"
-          style={{ fontSize: 9 }}
+          className="fill-stone-500"
+          style={{ fontSize: 10 }}
         >
           900
         </text>
@@ -152,7 +152,7 @@ export function KbsGauge({
           <>
             <p
               className={`${compact ? 'text-3xl' : 'text-4xl'} font-bold font-mono tabular-nums tracking-tight leading-none`}
-              style={{ color: band?.color || '#1c1917' }}
+              style={{ color: band?.ink || '#1c1917' }}
             >
               {score}
             </p>

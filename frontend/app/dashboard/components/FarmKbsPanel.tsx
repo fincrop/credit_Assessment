@@ -10,8 +10,8 @@ import {
 import {
   toKbsScore,
   kbsBandForScore,
-  riskPillClass,
-  subScoreBarColor,
+  bandChipStyle,
+  scoreColor,
   bandCardSurface,
   KBS_MAX,
 } from '../../lib/kbsScore';
@@ -74,15 +74,14 @@ export function FarmKbsPanel({
           />
           <p
             className="text-[10px] font-bold uppercase tracking-wider"
-            style={{ color: surface.accent }}
+            style={{ color: surface.ink }}
           >
             Overall risk
           </p>
           {band && (
             <span
-              className={`inline-flex self-start items-center px-2.5 py-1 rounded-full text-xs font-bold border shadow-sm ${riskPillClass(
-                band.riskLabel
-              )}`}
+              className="inline-flex self-start items-center px-2.5 py-1 rounded-full text-xs font-bold border shadow-sm"
+              style={bandChipStyle(band)}
             >
               {band.riskLabel} risk
             </span>
@@ -91,7 +90,7 @@ export function FarmKbsPanel({
             <div>
               <p
                 className="text-2xl font-bold font-mono tabular-nums leading-none"
-                style={{ color: surface.accent }}
+                style={{ color: surface.ink }}
               >
                 {kbs}
                 <span className="text-sm font-semibold text-stone-500 ml-1">/ {KBS_MAX}</span>
@@ -135,11 +134,11 @@ export function FarmKbsPanel({
                 <div className="h-1 bg-[#E8E4DB] rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full"
-                    style={{ width: `${pct}%`, background: subScoreBarColor(pct) }}
+                    style={{ width: `${pct}%`, background: scoreColor(pct) }}
                   />
                 </div>
                 {w != null && (
-                  <p className="text-[9px] text-stone-400">weight {formatScoreOne(w)}%</p>
+                  <p className="text-[10px] text-stone-500">weight {formatScoreOne(w)}%</p>
                 )}
               </div>
             );

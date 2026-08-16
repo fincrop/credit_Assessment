@@ -15,11 +15,6 @@ export function formatPct(n: unknown): string {
   return `${x.toFixed(1)}%`;
 }
 
-export function formatRupees(n: number | undefined | null): string {
-  if (!n) return '₹—';
-  return `₹${n.toLocaleString('en-IN')}`;
-}
-
 export function humanizeKey(key: string): string {
   const map: Record<string, string> = {
     crop_detection: 'Crop detection',
@@ -40,20 +35,12 @@ export function humanizeKey(key: string): string {
   );
 }
 
-export function riskColor(risk: string | undefined): string {
-  const r = (risk || '').toUpperCase();
-  if (r === 'LOW') return 'text-emerald-400';
-  if (r === 'MEDIUM') return 'text-amber-400';
-  if (r === 'HIGH') return 'text-orange-400';
-  if (r.includes('VERY')) return 'text-red-400';
-  return 'text-stone-500';
-}
-
-export function riskBgClass(risk: string | undefined): string {
-  const r = (risk || '').toUpperCase();
-  if (r === 'LOW') return 'bg-emerald-50 text-emerald-800 border-emerald-200';
-  if (r === 'MEDIUM') return 'bg-amber-50 text-amber-900 border-amber-200';
-  if (r === 'HIGH') return 'bg-orange-50 text-orange-800 border-orange-200';
-  if (r.includes('VERY')) return 'bg-red-50 text-red-800 border-red-200';
-  return 'bg-stone-100 text-stone-600 border-stone-200';
-}
+/*
+ * `riskColor` / `riskBgClass` / `formatRupees` were removed here.
+ *
+ * The first two were a third and fourth score→colour ramp that disagreed with
+ * the KBS bands and with each other. Risk categories now resolve through
+ * `bandForRiskCategory` + `bandChipStyle` in `lib/kbsScore.ts`, so a risk pill
+ * and the gauge can never show different colours for the same verdict.
+ * `formatRupees` had no callers — the pipeline emits no ₹ figures by design.
+ */

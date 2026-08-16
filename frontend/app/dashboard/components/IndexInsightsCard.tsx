@@ -43,13 +43,13 @@ export function IndexInsightsCard({
           </p>
           <p
             className="font-bold text-stone-900 text-lg font-mono"
-            style={{ color: band?.color }}
+            style={{ color: band?.ink }}
           >
             {kbs != null ? `${kbs}` : '—'}
-            <span className="text-xs font-semibold text-stone-400 ml-1">/ {KBS_MAX}</span>
+            <span className="text-xs font-semibold text-stone-500 ml-1">/ {KBS_MAX}</span>
           </p>
           {band && (
-            <p className="text-[11px] mt-1 font-medium" style={{ color: band.color }}>
+            <p className="text-[11px] mt-1 font-medium" style={{ color: band.ink }}>
               {band.name}
             </p>
           )}

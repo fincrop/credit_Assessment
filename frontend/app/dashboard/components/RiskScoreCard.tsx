@@ -11,8 +11,8 @@ import {
 import {
   toKbsScore,
   kbsBandForScore,
-  riskPillClass,
-  subScoreBarColor,
+  bandChipStyle,
+  scoreColor,
   bandCardSurface,
   KBS_MAX,
 } from '../../lib/kbsScore';
@@ -212,16 +212,15 @@ export function RiskScoreCard({
               />
               <p
                 className="text-[10px] font-bold uppercase tracking-wider"
-                style={{ color: riskSurface.accent }}
+                style={{ color: riskSurface.ink }}
               >
                 Overall risk
               </p>
               {band ? (
                 <>
                   <span
-                    className={`inline-flex self-start items-center px-2.5 py-1 rounded-full text-xs font-bold border shadow-sm ${riskPillClass(
-                      band.riskLabel
-                    )}`}
+                    className="inline-flex self-start items-center px-2.5 py-1 rounded-full text-xs font-bold border shadow-sm"
+                    style={bandChipStyle(band)}
                   >
                     {band.riskLabel} risk
                   </span>
@@ -229,7 +228,7 @@ export function RiskScoreCard({
                     <div className="pt-0.5">
                       <p
                         className="text-2xl font-bold font-mono tabular-nums leading-none tracking-tight"
-                        style={{ color: riskSurface.accent }}
+                        style={{ color: riskSurface.ink }}
                       >
                         {kbs}
                         <span className="text-sm font-semibold text-stone-500 ml-1">
@@ -273,7 +272,7 @@ export function RiskScoreCard({
                 const v = view.subIndices[k] ?? 0;
                 const w = weights[k];
                 const pct = Math.max(0, Math.min(100, v));
-                const bar = subScoreBarColor(pct);
+                const bar = scoreColor(pct);
                 return (
                   <div
                     key={k}
@@ -297,7 +296,7 @@ export function RiskScoreCard({
                       />
                     </div>
                     {w != null && (
-                      <p className="text-[9px] text-stone-400 leading-none">
+                      <p className="text-[10px] text-stone-500 leading-none">
                         weight {formatScoreOne(w)}%
                       </p>
                     )}
