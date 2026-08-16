@@ -452,7 +452,18 @@ class SatelliteDataCollector:
             'field_area_ha': field_area,
             'geospatial_prep': geospatial_prep,
             'satellite_provider': 'stac',
-            'cloud_mask_version': 'scl_qa60_v1',
+            # HONEST LABEL. This path requests only B02/B03/B04/B05/B06/B08/B11
+            # (see _download_bands) — it fetches neither SCL nor QA60, so there
+            # is NO per-pixel cloud mask here at all. Scene selection uses the
+            # item-level eo:cloud_cover property only, which says nothing about
+            # whether the parcel itself was clear. It previously claimed
+            # 'scl_qa60_v1', which is the GEE path's mask, not this one.
+            'cloud_mask_version': 'scene_level_cloud_cover_only',
+            'cloud_mask_note': (
+                'STAC path: no per-pixel cloud mask. Scenes are filtered on '
+                'item-level eo:cloud_cover; residual cloud over the parcel is '
+                'not removed. Prefer the GEE path where mask quality matters.'
+            ),
             'continuous_data': {
                 'scenes': processed_scenes,
                 'dates': dates,
@@ -819,16 +830,41 @@ class SatelliteDataCollector:
                     vals.append(cls._safe_float((s.get("indices") or {}).get(f"{nm}_mean", np.nan)))
             return np.array(vals, dtype=float)
 
-        # Backbone fallback: if kNDVI wasn't computed (older backend), use NDVI.
+        # Normalisation mode. "fixed_range" maps each index against its physical
+        # bounds, so the same reflectance always yields the same VS value and an
+        # absolute threshold means the same thing on every parcel. The legacy
+        # "per_parcel_minmax" mode rescaled each series over its own extremes,
+        # which guaranteed every parcel spanned ~0-1 regardless of whether
+        # anything was growing on it. See PipelineConfig.SIGNAL_VERSION.
+        norm_mode = str(getattr(P, "SIGNAL_NORMALIZATION", "fixed_range"))
+        ranges = dict(getattr(P, "INDEX_PHYSICAL_RANGES", {}) or {})
+
         comp_terms: Dict[str, np.ndarray] = {}
         avail_weights: Dict[str, float] = {}
         for nm, w in weights.items():
             arr = _idx_series(nm)
-            if nm == backbone and backbone == "kNDVI" and np.isfinite(arr).sum() == 0:
+            # Backbone fallback for older backends that did not compute the
+            # configured backbone index.
+            if nm == backbone and np.isfinite(arr).sum() == 0 and nm != "NDVI":
                 arr = _idx_series("NDVI")
-            if np.isfinite(arr).sum() > 0:
+                nm_range = "NDVI"
+            else:
+                nm_range = nm
+            if np.isfinite(arr).sum() == 0:
+                continue
+
+            if norm_mode == "fixed_range" and nm_range in ranges:
+                lo, hi = ranges[nm_range]
+                comp_terms[nm] = DataProcessor.normalize_fixed_range(arr, lo, hi)
+            else:
+                if norm_mode == "fixed_range":
+                    logger.warning(
+                        "No physical range configured for %s — falling back to "
+                        "per-parcel min-max for this term, which is not "
+                        "cross-parcel comparable.", nm_range,
+                    )
                 comp_terms[nm] = DataProcessor.normalize_to_range(arr, 0.0, 1.0)
-                avail_weights[nm] = float(w)
+            avail_weights[nm] = float(w)
 
         vs_optical = np.full(n, np.nan, dtype=float)
         if comp_terms:
@@ -843,14 +879,38 @@ class SatelliteDataCollector:
                     vs_optical[i] = num / den
 
         # Per-bin optical quality (fusion weight + Data-Confidence input).
+        #
+        # valid_pixel_fraction is the fraction of AOI pixels that survived
+        # masking. Previously this argument was handed `1.0 if the mean is
+        # finite else 0.0` — a binary flag, not a fraction — so a bin where 3 of
+        # 400 pixels survived scored identically to a fully clear one. Since
+        # this feeds the confidence gate, it systematically overstated how much
+        # was actually seen.
+        #
+        # Where the backend reports a real fraction we use it. Where it does not
+        # (currently the GEE path, which uses bestEffort and returns no pixel
+        # count), we apply an explicit, documented discount rather than assuming
+        # the scene was perfect — an unknown must not read as a best case.
+        unknown_vpf = float(getattr(P, "BIN_QUALITY_UNKNOWN_VPF", 0.85))
+        n_vpf_known = 0
         quality = np.zeros(n, dtype=float)
         for i, s in enumerate(scenes):
             if s.get("missing"):
                 continue
             cc = cls._safe_float(s.get("cloud_cover"))
             cloud_prob = (cc / 100.0) if np.isfinite(cc) else None
+
+            reported = cls._safe_float(s.get("valid_pixel_fraction"))
+            if np.isfinite(reported):
+                vpf = float(np.clip(reported, 0.0, 1.0))
+                n_vpf_known += 1
+            elif np.isfinite(vs_optical[i]):
+                vpf = unknown_vpf
+            else:
+                vpf = 0.0
+
             quality[i] = DataProcessor.bin_quality(
-                valid_pixel_fraction=(1.0 if np.isfinite(vs_optical[i]) else 0.0),
+                valid_pixel_fraction=vpf,
                 cloud_prob=cloud_prob,
                 parcel_area_ha=field_area_ha,
                 min_area_ha=float(getattr(P, "BIN_QUALITY_MIN_AREA_HA", 0.20)),
@@ -910,7 +970,22 @@ class SatelliteDataCollector:
             "sar_fallback_fraction": round(src_counts.get("sar", 0) / max(n, 1), 3),
             "mean_bin_quality": round(float(np.mean(quality)), 3),
             "smoother": getattr(P, "SIGNAL_SMOOTHER", "whittaker"),
-            "backbone": backbone,
+            # Report the backbone actually used, and the signal definition, so a
+            # stored score can be traced to how its signal was built.
+            "backbone": backbone if backbone in comp_terms else (
+                next(iter(comp_terms), None)
+            ),
+            "backbone_configured": backbone,
+            "normalization": norm_mode,
+            "signal_version": getattr(P, "SIGNAL_VERSION", "unknown"),
+            "composite_terms": sorted(comp_terms.keys()),
+            # How much of mean_bin_quality rests on a measured valid-pixel
+            # fraction rather than the assumed default. 0.0 means every bin used
+            # the assumption — the quality figure is then an estimate, not a
+            # measurement, and consumers should say so.
+            "valid_pixel_fraction_known_bins": n_vpf_known,
+            "valid_pixel_fraction_known_ratio": round(n_vpf_known / max(n, 1), 3),
+            "valid_pixel_fraction_assumed": unknown_vpf,
         }
         return continuous_data
 

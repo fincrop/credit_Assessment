@@ -280,7 +280,18 @@ class DataProcessor:
         target_min: float = 0.0,
         target_max: float = 1.0
     ) -> np.ndarray:
-        """Min-max normalize values to a target range."""
+        """
+        Min-max normalize values to a target range, using the series' OWN extremes.
+
+        ⚠ NOT suitable for building a cross-parcel comparable signal. Because the
+        bounds come from the data, every input series is stretched to span the
+        full target range regardless of its actual magnitude — a barren plot
+        oscillating between 0.02 and 0.05 comes out looking identical to a
+        thriving double-cropped field. Use ``normalize_fixed_range`` for anything
+        that will be compared between parcels or against an absolute threshold.
+
+        Retained for legacy/diagnostic use only.
+        """
         v_min = np.nanmin(values)
         v_max = np.nanmax(values)
 
@@ -291,6 +302,41 @@ class DataProcessor:
         normalized = normalized * (target_max - target_min) + target_min
 
         return normalized
+
+    @staticmethod
+    def normalize_fixed_range(
+        values: np.ndarray,
+        lo: float,
+        hi: float,
+        clip: bool = True,
+    ) -> np.ndarray:
+        """
+        Normalize to [0, 1] against FIXED physical bounds, not the data's own.
+
+        This is what makes a vegetation signal comparable across parcels: the
+        same reflectance always maps to the same output value, so an absolute
+        threshold ("this looks like a crop canopy") means the same thing
+        everywhere.
+
+        Values outside [lo, hi] are clipped rather than dropped — an NDVI of
+        -0.4 over open water is a real observation, and clamping it to 0 says
+        "no vegetation", which is correct. NaN propagates as NaN.
+
+        Args:
+            values: raw index series (may contain NaN)
+            lo, hi: physical bounds for this index (see PipelineConfig.INDEX_PHYSICAL_RANGES)
+            clip:   clamp to [0, 1]; disable only for diagnostics
+        """
+        span = float(hi) - float(lo)
+        if span <= 0:
+            raise ValueError(f"normalize_fixed_range: invalid bounds lo={lo} hi={hi}")
+
+        out = (np.asarray(values, dtype=float) - float(lo)) / span
+        if clip:
+            # np.clip preserves NaN, which is what we want — a missing
+            # observation must stay missing, not become 0.0.
+            out = np.clip(out, 0.0, 1.0)
+        return out
 
     @staticmethod
     def calculate_coefficient_of_variation(

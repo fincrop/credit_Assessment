@@ -201,9 +201,58 @@ class PipelineConfig:
     ENABLE_INDEX_GCVI = True
     ENABLE_INDEX_KNDVI = True
 
-    SIGNAL_COMPOSITE_BACKBONE = "kNDVI"
-    SIGNAL_COMPOSITE_WEIGHTS = {"kNDVI": 0.50, "EVI": 0.30, "NDMI": 0.20}
+    # ── Vegetation signal (VS) construction ─────────────────────────────
+    #
+    # SIGNAL_VERSION is stamped onto every assessment. Bump it whenever the
+    # normalisation, backbone or weights change, so a stored score can always be
+    # traced to the signal definition that produced it.
+    #
+    # v2 (2026-08) changed two things from v1:
+    #
+    #   1. Normalisation: per-parcel min-max -> FIXED physical ranges.
+    #      v1 rescaled each index over the parcel's own 3-year extremes, so every
+    #      parcel — fertile, barren or paved — produced a series spanning ~0 to 1.
+    #      Absolute thresholds applied to that are meaningless, `peak_cvi` was not
+    #      comparable between farms, and noise on dead ground was stretched into
+    #      apparent crop cycles.
+    #
+    #   2. Backbone: kNDVI -> NDVI.
+    #      kNDVI = tanh(NDVI^2) discards the SIGN of NDVI: open water at -0.30 and
+    #      sparse crop at +0.30 both map to 0.0876. Carrying that at weight 0.50
+    #      made the detection signal unable to distinguish water from vegetation.
+    #      kNDVI is still computed and stored — it is a fine vigor index — it is
+    #      just not the discrimination backbone.
+    SIGNAL_VERSION = "signal_v2_fixed_range"
+    SIGNAL_NORMALIZATION = "fixed_range"      # "fixed_range" | "per_parcel_minmax" (legacy)
+    SIGNAL_COMPOSITE_BACKBONE = "NDVI"
+    SIGNAL_COMPOSITE_WEIGHTS = {"NDVI": 0.50, "EVI": 0.30, "NDMI": 0.20}
     YIELD_POTENTIAL_INDEX = "NIRv"
+
+    # Physical bounds used by the fixed-range normaliser, as (lo, hi).
+    #
+    # These are the established value ranges each index takes over land, not
+    # tuned parameters — chosen so the endpoints correspond to recognisable
+    # ground conditions rather than to anything in our data:
+    #   NDVI  -0.20 open water / non-vegetated .. 0.90 dense closed canopy
+    #   EVI   -0.10 .. 0.80  (EVI runs lower than NDVI at the top of the range)
+    #   NDMI  -0.50 dry/bare .. 0.60 high canopy moisture
+    #   kNDVI  0.00 .. 0.76  (= tanh(1); retained for completeness, not in the
+    #                         default blend)
+    # Values outside a range are clipped, which is meaningful: NDVI -0.4 over
+    # water clamps to 0.0, i.e. "no vegetation".
+    INDEX_PHYSICAL_RANGES = {
+        "NDVI":   (-0.20, 0.90),
+        "EVI":    (-0.10, 0.80),
+        "NDMI":   (-0.50, 0.60),
+        "kNDVI":  (0.00, 0.76),
+        "NIRv":   (0.00, 0.45),
+        "LSWI":   (-0.50, 0.60),
+        "MSAVI2": (-0.20, 0.90),
+        "GCVI":   (0.00, 8.00),
+        "NDRE":   (-0.20, 0.70),
+        "PSRI":   (-0.20, 0.40),
+        "NDWI":   (-1.00, 1.00),
+    }
 
     SIGNAL_SMOOTHER = "whittaker"  # "whittaker" | "savgol"
     WHITTAKER_LAMBDA = 8.0
@@ -218,6 +267,12 @@ class PipelineConfig:
 
     BIN_QUALITY_MIN_AREA_HA = 0.20
     BIN_MIN_VALID_PIXEL_RATIO = 0.20
+    # Assumed valid-pixel fraction when the imagery backend does not report one
+    # (the GEE path uses bestEffort and returns no pixel count). Deliberately
+    # below 1.0: treating an unknown as a perfect observation inflates the
+    # confidence gate. signal_quality_summary records how many bins used this
+    # assumption vs a measured value.
+    BIN_QUALITY_UNKNOWN_VPF = 0.85
 
     SAR_ENABLED = True
     SAR_COLLECTION = "COPERNICUS/S1_GRD"
@@ -235,6 +290,12 @@ class PipelineConfig:
     # ========================================================================
     # PILLAR 2 — phenology engine
     # ========================================================================
+    # Double-logistic phenology refinement. Set False (or env PHENO_FIT_DISABLE=1)
+    # where the platform's LAPACK build is unreliable — curve_fit can abort the
+    # process at the native level, which no Python except can catch, and losing
+    # the whole assessment to an optional refinement step is not an acceptable
+    # trade. Cycles still carry walked sowing/harvest dates when this is off.
+    PHENO_FIT_ENABLED = True
     PHENO_AMP_FRACTION = 0.20
     PHENO_FIT_MIN_R2 = 0.60
     PHENO_PREMONSOON_LOW = 0.30
@@ -278,9 +339,51 @@ class PipelineConfig:
     # Irrigated triple-crop (e.g. Rabi veg -> Zaid maize -> Kharif rice) needs
     # shorter per-cycle caps than sugarcane-style defaults; the old 420d max let
     # harvest "last resort" pick a trough months later and merge real cycles.
-    CROP_CYCLE_MIN_NDVI_RISE = 0.10
-    CROP_CYCLE_MIN_BASELINE_CVI = 0.30
-    CROP_CYCLE_MIN_PEAK_CVI = 0.28
+    # ── Thresholds on the VS scale (see SIGNAL_VERSION) ──────────────────
+    #
+    # These operate on the composite vegetation signal, NOT on raw NDVI. With
+    # signal_v2's fixed-range normalisation the scale is physically meaningful
+    # and identical on every parcel; representative surfaces map as follows
+    # (NDVI shown for orientation):
+    #
+    #     open water            NDVI -0.30   VS 0.16
+    #     concrete / rooftop    NDVI  0.05   VS 0.23
+    #     dry bare soil         NDVI  0.12   VS 0.29
+    #     moist / just-sown     NDVI  0.18   VS 0.36
+    #     early vegetative      NDVI  0.32   VS 0.46
+    #     mid vegetative        NDVI  0.45   VS 0.57
+    #     full crop canopy      NDVI  0.72   VS 0.79
+    #     dense forest          NDVI  0.85   VS 0.91
+    #
+    # ⚠ Under signal_v1 these numbers meant something entirely different: the
+    # signal was rescaled to each parcel's own extremes, so VS was a within-plot
+    # rank, not a canopy measure. The v1 values (baseline 0.30, peak 0.28) were
+    # also INVERTED — the "returned to bare soil" floor sat ABOVE the "this is a
+    # peak" floor, so any peak in [0.28, 0.30) terminated its own sow/harvest
+    # walk immediately and was then rejected on duration.
+    #
+    # Do not retune these without re-checking them against the table above.
+
+    # Rise from sowing baseline to peak required to call it a cycle.
+    # 0.15 ~ bare soil (0.29) -> early vegetative (0.46): a canopy actually formed.
+    CROP_CYCLE_MIN_NDVI_RISE = 0.15
+    # "Back to bare ground" level, used to walk back to sowing and forward to
+    # harvest. Set just above dry bare soil so a harvested field crosses it.
+    CROP_CYCLE_MIN_BASELINE_CVI = 0.35
+    # Minimum peak for a cycle to count as a crop. Just under mid-vegetative:
+    # below this the parcel never developed a canopy worth calling a crop.
+    CROP_CYCLE_MIN_PEAK_CVI = 0.55
+    # Rise threshold on the VS scale. Previously READ BUT NEVER DEFINED, so the
+    # detector silently fell back to max(0.08, MIN_NDVI_RISE * 0.88).
+    CROP_CYCLE_MIN_CVI_RISE = 0.15
+    # Hard floors for the relaxation passes. When too few cycles are found the
+    # detector re-runs with looser gates; these bound how loose it may get.
+    # The peak floor sits at early-vegetative (VS 0.46) — below that we would be
+    # calling bare soil (0.29) or a rooftop (0.23) a crop peak, which is exactly
+    # the over-detection the relaxation passes are prone to. Relaxation may make
+    # us miss a marginal crop; it must never invent one.
+    CROP_CYCLE_RELAXED_PEAK_FLOOR = 0.46
+    CROP_CYCLE_RELAXED_RISE_FLOOR = 0.10
     CROP_CYCLE_MIN_DURATION_DAYS = 40
     # Raise to 360+ only for long-duration crops (e.g. sugarcane) on the same field.
     CROP_CYCLE_MAX_DURATION_DAYS = 195

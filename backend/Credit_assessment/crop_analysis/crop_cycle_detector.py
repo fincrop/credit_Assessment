@@ -43,6 +43,19 @@ except Exception:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 
+def _pheno_fit_enabled() -> bool:
+    """
+    Whether double-logistic phenology refinement should run.
+
+    Kill switch for environments where the underlying LAPACK routines are
+    unreliable. Env var wins so it can be flipped without a redeploy.
+    """
+    import os as _os
+    if _os.environ.get("PHENO_FIT_DISABLE", "").strip().lower() in ("1", "true", "yes"):
+        return False
+    return bool(getattr(PipelineConfig, "PHENO_FIT_ENABLED", True))
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSTANTS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -89,6 +102,17 @@ class CropCycle:
     confidence:         float = 0.0
     cloud_gap_days:     int   = 0
     has_cloud_gap:      bool  = False
+    # Observation provenance for this cycle.
+    #
+    # Cloud gaps are gap-filled before detection, and the long-gap filler
+    # synthesises a hat-shaped peak when the signal is declining afterwards.
+    # That reconstruction is often the right call — but a cycle whose PEAK sits
+    # on a reconstructed bin is an inference, not an observation, and nothing
+    # downstream could previously tell the two apart.
+    peak_observed:      bool  = True
+    observed_fraction:  float = 1.0
+    n_observed_bins:    int   = 0
+    n_bins:             int   = 0
     # Season
     season_label:       str   = ""
     season_type:        str   = ""
@@ -119,6 +143,11 @@ class CropCycle:
             'confidence':         round(self.confidence, 1),
             'cloud_gap_days':     self.cloud_gap_days,
             'has_cloud_gap':      self.has_cloud_gap,
+            # Observation provenance — see the dataclass fields.
+            'peak_observed':      self.peak_observed,
+            'observed_fraction':  round(self.observed_fraction, 3),
+            'n_observed_bins':    self.n_observed_bins,
+            'n_bins':             self.n_bins,
             'activity_number':    self.activity_number,
             'phenology':          self.phenology or {},
         }
@@ -283,6 +312,7 @@ class CropCycleDetector:
         crop_hint: Optional[str]            = None,
         agro_profile: Optional[Dict]        = None,
         composite_values: Optional[List[float]] = None,
+        composite_smooth_values: Optional[List[float]] = None,
         **kwargs: Any,
     ) -> List[CropCycle]:
         """
@@ -354,9 +384,24 @@ class CropCycleDetector:
         else:
             comp_values = [np.nan] * n
 
+        # Pre-smoothed composite (Whittaker, from the collector). Preferred over
+        # re-smoothing here: Whittaker preserves the shape of short cycles that a
+        # broad moving average erases.
+        if (
+            composite_smooth_values is not None
+            and len(composite_smooth_values) == n
+            and any(v is not None for v in composite_smooth_values)
+        ):
+            comp_smooth_values = [
+                np.nan if v is None else float(v) for v in composite_smooth_values
+            ]
+        else:
+            comp_smooth_values = None
+
         # 3. Sort by date
+        _smooth_in = comp_smooth_values if comp_smooth_values is not None else [np.nan] * n
         paired   = sorted(
-            zip(dt_dates, ndvi_values, evi_values, ndmi_values, comp_values),
+            zip(dt_dates, ndvi_values, evi_values, ndmi_values, comp_values, _smooth_in),
             key=lambda x: x[0],
         )
         dt_dates = [p[0] for p in paired]
@@ -364,6 +409,10 @@ class CropCycleDetector:
         evi_arr  = np.array([p[2] for p in paired], dtype=float)
         ndmi_arr = np.array([p[3] for p in paired], dtype=float)
         comp_arr = np.array([p[4] for p in paired], dtype=float)
+        comp_smooth_arr = (
+            np.array([p[5] for p in paired], dtype=float)
+            if comp_smooth_values is not None else None
+        )
 
         logger.info(
             "Detecting crop cycles from %d observations  %s → %s",
@@ -397,7 +446,25 @@ class CropCycleDetector:
         min_days  = int(getattr(P, "CROP_CYCLE_MIN_DURATION_DAYS", self.MIN_DAYS))
         max_days  = int(getattr(P, "CROP_CYCLE_MAX_DURATION_DAYS", self.MAX_DAYS))
         max_after = int(getattr(P, "CROP_CYCLE_MAX_DAYS_AFTER_PEAK", 135))
+        # NOTE: harvest_ndvi is on the RAW NDVI scale (compared against
+        # ndvi_smooth), unlike low_cvi/peak_cvi which are on the VS scale.
         harvest_ndvi = float(getattr(P, "CROP_CYCLE_HARVEST_LOW_NDVI", 0.36))
+        # Floors for the relaxation passes below. Bound how far the gates may be
+        # loosened when too few cycles are found — relaxation may miss a marginal
+        # crop, but must never let bare soil or a rooftop qualify as a peak.
+        relaxed_peak_floor = float(getattr(P, "CROP_CYCLE_RELAXED_PEAK_FLOOR", 0.46))
+        relaxed_rise_floor = float(getattr(P, "CROP_CYCLE_RELAXED_RISE_FLOOR", 0.10))
+
+        # Sanity: the "returned to bare ground" level must sit BELOW the "this is
+        # a peak" level. If they invert, every sow/harvest walk terminates
+        # immediately and cycles are rejected on duration instead — which is what
+        # signal_v1 did (baseline 0.30 > peak 0.28).
+        if low_cvi >= peak_cvi:
+            logger.error(
+                "Cycle thresholds inverted: baseline %.3f >= peak %.3f. "
+                "Detection will under-report. Check PipelineConfig.",
+                low_cvi, peak_cvi,
+            )
 
         # Pillar 2: crop-family long-duration branch. A declared long-duration
         # crop (sugarcane/banana/…) raises the duration + harvest-scan caps so a
@@ -441,7 +508,20 @@ class CropCycleDetector:
         # else the internal CVI blend. Peak/sow/harvest logic is unchanged.
         signal_source_used = "cvi_ndvi_evi_ndmi"
         cvi = None
-        if np.isfinite(comp_arr).any():
+        cvi_smooth = None
+
+        # Preferred: the Whittaker-smoothed composite from the collector. It is
+        # already gap-filled and shape-preserving, so re-applying a broad moving
+        # average here would only blur it — and that blurring is what removed
+        # short-duration crops (Bajra ~85d, Cabbage ~80d) from detection.
+        if comp_smooth_arr is not None and np.isfinite(comp_smooth_arr).any():
+            reg_cs = self._regularise_single(dt_dates, comp_smooth_arr, reg_dates, step)
+            if reg_cs is not None and len(reg_cs) == len(reg_dates):
+                cvi_smooth = np.clip(reg_cs, 0.0, 1.0)
+                cvi = cvi_smooth
+                signal_source_used = "composite_vs_whittaker"
+
+        if cvi is None and np.isfinite(comp_arr).any():
             reg_comp = self._regularise_single(dt_dates, comp_arr, reg_dates, step)
             if reg_comp is not None and len(reg_comp) == len(reg_dates):
                 cvi = np.clip(reg_comp, 0.0, 1.0)
@@ -449,8 +529,25 @@ class CropCycleDetector:
         if cvi is None:
             cvi = self._build_cvi(reg_ndvi, reg_evi, reg_ndmi)
 
-        cvi_smooth  = self._smooth(cvi,      window=7)
+        if cvi_smooth is None:
+            cvi_smooth = self._smooth(cvi, window=7)
         ndvi_smooth = self._smooth(reg_ndvi, window=7)
+
+        # Which grid bins carry a real observation, before any gap filling?
+        # Built from the raw (pre-imputation) NDVI snapped onto the same grid, so
+        # a bin is "observed" only if an actual scene landed in it. Used to mark
+        # cycles whose peak was reconstructed rather than seen.
+        try:
+            obs_offsets = np.array(
+                [(d - dt_dates[0]).days for d in dt_dates], dtype=float
+            )
+            snapped = self._snap_to_grid(
+                obs_offsets, ndvi_arr, len(reg_dates), step
+            )
+            observed_mask = np.isfinite(snapped)
+        except Exception as e:  # never let provenance bookkeeping break detection
+            logger.debug("observed-bin mask unavailable: %s", e)
+            observed_mask = np.ones(len(reg_dates), dtype=bool)
 
         def run_pass(p_floor: float, r_floor: float) -> Tuple[List[CropCycle], int]:
             hits = {'count': 0}
@@ -467,6 +564,7 @@ class CropCycleDetector:
                 harvest_ndvi_low=harvest_ndvi,
                 sowing_hint=sow_hint_dt,
                 sow_bias_hits=hits,
+                observed_mask=observed_mask,
             )
             return out, int(hits.get('count', 0))
 
@@ -477,7 +575,10 @@ class CropCycleDetector:
             getattr(P, "CROP_CYCLE_ADAPTIVE_SECOND_PASS", True)
             and len(cycles) < max(1, int(np.ceil(years_span * 0.65)))
         ):
-            c2, bias2 = run_pass(max(0.22, peak_cvi - 0.05), max(0.07, min_rise - 0.02))
+            c2, bias2 = run_pass(
+                max(relaxed_peak_floor, peak_cvi - 0.05),
+                max(relaxed_rise_floor, min_rise - 0.02),
+            )
             if len(c2) > len(cycles):
                 cycles, sow_bias_n = c2, bias2
                 self.last_detection_meta["adaptive_pass"] = "second"
@@ -488,7 +589,10 @@ class CropCycleDetector:
             and len(cycles) < max(2, expected)
         ):
             scale = float(getattr(P, "CROP_CYCLE_DENSITY_PEAK_PROMINENCE_SCALE", 0.58))
-            c3, bias3 = run_pass(max(0.20, peak_cvi * scale), max(0.065, min_rise - 0.035))
+            c3, bias3 = run_pass(
+                max(relaxed_peak_floor, peak_cvi * scale),
+                max(relaxed_rise_floor, min_rise - 0.035),
+            )
             if len(c3) > len(cycles):
                 cycles, sow_bias_n = c3, bias3
                 self.last_detection_meta["density_pass"] = True
@@ -601,6 +705,7 @@ class CropCycleDetector:
         harvest_ndvi_low: float,
         sowing_hint: Optional[datetime] = None,
         sow_bias_hits: Optional[Dict[str, int]] = None,
+        observed_mask: Optional[np.ndarray] = None,
     ) -> List[CropCycle]:
         """
         For each prominent CVI peak:
@@ -689,10 +794,32 @@ class CropCycleDetector:
                              peak_idx, duration, min_days, max_days)
                 continue
 
+            # Cloud gaps OVERLAPPING the cycle, not merely contained in it.
+            # The containment test previously used here excluded any gap that
+            # straddled the sowing date — which in India is the single most
+            # common case (monsoon onset). So has_cloud_gap read False on
+            # exactly the cycles that most needed flagging.
+            c_start, c_end = reg_dates[sow_idx], reg_dates[harv_idx]
             cycle_gaps     = [g for g in cloud_gaps
-                              if g.start_date >= reg_dates[sow_idx]
-                              and g.end_date   <= reg_dates[harv_idx]]
+                              if g.start_date <= c_end and g.end_date >= c_start]
             cloud_gap_days = sum(g.gap_days for g in cycle_gaps)
+
+            # Observation provenance over the cycle window.
+            if observed_mask is not None and len(observed_mask) == n:
+                seg_mask = observed_mask[sow_idx: harv_idx + 1]
+                n_obs = int(np.count_nonzero(seg_mask))
+                n_win = int(len(seg_mask))
+                peak_observed = bool(observed_mask[peak_idx])
+            else:
+                n_obs = n_win = int(harv_idx - sow_idx + 1)
+                peak_observed = True
+
+            if not peak_observed:
+                logger.info(
+                    "  Cycle peaking %s sits on a RECONSTRUCTED bin "
+                    "(%d/%d bins observed) — flagged as inferred.",
+                    reg_dates[peak_idx].strftime('%Y-%m-%d'), n_obs, n_win,
+                )
 
             ndvi_seg    = reg_ndvi[sow_idx: harv_idx + 1]
             day_offsets = np.array(
@@ -718,6 +845,10 @@ class CropCycleDetector:
                 confidence          = self._confidence(ndvi_seg, duration, peak_cvi_v, cloud_gap_days),
                 cloud_gap_days      = cloud_gap_days,
                 has_cloud_gap       = len(cycle_gaps) > 0,
+                peak_observed       = peak_observed,
+                observed_fraction   = (n_obs / n_win) if n_win else 0.0,
+                n_observed_bins     = n_obs,
+                n_bins              = n_win,
             ))
             used_up_to = harv_idx
 
@@ -1107,8 +1238,20 @@ class CropCycleDetector:
 
     @classmethod
     def _fit_double_logistic(cls, t: np.ndarray, y: np.ndarray):
-        """Fit the double-logistic to one cycle window. Returns (params, r2) or (None, None)."""
-        if not _SCIPY_OPT:
+        """
+        Fit the double-logistic to one cycle window. Returns (params, r2) or (None, None).
+
+        Can be disabled via PHENO_FIT_ENABLED / env PHENO_FIT_DISABLE=1.
+
+        WHY that switch exists: curve_fit descends into LAPACK, and a broken or
+        mismatched BLAS/LAPACK build can abort the process at the native level
+        (observed: Windows 0xc06d007f inside dgelsd) — which no Python `except`
+        can catch. Phenology refinement is an enhancement, not a prerequisite
+        for scoring, so it must be possible to turn off without losing the
+        assessment. Cycles still get walked SOS/EOS dates; only the fitted
+        refinement is skipped.
+        """
+        if not _SCIPY_OPT or not _pheno_fit_enabled():
             return None, None
         t = np.asarray(t, dtype=float)
         y = np.asarray(y, dtype=float)
@@ -1124,7 +1267,11 @@ class CropCycleDetector:
         ub = [1.0, 1.6, t[-1], 2.0, t[-1] + span, 2.0]
         try:
             popt, _ = _curve_fit(cls._double_logistic, t, y, p0=p0, bounds=(lb, ub), maxfev=10000)
-        except Exception:
+        except BaseException as e:
+            # Broad on purpose: a fit that cannot converge, overflows, or trips a
+            # linear-algebra error must degrade to "no refinement", never
+            # propagate out of an optional enrichment step.
+            logger.debug("double-logistic fit failed (%s): %s", type(e).__name__, e)
             return None, None
         yhat = cls._double_logistic(t, *popt)
         ss_res = float(np.sum((y - yhat) ** 2))

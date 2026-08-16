@@ -777,6 +777,12 @@ class SatelliteBasedCreditPipeline:
                     'sowing_date_hint': sowing_date,
                     'crop_hint': crop_hint,
                     'agro_profile': eco_profile,
+                    # The Whittaker-smoothed composite. It was already being
+                    # computed and stored, and then read by nothing — the
+                    # detector re-derived its own signal from the UNSMOOTHED
+                    # VS_mean and applied a 70-day moving average, which
+                    # flattens any crop shorter than about 90 days.
+                    'composite_smooth_values': continuous_data.get('vs_smooth'),
                 }
                 _sig = inspect.signature(_detect)
                 _params = _sig.parameters
