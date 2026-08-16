@@ -46,6 +46,7 @@ from api.job_runner import (
     reap_stuck_running_jobs,
     utc_now,
 )
+from api.report_payload import build_report_payload
 from api.serialization import slim_assessment_for_api
 from config import resolve_package_path
 
@@ -554,6 +555,72 @@ async def assess_farmer_get(
 ) -> Dict[str, Any]:
     body = AssessRequest(farmer_id=farmer_id, include_heavy=include_heavy)
     return await _run_assessment(body)
+
+
+@app.get("/v1/report/{farmer_id}")
+async def farmer_report(
+    farmer_id: str,
+    plot_key: Optional[str] = None,
+    _: None = Depends(verify_service_key),
+) -> Dict[str, Any]:
+    """
+    Report data for a farmer's most recent assessment.
+
+    Reads only — it never triggers a run, so a report can never be a different
+    number from the assessment it claims to describe.
+
+    Returns the assembled contract plus a `sections_present` map, so a renderer
+    can tell "we have no data for this yet" apart from "this pipeline does not
+    produce that". Panels in the supplied design with nothing real behind them
+    (suggested action, district median, reviewer) are listed under `omitted`
+    with the reason.
+
+    Farmer identity is NOT included: the masking policy is unsettled, so the
+    caller supplies it from whatever it is already authorised to display.
+    """
+    def _read() -> Dict[str, Any]:
+        from mongodb_helper import MongoDBHelper
+
+        db = MongoDBHelper()
+        try:
+            assessment = db.get_latest_assessment(farmer_id)
+            if not assessment:
+                return {}
+            return {
+                "assessment": assessment,
+                "evidence": db.get_latest_evidence(farmer_id, plot_key),
+                "score_history": db.get_score_history(farmer_id, plot_key),
+            }
+        finally:
+            db.close()
+
+    try:
+        bundle = await asyncio.to_thread(_read)
+    except Exception as exc:
+        logger.exception("report read failed for %s", farmer_id)
+        raise HTTPException(status_code=503, detail=f"report unavailable: {exc}")
+
+    if not bundle:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No assessment stored for farmer_id={farmer_id}",
+        )
+
+    payload = build_report_payload(
+        bundle["assessment"],
+        evidence=bundle.get("evidence"),
+        score_history=bundle.get("score_history"),
+    )
+    payload["sections_present"] = {
+        "score": payload["score"]["kbs"] is not None,
+        "trend": payload["trend"] is not None,
+        "sub_indices": bool(payload["sub_indices"]),
+        "ndvi_trajectory": payload["ndvi_trajectory"] is not None,
+        "land_cover": payload["land_cover"] is not None,
+        "crop_verification": payload["crop_verification"] is not None,
+        "narrative": bool(payload["narrative"]["text"]),
+    }
+    return {"success": True, "report": payload}
 
 
 # Alias for load balancers that probe /

@@ -349,7 +349,7 @@ class AssessmentSchema:
             explainability = ai.get('explainability_mongo') or ai.get('explainability')
             counterfactuals = ai.get('counterfactuals_mongo') or ai.get('counterfactuals')
             doc['ai_enrichment'] = AssessmentSchema._build_ai_enrichment(
-                explainability, counterfactuals
+                explainability, counterfactuals, ai_block=ai
             )
 
         doc['saved_at'] = datetime.utcnow()
@@ -611,8 +611,36 @@ class AssessmentSchema:
     def _build_ai_enrichment(
         explainability: Optional[Dict],
         counterfactuals: Optional[Dict],
+        ai_block: Optional[Dict] = None,
     ) -> Dict:
         out: Dict = {}
+
+        # ── Narrative + provenance ───────────────────────────────────────
+        # These were NOT persisted: english_narrative, translated_narrative,
+        # translation_language and model_snapshot existed only on the live HTTP
+        # response. So any prose shown to a loan officer vanished when the
+        # request ended — unreproducible and unauditable — and the prompt hash
+        # captured specifically to make it reproducible was discarded with it.
+        #
+        # A lender needs to be able to ask "what were they told, and by which
+        # model?" months later.
+        if isinstance(ai_block, dict):
+            narrative = ai_block.get('english_narrative')
+            if narrative:
+                out['english_narrative'] = str(narrative)[:6000]
+                out['narrative_source'] = ai_block.get('narrative_source')
+            translated = ai_block.get('translated_narrative')
+            if translated:
+                out['translated_narrative'] = str(translated)[:6000]
+                out['translation_language'] = ai_block.get('translation_language')
+            # Which model produced it, and a hash of the exact prompt.
+            snapshot = ai_block.get('model_snapshot')
+            if isinstance(snapshot, dict) and snapshot:
+                out['model_snapshot'] = snapshot
+            for key in ('groq_used', 'groq_skipped_reason'):
+                if ai_block.get(key) is not None:
+                    out[key] = ai_block.get(key)
+
         if isinstance(explainability, dict):
             out['explainability'] = {
                 'method': explainability.get('method'),

@@ -35,6 +35,8 @@ import numpy as np
 
 from config import PipelineConfig
 
+from .driver_captions import build_driver_captions
+
 try:
     from utils.farmer_benefits import normalize_farmer_benefits, truthy_benefit_flag
     _BENEFITS_HELPERS = True
@@ -174,6 +176,17 @@ class RiskIndexEngine:
             "benefits": benefits,
             "weak_sub_indices": weak,
             "reason_codes": reason_codes,
+            # One grounded sentence per sub-index, built from the inputs above.
+            # Deterministic on purpose: an LLM asked to write these would
+            # produce fluent sentences containing invented figures.
+            "driver_captions": build_driver_captions({
+                "sub_indices": sub,
+                "confidence_gate": round(gate, 3),
+                "footprint": {
+                    "geometry_source": geometry_source or None,
+                    "geometry_substituted": geometry_substituted,
+                },
+            }),
             # Explicitly NOT a loan amount / repayment-calibrated score.
             "positioning": "agronomic_risk_index",
             "no_repayment_calibration": True,
