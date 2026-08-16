@@ -586,22 +586,15 @@ class SatelliteDataCollector:
                     "date": b0.strftime("%Y-%m-%d"),
                     "missing": False,
                     "cloud_cover": stats.get("cloud_cover"),
-                    "indices": {
-                        "NDVI_mean": stats.get("NDVI_mean", np.nan),
-                        "NDVI_std": stats.get("NDVI_std", np.nan),
-                        "NDVI_p90": stats.get("NDVI_p90", np.nan),
-                        "EVI_mean": stats.get("EVI_mean", np.nan),
-                        "NDMI_mean": stats.get("NDMI_mean", np.nan),
-                        "PSRI_mean": stats.get("PSRI_mean", np.nan),
-                        "NDRE_mean": stats.get("NDRE_mean", np.nan),
-                        "NDWI_mean": stats.get("NDWI_mean", np.nan),
-                        # Pillar 1 additions
-                        "MSAVI2_mean": stats.get("MSAVI2_mean", np.nan),
-                        "NIRv_mean": stats.get("NIRv_mean", np.nan),
-                        "LSWI_mean": stats.get("LSWI_mean", np.nan),
-                        "GCVI_mean": stats.get("GCVI_mean", np.nan),
-                        "kNDVI_mean": stats.get("kNDVI_mean", np.nan),
-                    },
+                    # Driven by INDEX_KEYS rather than a hand-written list.
+                    #
+                    # This WAS a hand-written list, and it silently dropped every
+                    # index added after it — NDBI, BSI and MNDWI were computed
+                    # server-side, transferred, and then discarded here, so the
+                    # land-cover gate ran on NDVI+NDWI alone and reported
+                    # "BSI p50: None". A copy that enumerates keys is a copy that
+                    # goes stale; there is now one source of truth.
+                    "indices": {k: stats.get(k, np.nan) for k in self.INDEX_KEYS},
                     "bands_available": ["B02", "B03", "B04", "B05", "B06", "B08", "B11"],
                     "acquisition_date": stats.get("date"),
                 }

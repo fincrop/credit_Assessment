@@ -76,9 +76,11 @@ def main() -> int:
 
     print("Collecting satellite series (this pulls imagery)...\n")
     geometry = pipeline._convert_geometry_from_db(farm.get("geometry"))
-    satellite = pipeline.satellite_collector.collect_continuous_data(
-        centroid_lat=lat, centroid_lon=lon,
-        field_area=farm.get("field_area_ha"), geometry=geometry,
+    satellite = pipeline.satellite_collector.collect_historical_data(
+        latitude=lat,
+        longitude=lon,
+        field_area_ha=farm.get("field_area_ha"),
+        geometry=geometry,
     )
     continuous = (satellite or {}).get("continuous_data") or {}
 

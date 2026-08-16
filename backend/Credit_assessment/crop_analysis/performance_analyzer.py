@@ -299,23 +299,35 @@ class CropPerformanceAnalyzer:
             avg_yield  = float(np.mean([p['yield_potential_score'] for p in performance_scores]))
             avg_perf   = float(np.mean([p['overall_performance']   for p in performance_scores]))
         else:
-            avg_health = avg_yield = avg_perf = 50.0
+            # No cycles scored at all: there is NO performance evidence.
+            #
+            # This returned a neutral 50.0, which reads downstream as "an
+            # average farm" rather than "we observed nothing growing here" —
+            # and RiskIndexEngine's no-evidence floor was bypassed because the
+            # key was present with a plausible value. Rule P-1: absent is not
+            # average. None forces the consumer to decide explicitly.
+            avg_health = avg_yield = avg_perf = None
+
+        def _fmt_score(v):
+            return "n/a (no cycles scored)" if v is None else f"{v:.1f}"
 
         logger.info("\nPerformance summary:")
         logger.info("  Complete cycles scored: %d", len(complete))
         logger.info("  Active cycles:          %d", len(active))
-        logger.info("  Average Health Score:   %.1f/100", avg_health)
-        logger.info("  Average Yield Proxy:    %.1f%%", avg_yield)
-        logger.info("  Overall:                %.1f/100", avg_perf)
+        logger.info("  Average Health Score:   %s", _fmt_score(avg_health))
+        logger.info("  Average Yield Proxy:    %s", _fmt_score(avg_yield))
+        logger.info("  Overall:                %s", _fmt_score(avg_perf))
 
         crop_family = self._infer_crop_family_band(season_results, performance_scores)
 
         return {
             'seasonal_performance':      performance_scores,
-            'average_health_score':      round(avg_health, 1),
-            'average_yield_score':       round(avg_yield,  1),
-            'average_yield_proxy':       round(avg_yield,  1),
-            'average_performance_score': round(avg_perf,   1),
+            # None when nothing was scored — see the branch above. Consumers
+            # must treat None as "no evidence", never coerce it to a midpoint.
+            'average_health_score':      None if avg_health is None else round(avg_health, 1),
+            'average_yield_score':       None if avg_yield  is None else round(avg_yield,  1),
+            'average_yield_proxy':       None if avg_yield  is None else round(avg_yield,  1),
+            'average_performance_score': None if avg_perf   is None else round(avg_perf,   1),
             'n_seasons_analyzed':        len(performance_scores),
             'n_complete_cycles':         len(complete),
             'n_active_cycles':           len(active),
