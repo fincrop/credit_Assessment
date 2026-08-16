@@ -143,3 +143,53 @@ def test_working_farm_is_unharmed_by_these_changes():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# ── footprint provenance ──────────────────────────────────────────────────
+
+def _score_with_geometry(geometry_source):
+    seasons = [
+        {"season": f"cycle_{i}", "yield_potential_score": 70.0, "n_scenes": 12,
+         "yield_detail": {"peak_cvi": 0.70}, "anomaly_events": []}
+        for i in range(1, 4)
+    ]
+    return RiskIndexEngine().score({
+        "cropping_analysis": {"total_seasons_analyzed": 6, "seasons_with_crops": 3,
+                              "fallow_fraction": 0.2, "lookback_years": 3.0},
+        "performance_analysis": {"seasonal_performance": seasons,
+                                 "n_complete_cycles": 3},
+        "weather_analysis": WEATHER,
+        "signal_quality_summary": QUALITY,
+        "geospatial_prep": {"geometry_source": geometry_source},
+        "lookback_years": 3.0,
+    })
+
+
+def test_a_substituted_footprint_discounts_confidence():
+    """
+    Geometry QA failure is non-fatal: the collector substitutes a circular
+    buffer, so the score may describe land NEAR the parcel rather than the
+    parcel. Observed on a real farm — ~7 ha of surrounding fields standing in
+    for a 0.45 ha holding. Such a score must not read as confidently as one
+    measured over the real boundary.
+    """
+    real = _score_with_geometry("polygon")
+    substituted = _score_with_geometry("polygon_rejected_fallback_point")
+    assert substituted["confidence_gate"] < real["confidence_gate"]
+    assert substituted["index_score"] < real["index_score"]
+
+
+def test_the_footprint_is_recorded_either_way():
+    real = _score_with_geometry("polygon")
+    substituted = _score_with_geometry("point")
+    assert real["footprint"]["geometry_substituted"] is False
+    assert real["footprint"]["note"] is None
+    assert substituted["footprint"]["geometry_substituted"] is True
+    assert "re-draw" in substituted["footprint"]["note"]
+
+
+def test_a_substituted_footprint_still_produces_a_score():
+    """Refusing outright would deny a farmer over a data-entry problem."""
+    v = _score_with_geometry("polygon_rejected_fallback_point")
+    assert v["index_score"] > 0
+    assert v["risk_category"]

@@ -101,6 +101,36 @@ class RiskIndexEngine:
 
         # Data-Confidence GATE (multiplicative).
         gate = dc["gate"]
+
+        # Footprint provenance.
+        #
+        # When a polygon fails geometry QA the collector silently substitutes a
+        # circular buffer around the centroid, so the whole assessment may
+        # describe land NEAR the parcel rather than the parcel. Observed on
+        # farmer 14322905350: QA failed on an area ratio of 3.21 and a 0.15 km
+        # buffer was used instead — roughly 7 ha of surrounding fields standing
+        # in for a 0.45 ha holding.
+        #
+        # The land-cover gate already refuses to REJECT on substituted geometry,
+        # but a SCORE built on one carried no mark at all. A number measured
+        # over the wrong footprint must not read as confidently as one measured
+        # over the right one.
+        geo_prep = assessment.get("geospatial_prep") or {}
+        geometry_source = str(geo_prep.get("geometry_source") or "")
+        geometry_substituted = bool(
+            geometry_source and geometry_source != "polygon"
+        )
+        if geometry_substituted:
+            penalty = float(
+                getattr(PipelineConfig, "GEOMETRY_SUBSTITUTED_GATE_PENALTY", 0.85)
+            )
+            gate = round(gate * penalty, 3)
+            logger.warning(
+                "Score computed over a SUBSTITUTED footprint (%s) — confidence "
+                "gate discounted to %.3f. The boundary should be re-drawn "
+                "before this score is relied on.", geometry_source, gate,
+            )
+
         index_score = round(_clip(raw_index * gate), 1)
 
         risk_category = self._classify(index_score)
@@ -129,6 +159,18 @@ class RiskIndexEngine:
             "sub_indices": sub,
             "weights": w,
             "confidence_gate": round(gate, 3),
+            # What footprint this score was measured over. A consumer must be
+            # able to tell a score about the farmer's parcel from a score about
+            # the land around it.
+            "footprint": {
+                "geometry_source": geometry_source or None,
+                "geometry_substituted": geometry_substituted,
+                "note": (
+                    "Measured over a substituted footprint, not the supplied "
+                    "boundary — re-draw the boundary before relying on this score."
+                    if geometry_substituted else None
+                ),
+            },
             "benefits": benefits,
             "weak_sub_indices": weak,
             "reason_codes": reason_codes,

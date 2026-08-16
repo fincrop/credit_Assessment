@@ -391,6 +391,16 @@ class PipelineConfig:
     PARCEL_AREA_RATIO_MIN = 0.8
     PARCEL_AREA_RATIO_MAX = 1.25
 
+    # Confidence-gate discount when the score was measured over a SUBSTITUTED
+    # footprint. Geometry QA failure is non-fatal: the collector falls back to a
+    # circular buffer around the centroid, so the assessment may describe land
+    # near the parcel rather than the parcel. Observed on a real farm — QA
+    # failed on an area ratio of 3.21 and ~7 ha of surrounding fields stood in
+    # for a 0.45 ha holding. The score is still produced (refusing would deny a
+    # farmer over a data-entry problem) but must not read as confidently as one
+    # measured over the real boundary.
+    GEOMETRY_SUBSTITUTED_GATE_PENALTY = 0.85
+
     # ── Data sufficiency ─────────────────────────────────────────────────
     # Can we make any claim about this parcel? See assessment/data_sufficiency.py.
     #
