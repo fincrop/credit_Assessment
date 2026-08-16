@@ -441,8 +441,16 @@ class SatelliteBasedCreditPipeline:
         farmer_benefits_override: Optional[Dict] = None,
         enable_crop_classification: bool = False,
         force_fresh_satellite: bool = False,
+        save_to_db: bool = True,
     ) -> Dict:
-        """Fetch farm from MongoDB, run full assessment, save result."""
+        """
+        Fetch farm from MongoDB, run the full assessment, and (by default) save.
+
+        save_to_db=False runs read-only. Needed by diagnostics such as the score
+        drift report, which must not write into the very collection it is
+        measuring against — a re-run that persisted would become its own
+        baseline on the next pass.
+        """
         farmer_id = (farmer_id or "").strip()
         if not farmer_id:
             return self._failed_assessment_shell('', 'farmer_id is required')
@@ -488,7 +496,7 @@ class SatelliteBasedCreditPipeline:
                 'state_lgd_code': farm.get('state_lgd_code'),
                 'district_lgd_code': farm.get('district_lgd_code'),
             },
-            save_to_db=True,
+            save_to_db=save_to_db,
             enable_crop_classification=enable_crop_classification,
             force_fresh_satellite=force_fresh_satellite,
         )
