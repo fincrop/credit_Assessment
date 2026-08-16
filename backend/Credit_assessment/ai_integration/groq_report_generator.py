@@ -67,8 +67,21 @@ def _risk_view(assessment: Dict) -> Dict:
     }
 
 _GROQ_API_URL    = "https://api.groq.com/openai/v1/chat/completions"
-_REQUEST_TIMEOUT = 30
-_MAX_RETRIES     = 2   # retry on transient 429/5xx before falling back
+
+
+def _env_int(name: str, default: int, lo: int, hi: int) -> int:
+    """Read a bounded integer from the environment, falling back on junk input."""
+    try:
+        return max(lo, min(hi, int(os.environ.get(name, "").strip() or default)))
+    except (TypeError, ValueError):
+        return default
+
+
+# Narrative generation is a synchronous, blocking step inside the assessment, so
+# these bound how long a degraded Groq endpoint can stall a job. Defaults give a
+# worst case of ~20*2 + 1.5 ≈ 42s; previously 30*3 + 4.5 ≈ 95s.
+_REQUEST_TIMEOUT = _env_int("GROQ_TIMEOUT", 20, 5, 120)
+_MAX_RETRIES     = _env_int("GROQ_MAX_RETRIES", 1, 0, 5)
 
 
 class GroqReportGenerator:
@@ -337,14 +350,26 @@ loan officer to combine with their own financial checks.
 
 The index is built from FIVE decoupled sub-indices (each 0-100):
 - landuse: Land-Use & Activity (cropping intensity, cycles/yr, continuity) -> Capacity
-- vigor: Vigor & Yield-Potential (peer-relative NIRv-based potential) -> Capacity/Character
+- vigor: Vigor & Yield-Potential (NIRv-based canopy potential) -> Capacity/Character
 - stability: Stability & Stress (anomaly load, year-to-year consistency) -> Character
 - weather: two-directional (backward resilience under past adverse weather + forward exposure) -> Conditions
 - data_confidence: a META gate (0.6-1.0) that scales the raw index down when cloud gaps / short \
 history reduce certainty. Always mention it if the gate is below ~0.9.
 
 Also provided: reason_codes (positive/negative/caveat), season types (kharif/rabi/zaid), per-cycle \
-phenology (double-logistic fit), peer benchmarking, and weather resilience/exposure.
+phenology (double-logistic fit), and weather resilience/exposure.
+
+GROUNDING RULES — these override everything else:
+- Use ONLY numbers present in the JSON payload. Never compute, estimate, interpolate or invent a \
+figure, and never state a number the payload does not contain.
+- Do NOT describe the farmer as above, below or comparable to peers, neighbours, the district or \
+any benchmark UNLESS the payload contains peer_benchmarking with a non-null percentile. The vigor \
+sub-index is normally an absolute, self-calibrated score — not a peer comparison.
+- If a value is absent, say it is not available. Never fill a gap with a plausible value.
+- Do not state or imply a loan amount, limit, interest rate, EMI, tenure, or an approve/reject \
+decision.
+- Do not predict future yield, income, or repayment.
+- If the crop name is marked declared/unverified, describe it as farmer-declared, not as observed.
 
 Write a concise professional report for an Indian loan officer:
 1. RISK SUMMARY (2 lines): index score /100, risk category, and the confidence-gate caveat if applicable.

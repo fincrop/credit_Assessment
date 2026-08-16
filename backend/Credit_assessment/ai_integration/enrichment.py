@@ -111,14 +111,25 @@ def enrich_assessment_with_ai(assessment: Dict[str, Any]) -> bool:
             gen = GroqReportGenerator()
             prompt = gen._build_prompt(assessment)
             narrative = gen.generate(assessment)
-            block["english_narrative"] = narrative
-            block["narrative_source"] = "groq"
-            block["groq_used"] = True
-            model_snapshot["groq"] = {
-                "model": getattr(gen, "model", None) or gcfg.get("model"),
-                "prompt_hash": _prompt_hash(prompt),
-            }
-            did = True
+
+            if getattr(gen, "dry_run", False):
+                # In dry-run mode generate() returns the prompt itself. Storing
+                # that as english_narrative with groq_used=True made a dry run
+                # indistinguishable from a real report everywhere downstream.
+                # Fall through to the deterministic narrative instead.
+                block["groq_used"] = False
+                block["groq_skipped_reason"] = "dry_run"
+                block["groq_dry_run_prompt"] = narrative
+                logger.info("Groq DRY RUN — prompt captured, narrative not used")
+            else:
+                block["english_narrative"] = narrative
+                block["narrative_source"] = "groq"
+                block["groq_used"] = True
+                model_snapshot["groq"] = {
+                    "model": getattr(gen, "model", None) or gcfg.get("model"),
+                    "prompt_hash": _prompt_hash(prompt),
+                }
+                did = True
         except Exception as e:
             logger.warning("Groq narrative skipped: %s", e)
             block["groq_used"] = False

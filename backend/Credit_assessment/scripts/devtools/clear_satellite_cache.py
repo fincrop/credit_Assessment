@@ -1,52 +1,44 @@
 #!/usr/bin/env python3
 """
-Script to clear satellite data cache for a specific farmer or all farmers
+Clear the satellite stats cache for one farmer, or for all farmers.
+
+Usage:
+    python scripts/devtools/clear_satellite_cache.py            # all entries
+    python scripts/devtools/clear_satellite_cache.py FARMER_001 # one farmer
+
+Run from the package root (backend/Credit_assessment).
 """
 
-import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import sys
 
-from mongodb_helper import MongoDBHelper
+# Package root is three levels up from scripts/devtools/
+sys.path.insert(
+    0,
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+)
+
+from mongodb_helper import MongoDBHelper  # noqa: E402
+
 
 def clear_satellite_cache(farmer_id=None):
-    """Clear satellite cache for specific farmer or all farmers"""
-    
-    # Initialize MongoDB connection
+    """Clear satellite cache for a specific farmer, or all farmers."""
+    target = farmer_id or "ALL farmers"
+    print(f"Clearing satellite cache for {target}...")
+
     db = MongoDBHelper()
-    
-    if farmer_id:
-        print(f"Clearing satellite cache for farmer {farmer_id}...")
-        try:
-            result = db.delete_satellite_stats_cache(farmer_id)
-            print(f"Deleted {result.deleted_count} cache entries")
-        except Exception as e:
-            print(f"Error clearing cache for farmer {farmer_id}: {e}")
-            # Try manual deletion
-            try:
-                result = db.satellite_stats_cache.delete_many({'farmer_id': farmer_id})
-                print(f"Manually deleted {result.deleted_count} cache entries")
-            except Exception as e2:
-                print(f"Manual deletion also failed: {e2}")
-    else:
-        print("Clearing all satellite cache...")
-        try:
-            result = db.delete_satellite_stats_cache()
-            print(f"Deleted {result.deleted_count} cache entries")
-        except Exception as e:
-            print(f"Error clearing all cache: {e}")
-            # Try manual deletion
-            try:
-                result = db.satellite_stats_cache.delete_many({})
-                print(f"Manually deleted {result.deleted_count} cache entries")
-            except Exception as e2:
-                print(f"Manual deletion also failed: {e2}")
-    
-    print("Cache clearing completed!")
+    try:
+        deleted = db.delete_satellite_stats_cache(farmer_id)
+        print(f"Deleted {deleted} cache entries.")
+        if farmer_id and deleted == 0:
+            print(
+                f"  (No entries found for '{farmer_id}'. The cache is keyed by "
+                f"an opaque hash and stores the farmer id under "
+                f"metadata.farmer_id — check the id is exact.)"
+            )
+    finally:
+        db.close()
+
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        farmer_id = sys.argv[1]
-        clear_satellite_cache(farmer_id)
-    else:
-        clear_satellite_cache()
+    clear_satellite_cache(sys.argv[1] if len(sys.argv) > 1 else None)

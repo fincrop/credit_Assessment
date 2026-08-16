@@ -51,10 +51,22 @@ class SHAPExplainer:
         self.model           = model
         self.feature_names   = feature_names or []
         self._shap_explainer = None
-        self._shap_available = self._check_shap()
+        # Only probe for the shap package when there is actually a model to
+        # explain. Without a model the SHAP path is unreachable, so importing
+        # shap would be pure downside — see _check_shap for why that matters.
+        self._shap_available = self._check_shap() if model is not None else False
 
     @staticmethod
     def _check_shap() -> bool:
+        """
+        Probe for the `shap` package.
+
+        Guards broadly, not just on ImportError: shap pulls in numba/llvmlite,
+        which can fail at the native level on some platforms (observed: the
+        interpreter aborting outright with no catchable Python exception). An
+        explainability nicety must never be able to take down an assessment
+        worker, so anything that can be caught, is.
+        """
         global _SHAP_IMPORT_OK
         if _SHAP_IMPORT_OK is not None:
             return _SHAP_IMPORT_OK
@@ -68,6 +80,13 @@ class SHAPExplainer:
             logger.debug(
                 "SHAP not installed — using rule-based credit attribution "
                 "(install with: pip install -r requirements.txt)."
+            )
+            return False
+        except BaseException as e:  # native import failure, recursion, etc.
+            _SHAP_IMPORT_OK = False
+            logger.warning(
+                "SHAP import failed (%s: %s) — using rule-based attribution.",
+                type(e).__name__, e,
             )
             return False
 
@@ -264,7 +283,17 @@ class SHAPExplainer:
                 if comp == 'data_confidence':
                     continue
                 w = float(weights.get(comp, 0))
-                contribs[comp] = round((sc - 50.0) / 100.0 * (w / 10.0), 3)
+                # Contribution in INDEX POINTS relative to a neutral all-50
+                # baseline. The index is additive = sum(score_i * weight_i/100),
+                # so a component's displacement from neutral is
+                #   (score_i - 50) * weight_i / 100
+                # and the contributions sum to (raw_index - 50).
+                #
+                # The previous expression divided by a further 10, making every
+                # contribution an order of magnitude too small to reconcile with
+                # base_value=50 — it ranked drivers correctly but could not be
+                # added up, while being presented as an additive decomposition.
+                contribs[comp] = round((sc - 50.0) * w / 100.0, 3)
             total = float(ra.get('index_score', 50))
             weak = ra.get('weak_sub_indices') or []
             gate = ra.get('confidence_gate', 1.0)
@@ -315,7 +344,14 @@ class SHAPExplainer:
         ][:5]
 
         result = {
-            'shap_available':        True,
+            # No SHAP was computed on this path — it is a deterministic weight
+            # attribution over the rule-based sub-indices. Reporting True here
+            # made the heuristic indistinguishable from real Shapley values to
+            # every consumer that did not also inspect `method`.
+            'shap_available':        False,
+            'attribution_available': True,
+            'attribution_is_additive': True,
+            'attribution_units':     'index_points',
             'method':                method,
             'base_value':            50.0,
             'feature_contributions': contribs,

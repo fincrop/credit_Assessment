@@ -61,6 +61,24 @@ class SatelliteDataCollector:
     fixed N-day bins, one STAC pick per bin (or NaN placeholder). Downstream imputes gaps.
     """
 
+    # Canonical per-scene index keys emitted by _calculate_indices (STAC) and the
+    # GEE reducer read-out. This is the single source of truth for the scene
+    # `indices` dict shape — placeholders, consumers and persistence all key off it.
+    # Keep ordered: NDVI stats first, then the remaining optical indices.
+    INDEX_KEYS: Tuple[str, ...] = (
+        'NDVI_mean', 'NDVI_std', 'NDVI_p90',
+        'EVI_mean',
+        'NDMI_mean',
+        'PSRI_mean',
+        'NDRE_mean',
+        'NDWI_mean',
+        'MSAVI2_mean',
+        'NIRv_mean',
+        'kNDVI_mean',
+        'LSWI_mean',
+        'GCVI_mean',
+    )
+
     def __init__(self, verbose: bool = True):
         if not SATELLITE_AVAILABLE and not GEE_AVAILABLE:
             raise ImportError(
@@ -1420,17 +1438,14 @@ class SatelliteDataCollector:
 
     @staticmethod
     def _nan_index_bundle() -> Dict:
-        """Placeholder index dict aligned with _calculate_indices keys."""
-        return {
-            'NDVI_mean': np.nan,
-            'NDVI_std': np.nan,
-            'NDVI_p90': np.nan,
-            'EVI_mean': np.nan,
-            'NDMI_mean': np.nan,
-            'PSRI_mean': np.nan,
-            'NDRE_mean': np.nan,
-            'NDWI_mean': np.nan,
-        }
+        """
+        Placeholder index dict aligned with _calculate_indices keys.
+
+        Must stay in sync with the full key set emitted by _calculate_indices;
+        a missing bin should be shape-identical to a real one so downstream
+        consumers can iterate keys without special-casing gaps.
+        """
+        return {k: np.nan for k in SatelliteDataCollector.INDEX_KEYS}
 
     @staticmethod
     def _missing_scene_placeholder(bin_start: date) -> Dict:

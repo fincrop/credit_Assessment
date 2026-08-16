@@ -263,9 +263,18 @@ class SatelliteBasedCreditPipeline:
 
         - Every cycle detected by CropCycleDetector is represented.
         - ``predicted_crop`` is ``None`` unless ``registry_crop`` is provided
-          (self-reported / registry; unlocks crop-specific Stage 06/07 paths).
+          (self-reported / registry, unverified).
         - ``start_date`` / ``end_date`` / ``duration_days`` are copied verbatim.
         - ``cultivation_signal`` is derived from ``peak_ndvi`` as a proxy.
+        - ``season_type`` / ``season_label`` are carried through from the cycle so
+          downstream consumers can attribute a cycle to kharif/rabi/zaid. The
+          ``season`` field remains the positional ``cycle_N`` id.
+
+        NOTE: this path does NOT unlock the crop-specific Stage 06/07 scoring
+        paths. ``crop_confidence`` is 0.0 here and ``is_crop_reliable`` in
+        performance_analyzer requires >= 0.25, so a registry crop currently sets
+        the label only. Gating a registry crop on observed-phenology consistency
+        is planned (see BACKEND-ENHANCEMENTS.md task 4.4).
         """
 
         def _get(cyc, key: str):
@@ -303,6 +312,8 @@ class SatelliteBasedCreditPipeline:
 
             row = {
                 'season':               f'cycle_{i}',
+                'season_type':          _get(cycle, 'season_type'),
+                'season_label':         _get(cycle, 'season_label'),
                 'year':                 int(start_str[:4]),
                 'start_date':           start_str,
                 'end_date':             end_str,
@@ -1029,9 +1040,31 @@ class SatelliteBasedCreditPipeline:
             assessment['processing_time_seconds'] = (
                 datetime.now() - start_time).total_seconds()
  
+        # Persist FAILED runs too.
+        #
+        # The success-path save above lives inside the try block, after
+        # status='SUCCESS' — so before this, a failed assessment produced no
+        # database record whatsoever and failure history simply did not exist.
+        # That makes "score dropped, why?" unanswerable and hides systematic
+        # breakage (a dead satellite provider looks identical to no demand).
+        if save_to_db and self.use_mongodb and assessment.get('status') == 'FAILED':
+            try:
+                logger.info("Persisting FAILED assessment for audit trail...")
+                self.db.save_assessment(assessment)
+                assessment.setdefault('pipeline_stages', []).append('11_persist_failed')
+            except Exception as persist_err:
+                # Do not mask the original failure with a persistence failure.
+                logger.error(
+                    "Could not persist FAILED assessment for %s: %s",
+                    assessment.get('farmer_id'), persist_err,
+                )
+                assessment.setdefault('errors', []).append(
+                    f"Failed-assessment persist failed: {persist_err}"
+                )
+
         # Cleanup
         gc.collect()
- 
+
         return assessment
  
     # ------------------------------------------------------------------

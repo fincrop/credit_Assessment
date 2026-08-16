@@ -548,9 +548,15 @@ class PipelineConfig:
         # Groq — English report generation
         "groq": {
             "api_key":    _os.environ.get("GROQ_API_KEY"),
-            "model":      _os.environ.get("GROQ_MODEL", "llama-3.1-70b-versatile"),
+            # Keep in sync with ai_integration/groq_report_generator._DEFAULT_MODEL.
+            # This previously defaulted to "llama-3.1-70b-versatile", which Groq
+            # has retired — an operator copying .env.example verbatim got a 404
+            # on every call and silently fell back to the deterministic report.
+            "model":      _os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile"),
             "api_url":    "https://api.groq.com/openai/v1/chat/completions",
             "timeout":    30,
+            # NOTE: the generator reads GROQ_* env vars directly rather than this
+            # block, so max_tokens here is advisory only (it sends 650).
             "max_tokens": 400,
             # Off unless GROQ_ENABLE=1 (avoids calls when no API / dry runs)
             "enabled":    _os.environ.get("GROQ_ENABLE", "").strip().lower()

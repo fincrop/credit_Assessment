@@ -1,11 +1,29 @@
 # Backend Enhancements — index_v5 (Agronomic Risk Index)
 
+> ## ⚠ Read this first — parts of this document describe intent, not shipped behaviour
+>
+> A line-by-line audit (2026-08-15) found several claims below that the code does
+> not implement. Where this document and the code disagree, **the code wins**.
+> Verified discrepancies:
+>
+> | Section | Claims | Actual |
+> |---|---|---|
+> | §4.2 | Signal is Whittaker-smoothed | Whittaker **is** computed and stored as `vs_smooth` — and read by nothing. `VS_mean` is written from the *unsmoothed* array; detection applies a 70-day Bartlett window downstream. |
+> | §4.2 | SAR fusion, Cloud Score+ | Real on the GEE path only. The STAC path fetches **no SCL/QA60 at all** — there is no per-pixel cloud mask — yet still stamps `cloud_mask_version: scl_qa60_v1`. |
+> | §4.3 | Cycles get kharif/rabi/zaid seasons | A label is produced, but two season functions disagree for Feb–Mar, `cross_season` is unreachable, and **no consumer reads `season_type`** — there is no per-season analysis. |
+> | §4.5 | "peer percentile", "peer-relative" | `cohort_stats` has **no writer**, so peer benchmarking permanently cold-starts to the internal fallback. Peer wording has been removed from live output. |
+> | §7 | `feature_store`, `index_versions`, `cohort_stats` are live persistence | `feature_store` and `index_versions` are written but **never read**. `cohort_stats` is never written. |
+> | §5.5 | `shap_available` | The live path computes a deterministic weight attribution, not SHAP. It now correctly reports `shap_available: false` with `attribution_available: true`. |
+>
+> For the current defect register and the phased plan, see
+> **[`BACKEND-ENHANCEMENTS.md`](../../BACKEND-ENHANCEMENTS.md)** at the repo root.
+
 **Audience:** backend maintainers **and** frontend engineers integrating dashboards / reports.  
 **Package root:** `backend/Credit_assessment/`  
 **Contract docs:** `BACKEND-ARCHITECTURE-v5.md`, `INTEGRATION-AND-STATUS.md`  
 **Pipeline version:** `5.0` · **Index version:** `index_v5` · **Profile:** `index_v5`
 
-This document describes what the enhanced backend does stage-by-stage: methods, weights, calculations, input/output schemas, report/enrichment shapes, known gaps, and how the frontend should consume the new payload.
+This document describes the intended v5 design stage-by-stage: methods, weights, calculations, input/output schemas, report/enrichment shapes, known gaps, and how the frontend should consume the new payload.
 
 ---
 
@@ -553,13 +571,13 @@ job: {
 
 ## 7. Persistence & provenance (S9)
 
-| Collection / field | Purpose |
-|--------------------|---------|
-| `credit_assessments` | Slim assessment docs; now also `index_score`, `index_version`, `risk_assessment`, tri-state `govt_benefits` |
-| `feature_store` | Append-only snapshots: `subindex_inputs`, `cohort_key`, `nirv_auc_mean_by_cycle`, scores |
-| `index_versions` | Registered at pipeline startup: `index_v5` + `SUBINDEX_WEIGHTS` |
-| `cohort_stats` | Peer distributions (**writer cron still TODO**) |
-| `jobs` | Queue + progress + slim `result` |
+| Collection / field | Purpose | Actual status |
+|--------------------|---------|---------------|
+| `credit_assessments` | Slim assessment docs; `index_score`, `index_version`, `risk_assessment`, tri-state `govt_benefits` | ✅ written — **but in two incompatible shapes** (single-farm via `AssessmentSchema`, multi-farm inserted raw) |
+| `feature_store` | Append-only snapshots: `subindex_inputs`, `cohort_key`, `nirv_auc_mean_by_cycle`, scores | ⚠ written, **never read by anything** |
+| `index_versions` | Registered at pipeline startup: `index_v5` + `SUBINDEX_WEIGHTS` | ⚠ written, **never read by anything** |
+| `cohort_stats` | Peer distributions | ❌ **no writer exists** — `upsert_cohort_stat` has zero call sites, so peer benchmarking never activates |
+| `jobs` | Queue + progress + slim `result` | ✅ — and in practice the **richest** store in the DB, holding the full payload that `credit_assessments` drops |
 
 Calibration hooks reserved on every `risk_assessment.calibration`: `outcome_label`, `pd_estimate`, `calibration_version` = null until feedback phase.
 

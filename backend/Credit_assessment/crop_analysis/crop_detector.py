@@ -274,6 +274,10 @@ class CropDetector:
         meta: Dict = {
             'cycle_index':          cycle_index,
             'season_label':         '',
+            # kharif / rabi / zaid, carried from the detected cycle. The
+            # 'season' field on a season_results row is the positional cycle id
+            # ('cycle_1', ...) and must never be treated as a season name.
+            'season_type':          None,
             'peak_date':            None,
             'harvest_start_date':   None,
             'harvest_end_date':     None,
@@ -286,6 +290,7 @@ class CropDetector:
         }
         if isinstance(cycle, dict):
             meta['season_label'] = cycle.get('season_label') or ''
+            meta['season_type'] = cycle.get('season_type')
             meta['peak_date'] = self._norm_cycle_date(cycle.get('peak_date'))
             meta['harvest_start_date'] = self._norm_cycle_date(
                 cycle.get('harvest_start_date')
@@ -302,6 +307,7 @@ class CropDetector:
             meta['crop_type_hint'] = cycle.get('crop_type')
         else:
             meta['season_label'] = getattr(cycle, 'season_label', '') or ''
+            meta['season_type'] = getattr(cycle, 'season_type', None)
             meta['peak_date'] = self._norm_cycle_date(getattr(cycle, 'peak_date', None))
             meta['harvest_start_date'] = self._norm_cycle_date(
                 getattr(cycle, 'harvest_start_date', None)

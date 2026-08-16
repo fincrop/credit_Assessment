@@ -199,11 +199,18 @@ class RiskIndexEngine:
         yields = [float(p.get("yield_potential_score")) for p in sp
                   if p.get("yield_potential_score") is not None]
         peaks = []
+        n_peer_scored = 0
         for p in sp:
             yd = p.get("yield_detail", {}) or {}
             pk = yd.get("peak_cvi")
             if pk is not None:
                 peaks.append(float(pk))
+            # Did this cycle's yield score actually come from a peer cohort
+            # comparison, or from the internal self-referential fallback? The
+            # cohort is cold until cohort_stats is populated, so in practice
+            # this is currently 0 — and no output may claim otherwise.
+            if str(yd.get("yield_index_basis") or "") == "peer_nirv":
+                n_peer_scored += 1
         mean_yield = float(np.mean(yields)) if yields else float(pa.get("average_yield_score", 50.0))
         peak_score = _clip(float(np.mean(peaks)) / 0.75 * 100.0) if peaks else mean_yield
         score = _clip(0.70 * mean_yield + 0.30 * peak_score)
@@ -211,7 +218,11 @@ class RiskIndexEngine:
             "score": round(score, 1),
             "inputs": {"mean_yield_potential": round(mean_yield, 1),
                        "mean_peak_cvi": round(float(np.mean(peaks)), 3) if peaks else None,
-                       "n_cycles_scored": len(yields)},
+                       "n_cycles_scored": len(yields),
+                       "n_cycles_peer_scored": n_peer_scored,
+                       # True only when at least one cycle was scored against a
+                       # real peer cohort. Drives the wording of VIGOR_STRONG.
+                       "peer_relative": n_peer_scored > 0},
             "drivers": {"yield_potential": round(mean_yield, 1), "peak_quality": round(peak_score, 1)},
         }
 
@@ -442,7 +453,17 @@ class RiskIndexEngine:
             add("LANDUSE_LOW_ACTIVITY", f"Sparse/irregular cultivation (~{cpi}/yr).", "negative")
 
         if vg["score"] >= 70:
-            add("VIGOR_STRONG", "Vegetation vigor / yield-potential above peers.", "positive")
+            # Only claim a peer comparison when one actually happened. The peer
+            # cohort is cold until cohort_stats is populated, and until then the
+            # vigor sub-index is a self-calibrated absolute score — saying
+            # "above peers" would overstate the evidence to a lender.
+            if vg["inputs"].get("peer_relative"):
+                add("VIGOR_STRONG",
+                    "Vegetation vigor / yield-potential above cohort peers.", "positive")
+            else:
+                add("VIGOR_STRONG",
+                    "Strong vegetation vigor / yield-potential "
+                    "(absolute; no peer cohort available).", "positive")
         elif vg["score"] < 50:
             add("VIGOR_WEAK", "Below-par vigor / yield-potential.", "negative")
 

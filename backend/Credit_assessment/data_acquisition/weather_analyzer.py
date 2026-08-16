@@ -320,6 +320,12 @@ class WeatherAnalyzer:
                 )
                 stats.update({
                     'cycle_id':           cycle_label,
+                    # Carried from the detected cycle so downstream consumers can
+                    # attribute weather to kharif/rabi/zaid. 'season' remains the
+                    # positional cycle id ('cycle_1', ...), which is NOT a season
+                    # name — anything grouping by season must read season_type.
+                    'season_type':        result.get('season_type'),
+                    'season_label':       result.get('season_label'),
                     'crop':               crop or 'Unclassified',
                     'start_date':         start_date,
                     'end_date':           end_date,

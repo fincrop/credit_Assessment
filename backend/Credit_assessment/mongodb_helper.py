@@ -1,78 +1,95 @@
 """
 MongoDB Helper
 ==============
-Database operations for the satellite-based agricultural credit assessment pipeline.
+Database operations for the satellite-based agricultural credit assessment
+pipeline (index_v5).
 
-VERSION 3.0 — Structured schema with analytics queries
+This docstring describes what ``AssessmentSchema.build()`` ACTUALLY writes.
+It previously documented several fields the builder has never emitted
+(``recommended_credit_limit``, ``limit_per_hectare``, ``interest_rate``,
+``repayment_months``, ``collateral_required``, a top-level ``extreme_events``
+array, ``location.field_area_ha``, ``conditions``) — all removed with the v5
+cutover, which produces an agronomic risk index and no repayment calibration.
 
 COLLECTIONS
 ───────────
-farm_info
-    One document per physical farm / farmer.
-    Holds identity, location, geometry, and farmer-benefit flags.
+farm_info               one doc per farmer; identity, geometry, farms[], benefits
+credit_assessments      one doc per pipeline run (see caveat below)
+jobs                    assessment queue; also the de-facto store of the full
+                        payload via jobs.result (see BACKEND-ENHANCEMENTS.md §5.1)
+satellite_stats_cache   TTL'd satellite blobs, keyed by an opaque hash
+weather_power_cache     TTL'd NASA POWER daily series
+feature_store           append-only per-run feature snapshots (written, unread)
+index_versions          registered index versions + weights (written, unread)
+cohort_stats            peer distributions — NO WRITER EXISTS YET, so
+                        PeerBenchmark permanently cold-starts
 
-credit_assessments
-    One document per pipeline run.
-    Structured for quick look-up (top-level credit fields) AND
-    deep analytical queries (seasonal_ndvi, weather events, component scores).
-    Raw satellite pixel/band arrays are excluded to keep docs ≤ 1 MB.
+⚠ TWO SHAPES IN credit_assessments
+   Single-farm runs go through AssessmentSchema.build() (below).
+   Multi-farm runs are inserted RAW by save_multi_farm_assessment() and have a
+   different key set — no top-level credit_score / risk_category, and
+   assessment_date as an ISO string rather than a Date. Analytics aggregations
+   in this module therefore mis-handle multi-plot farmers. Unification is
+   planned; see BACKEND-ENHANCEMENTS.md §5.2 and Phase 5.
 
-SCHEMA (credit_assessments)
-────────────────────────────
+SCHEMA (credit_assessments — single-farm path)
+──────────────────────────────────────────────
 {
-  farmer_id, assessment_date, pipeline_version, status, processing_time_s,
+  farmer_id, assessment_date, pipeline_version, pipeline_profile,
+  status, processing_time_s, pipeline_stages: [str],
+  error, errors: [str], warnings: [str], traceback_head (FAILED runs only),
 
-  location: { latitude, longitude, region, field_area_ha }
+  location: { latitude, longitude, region }
+  field_area_ha                                   ← document ROOT, not location
 
-  credit_score, risk_category,                    ← TOP-LEVEL for fast queries
-  recommended_credit_limit, limit_per_hectare,
-  interest_rate, repayment_months, collateral_required,
+  credit_score, index_score, risk_category, credit_method, index_version,
+  risk_assessment: { ... full RiskIndexEngine output, incl. sub_indices with
+                     inputs/drivers, weights, reason_codes, calibration ... }
 
-  component_scores: { crop_detection, crop_performance, yield_potential,
-                      cropping_intensity, weather_risk, govt_benefits }
+  component_scores: { landuse, vigor, stability, weather, data_confidence }
   weak_components: [str]
 
   cropping_summary: { seasons_with_crops, total_seasons_analyzed,
                       cropping_intensity, dominant_crop, crops_detected,
                       cross_season_events, ndvi_threshold_used, region }
 
-  seasonal_ndvi: [                                ← per-season records
-    { season, year, start_date, end_date,
-      crop_detected, predicted_crop, confidence, is_cross_season,
-      avg_ndvi, peak_ndvi, ndvi_rise, arc_score, frac_above_thresh,
-      health_score, yield_score, n_scenes }
-  ]
+  seasonal_ndvi: [ { season, season_type, year, start_date, end_date,
+                     crop_detected, predicted_crop, confidence,
+                     peak_ndvi, health_score, yield_score, n_scenes,
+                     interval_indices: [ { date, ndvi, evi, ndmi, ndwi, psri,
+                                           ndre, msavi2, nirv, kndvi, lswi,
+                                           gcvi, missing, signal_source,
+                                           bin_quality, cloud_cover } ] } ]
 
-  weather_summary: { total_extreme_events, critical_stage_events,
-                     weather_risk_score, kharif_avg_rainfall_mm,
-                     rabi_avg_rainfall_mm, max_recorded_temp_c,
-                     extreme_event_breakdown }
-
-  extreme_events: [
-    { type, severity, date_or_start, duration_days, value,
-      crop_stage_critical }
-  ]
+  weather_summary:   { total_extreme_events, critical_stage_events,
+                       weather_risk_score, kharif/rabi/zaid_avg_rainfall_mm,
+                       cycles_without_season_attribution,
+                       max_recorded_temp_c, extreme_event_breakdown }
+  weather_intervals: [ { cycle_id, crop, start/end_date, rainfall_total_mm,
+                         temps, weather_risk, events: [...] } ]
 
   performance_summary: { avg_health_score, avg_yield_score,
-                         avg_performance_score, n_seasons_scored }
+                         avg_performance_score, n_seasons_scored,
+                         n_complete_cycles, n_active_cycles }
 
-  govt_benefits: { pm_kisan_enrolled, has_crop_insurance } | null
-  conditions: [str], warnings: [str], errors: [str]
+  govt_benefits: { pm_kisan_enrolled, has_crop_insurance }   ← TRI-STATE.
+      null means "unknown" and is preserved verbatim; it is NOT stripped by
+      _clean_obj. Do not conflate null with false.
+
+  ai_enrichment: { explainability: {...}, counterfactuals: {...} }
+      NOTE: english_narrative / translated_narrative / model_snapshot are NOT
+      persisted here today — they exist only on the live API response.
+
   saved_at: datetime
 }
 
-INDEXES
-───────
-credit_assessments:
-  { farmer_id: 1, assessment_date: -1 }
-  { risk_category: 1 }
-  { credit_score: 1 }
-  { assessment_date: -1 }
-  { location.region: 1, risk_category: 1 }
+NOTE ON _clean_obj
+──────────────────
+Empty values (None / "" / [] / {}) are stripped recursively before insert, so an
+absent key means "not computed" — it does NOT mean zero. The tri-state
+govt_benefits block is explicitly exempted and restored after cleaning.
 
-farm_info:
-  { farmer_id: 1 }  UNIQUE
-  { status: 1 }
+INDEXES — see _ensure_indexes() for the authoritative list.
 """
 
 from __future__ import annotations
@@ -93,7 +110,18 @@ _FARM_COLLECTION       = "farm_info"
 _ASSESSMENT_COLLECTION = "credit_assessments"
 _SAT_CACHE_COLLECTION  = "satellite_stats_cache"
 _WEATHER_CACHE_COLLECTION = "weather_power_cache"
-_PIPELINE_VERSION      = "3.0"
+
+# Fallback only. The pipeline stamps its own version on every assessment; this is
+# used solely when a caller hands us a payload with no version at all. Do NOT
+# hardcode a value here that shadows the real one (was "3.0" while the pipeline
+# ran 5.0, making every stored document mis-attributed).
+_PIPELINE_VERSION_FALLBACK = "unknown"
+
+# Benefit flags are tri-state (True / False / None-meaning-unknown). None is a
+# meaningful value here, so these keys are exempt from the None-stripping in
+# _clean_obj — collapsing "unknown" into "key absent" loses the distinction
+# between "we asked and the answer was no" and "we never asked".
+_TRISTATE_BENEFIT_KEYS = ("pm_kisan_enrolled", "has_crop_insurance")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -192,8 +220,19 @@ class AssessmentSchema:
 
         # ── Identity & metadata ──────────────────────────────────────────
         doc['farmer_id']         = raw.get('farmer_id', 'UNKNOWN')
-        doc['pipeline_version']  = _PIPELINE_VERSION
+        doc['pipeline_version']  = raw.get('pipeline_version') or _PIPELINE_VERSION_FALLBACK
+        doc['pipeline_profile']  = raw.get('pipeline_profile')
         doc['status']            = raw.get('status', 'UNKNOWN')
+
+        # Failure detail. FAILED runs are now persisted (they previously left no
+        # record at all), so the document must carry why it failed — otherwise a
+        # gap in a farmer's history is indistinguishable from a gap in coverage.
+        doc['error']    = raw.get('error')
+        doc['errors']   = raw.get('errors') or []
+        doc['warnings'] = raw.get('warnings') or []
+        if raw.get('status') == 'FAILED':
+            # Truncated: enough to identify the fault, not a full stack dump.
+            doc['traceback_head'] = (raw.get('traceback') or '')[-2000:] or None
         doc['processing_time_s'] = _f(raw.get('processing_time_seconds', 0.0), 1)
         doc['pipeline_stages']   = raw.get('pipeline_stages', [])
 
@@ -308,8 +347,21 @@ class AssessmentSchema:
             )
 
         doc['saved_at'] = datetime.utcnow()
+
+        # Snapshot the tri-state block before cleaning; _clean_obj strips None
+        # recursively and would erase "unknown", which is a real answer here.
+        tristate_benefits = doc.get('govt_benefits')
+
         cleaned = _clean_obj(doc)
-        return cleaned or doc
+        cleaned = cleaned if cleaned is not None else doc
+
+        # Restore the tri-state block verbatim, explicit nulls included.
+        if isinstance(tristate_benefits, dict):
+            cleaned['govt_benefits'] = {
+                k: tristate_benefits.get(k) for k in _TRISTATE_BENEFIT_KEYS
+            }
+
+        return cleaned
 
     # ── Sub-builders ─────────────────────────────────────────────────────
 
@@ -362,14 +414,40 @@ class AssessmentSchema:
         seasonal = wa.get('seasonal_weather', [])
         events   = wa.get('extreme_events', [])
 
+        def _season_of(entry: Dict) -> str:
+            """
+            Resolve a weather entry to kharif/rabi/zaid, or '' when unattributable.
+
+            The previous implementation substring-matched on entry['season'],
+            which in the production (classification-off) path is 'cycle_1',
+            'cycle_2', ... — never containing a season name. Both rainfall
+            averages were therefore permanently null. Prefer the explicit
+            season_type when the upstream cycle provides it; fall back to the
+            label only when it actually names a season.
+            """
+            explicit = str(entry.get('season_type') or '').strip().lower()
+            if explicit in ('kharif', 'rabi', 'zaid'):
+                return explicit
+            label = str(entry.get('season') or '').strip().lower()
+            for name in ('kharif', 'rabi', 'zaid'):
+                if name in label:
+                    return name
+            return ''
+
+        attributed = [(s, _season_of(s)) for s in seasonal]
         kharif_rain = [
-            s['total_rainfall_mm'] for s in seasonal
-            if 'kharif' in s.get('season', '') and 'total_rainfall_mm' in s
+            s['total_rainfall_mm'] for s, sn in attributed
+            if sn == 'kharif' and 'total_rainfall_mm' in s
         ]
         rabi_rain = [
-            s['total_rainfall_mm'] for s in seasonal
-            if 'rabi' in s.get('season', '') and 'total_rainfall_mm' in s
+            s['total_rainfall_mm'] for s, sn in attributed
+            if sn == 'rabi' and 'total_rainfall_mm' in s
         ]
+        zaid_rain = [
+            s['total_rainfall_mm'] for s, sn in attributed
+            if sn == 'zaid' and 'total_rainfall_mm' in s
+        ]
+        n_unattributed = sum(1 for _, sn in attributed if not sn)
         max_temps = [s['max_temp_c'] for s in seasonal if 'max_temp_c' in s]
 
         breakdown: Dict[str, int] = {}
@@ -395,6 +473,11 @@ class AssessmentSchema:
             'weather_data_status':     wa.get('weather_data_status', 'ok'),
             'kharif_avg_rainfall_mm':  _f(sum(kharif_rain) / len(kharif_rain)) if kharif_rain else None,
             'rabi_avg_rainfall_mm':    _f(sum(rabi_rain)   / len(rabi_rain))   if rabi_rain   else None,
+            'zaid_avg_rainfall_mm':    _f(sum(zaid_rain)   / len(zaid_rain))   if zaid_rain   else None,
+            # How many weather cycles could not be attributed to a season at all.
+            # Non-zero means the per-season rainfall figures above cover only
+            # part of the record — they are not a complete seasonal breakdown.
+            'cycles_without_season_attribution': n_unattributed,
             'max_recorded_temp_c':     _f(max(max_temps))                       if max_temps   else None,
             'extreme_event_breakdown': breakdown,
         }
@@ -425,24 +508,49 @@ class AssessmentSchema:
             })
         return compact
 
+    # Persisted per-observation index columns.
+    #   stored_key -> scene indices key emitted by SatelliteDataCollector
+    # Previously this read 'SAVI_mean' and 'GCI_mean', which the collector has
+    # never emitted (it produces MSAVI2_mean / GCVI_mean), so two of the five
+    # stored columns were permanently null.
+    _INTERVAL_INDEX_COLUMNS = (
+        ('ndvi',   'NDVI_mean'),
+        ('ndvi_std', 'NDVI_std'),
+        ('evi',    'EVI_mean'),
+        ('ndmi',   'NDMI_mean'),
+        ('ndwi',   'NDWI_mean'),
+        ('psri',   'PSRI_mean'),
+        ('ndre',   'NDRE_mean'),
+        ('msavi2', 'MSAVI2_mean'),
+        ('nirv',   'NIRv_mean'),
+        ('kndvi',  'kNDVI_mean'),
+        ('lswi',   'LSWI_mean'),
+        ('gcvi',   'GCVI_mean'),
+    )
+
     @staticmethod
     def _extract_interval_indices(scenes: List[Dict]) -> List[Dict]:
+        """
+        Per-observation index values for the cycle window.
+
+        Carries provenance alongside the values: an imputed or SAR-derived bin
+        must not be indistinguishable from a directly observed one downstream.
+        """
         rows: List[Dict] = []
         for s in scenes or []:
             date = s.get('date')
             idx = s.get('indices') or {}
             if not date or not isinstance(idx, dict):
                 continue
-            rows.append(
-                {
-                    'date': str(date)[:10],
-                    'ndvi': _f(idx.get('NDVI_mean')),
-                    'evi': _f(idx.get('EVI_mean')),
-                    'ndmi': _f(idx.get('NDMI_mean')),
-                    'savi': _f(idx.get('SAVI_mean')),
-                    'gci': _f(idx.get('GCI_mean')),
-                }
-            )
+            row: Dict = {'date': str(date)[:10]}
+            for stored_key, scene_key in AssessmentSchema._INTERVAL_INDEX_COLUMNS:
+                row[stored_key] = _f(idx.get(scene_key))
+            # Provenance / quality — never inferred, only copied when present.
+            row['missing'] = bool(s.get('missing', False))
+            row['signal_source'] = s.get('signal_source')
+            row['bin_quality'] = _f(s.get('bin_quality'))
+            row['cloud_cover'] = _f(s.get('cloud_cover'), 1)
+            rows.append(row)
         return rows
 
     @staticmethod
@@ -556,6 +664,9 @@ class MongoDBHelper:
         self.feature_store = None
         self.index_versions = None
         self.cohort_stats = None
+        # Job queue. Written and polled by api/app.py, worker.py and
+        # api/job_runner.py directly; held here so its indexes get created.
+        self.jobs = None
         self._connect()
 
     # ── Connection ────────────────────────────────────────────────────────
@@ -573,6 +684,7 @@ class MongoDBHelper:
             self.feature_store = self.db["feature_store"]
             self.index_versions = self.db["index_versions"]
             self.cohort_stats = self.db["cohort_stats"]
+            self.jobs = self.db["jobs"]
             self._ensure_indexes()
             logger.info("✅ MongoDB connected  (pipeline v5.0 schema / index_v5)")
         except ConnectionFailure as e:
@@ -665,9 +777,100 @@ class MongoDBHelper:
                 expireAfterSeconds=0,
                 name='weather_power_cache_ttl',
             )
+
+            # ── jobs ──────────────────────────────────────────────────────
+            # This collection had NO indexes at all, yet worker.py polls
+            #   find({'status': 'QUEUED'}).sort('created_at')
+            # every 2 seconds — a full collection scan plus an in-memory sort,
+            # 30x/minute, forever. Because jobs.result embeds a multi-MB
+            # payload, that scan also drags every result blob through memory.
+            # Cost grows linearly with total job history.
+            self._create_index_safe(
+                self.jobs,
+                [('status', ASCENDING), ('created_at', ASCENDING)],
+                name='jobs_status_created',
+            )
+            # Stuck-job reaper: {'status': 'RUNNING', 'started_at': {'$lt': ...}}
+            self._create_index_safe(
+                self.jobs,
+                [('status', ASCENDING), ('started_at', ASCENDING)],
+                name='jobs_status_started',
+            )
+            # Frontend "latest result for this farmer" lookups.
+            self._create_index_safe(
+                self.jobs,
+                [('farmer_id', ASCENDING), ('completed_at', DESCENDING)],
+                name='jobs_farmer_completed',
+            )
+
+            # Optional jobs TTL. DEFAULT OFF — enabling it deletes job history,
+            # and the frontend still falls back to jobs.result for the live
+            # view, so a short TTL would silently break dashboards. Set
+            # JOBS_TTL_DAYS to a positive integer to opt in.
+            jobs_ttl_days = 0
+            try:
+                jobs_ttl_days = int(os.environ.get('JOBS_TTL_DAYS', '0') or 0)
+            except ValueError:
+                logger.warning("JOBS_TTL_DAYS is not an integer; TTL not applied")
+            if jobs_ttl_days > 0:
+                self._create_index_safe(
+                    self.jobs,
+                    [('created_at', ASCENDING)],
+                    expireAfterSeconds=jobs_ttl_days * 24 * 60 * 60,
+                    name='jobs_ttl',
+                )
+                logger.info("jobs TTL enabled: %d days", jobs_ttl_days)
+
+            # ── credit_assessments: cover the actual query shape ──────────
+            # The frontend filters {farmer_id, status} then sorts by date;
+            # 'farmer_history' only covers the farmer_id prefix, forcing an
+            # in-memory sort.
+            self._create_index_safe(
+                self.assessments,
+                [
+                    ('farmer_id', ASCENDING),
+                    ('status', ASCENDING),
+                    ('assessment_date', DESCENDING),
+                ],
+                name='farmer_status_history',
+            )
+
+            # ── satellite cache: make per-farmer eviction possible ────────
+            self._create_index_safe(
+                self.satellite_cache,
+                [('metadata.farmer_id', ASCENDING)],
+                name='sat_cache_farmer',
+            )
+
+            # ── feature_store / cohort_stats / index_versions ─────────────
+            self._create_index_safe(
+                self.feature_store,
+                [('farmer_id', ASCENDING), ('created_at', DESCENDING)],
+                name='feature_store_farmer',
+            )
+            self._create_index_safe(
+                self.feature_store,
+                [('index_version', ASCENDING), ('features.cohort_key', ASCENDING)],
+                name='feature_store_cohort',
+            )
+            self._create_index_safe(
+                self.cohort_stats,
+                [('cohort_key', ASCENDING)],
+                unique=True,
+                name='cohort_key_unique',
+            )
+            self._create_index_safe(
+                self.index_versions,
+                [('index_version', ASCENDING)],
+                unique=True,
+                name='index_version_unique',
+            )
+
             logger.debug("MongoDB indexes verified")
         except Exception as e:
-            logger.warning("Index creation note: %s", e)
+            # Index creation must never block startup, but it must be visible —
+            # a silently unindexed jobs collection degrades the whole service.
+            logger.warning("Index creation incomplete: %s", e)
 
     # ── Satellite stats cache ──────────────────────────────────────────────
 
@@ -715,6 +918,28 @@ class MongoDBHelper:
         except Exception as e:
             logger.warning("satellite cache write failed: %s", e)
             return False
+
+    def delete_satellite_stats_cache(self, farmer_id: Optional[str] = None) -> int:
+        """
+        Delete cached satellite blobs for one farmer, or all of them.
+
+        Returns the number of documents deleted.
+
+        NOTE the field path: upsert_satellite_stats_cache stores the farmer id
+        under ``metadata.farmer_id``, not at the document root. A root-level
+        ``{'farmer_id': ...}`` filter matches nothing and silently reports
+        success — which is what the devtool did before this method existed.
+        """
+        if self.satellite_cache is None:
+            logger.warning("delete_satellite_stats_cache: no cache collection")
+            return 0
+        criteria = {'metadata.farmer_id': farmer_id} if farmer_id else {}
+        result = self.satellite_cache.delete_many(criteria)
+        logger.info(
+            "Satellite cache: deleted %d entries (%s)",
+            result.deleted_count, farmer_id or 'ALL',
+        )
+        return result.deleted_count
 
     # ── NASA POWER weather cache ───────────────────────────────────────────
 
@@ -841,12 +1066,17 @@ class MongoDBHelper:
 
     # ── Assessment writes ─────────────────────────────────────────────────
 
-    def save_assessment(self, raw_assessment: Dict) -> Optional[str]:
+    def save_assessment(self, raw_assessment: Dict) -> str:
         """
         Build structured document from raw pipeline output and insert.
 
         This is the PRIMARY write method — always use this, not direct insert.
         Returns the MongoDB document _id as a string.
+
+        RAISES on failure rather than returning None. A dropped assessment is a
+        data-loss event, and every caller already wraps this in a try/except that
+        records the failure on the assessment; swallowing the exception here made
+        a failed write indistinguishable from a successful one.
         """
         try:
             doc    = AssessmentSchema.build(raw_assessment)
@@ -859,8 +1089,11 @@ class MongoDBHelper:
             )
             return db_id
         except Exception as e:
-            logger.error(f"❌ save_assessment: {e}")
-            return None
+            logger.error(
+                "❌ save_assessment FAILED for farmer=%s — assessment NOT persisted: %s",
+                raw_assessment.get('farmer_id', 'UNKNOWN'), e,
+            )
+            raise
 
     def upsert_latest_assessment(self, raw_assessment: Dict) -> Optional[str]:
         """
@@ -985,8 +1218,12 @@ class MongoDBHelper:
                     '_id':               '$risk_category',
                     'count':             {'$sum': 1},
                     'avg_credit_score':  {'$avg': '$credit_score'},
-                    'avg_credit_limit':  {'$avg': '$recommended_credit_limit'},
-                    'avg_field_area_ha': {'$avg': '$location.field_area_ha'},
+                    'avg_index_score':   {'$avg': '$index_score'},
+                    # 'recommended_credit_limit' was removed with the v5 cutover
+                    # (the index carries no repayment calibration), and
+                    # field_area_ha is stored at the document root, not under
+                    # location — both aggregations previously returned null.
+                    'avg_field_area_ha': {'$avg': '$field_area_ha'},
                     'avg_intensity':     {'$avg': '$cropping_summary.cropping_intensity'},
                     'avg_weather_risk':  {'$avg': '$weather_summary.weather_risk_score'},
                 }
@@ -1188,6 +1425,11 @@ class MongoDBHelper:
         INSERT a farmer-level (multi-plot) assessment as history (audit trail),
         mirroring single-farm save_assessment — NOT an upsert. Dashboard reads
         job.result for the live view.
+
+        RAISES on write failure (the caller logs it). Note this path bypasses
+        AssessmentSchema entirely and inserts the aggregator output raw, so the
+        resulting document has a different key set from single-farm documents —
+        see BACKEND-ENHANCEMENTS.md §5.2; unification is Phase 5 work.
         """
         if self.assessments is None:
             logger.debug("save_multi_farm_assessment: no assessments collection")
@@ -1200,8 +1442,11 @@ class MongoDBHelper:
             res = self.assessments.insert_one(doc)
             return str(res.inserted_id)
         except Exception as e:
-            logger.debug("save_multi_farm_assessment failed: %s", e)
-            return None
+            logger.error(
+                "❌ save_multi_farm_assessment FAILED for farmer=%s — "
+                "assessment NOT persisted: %s", farmer_id, e,
+            )
+            raise
 
     # ── Connection management ─────────────────────────────────────────────
 

@@ -105,7 +105,7 @@ class CounterfactualEngine:
         'vigor': (
             "Improve canopy vigor",
             "Strengthen nutrient management, seed quality and irrigation scheduling to "
-            "raise peer-relative yield-potential.",
+            "raise the yield-potential sub-index.",
         ),
         'stability': (
             "Reduce mid-season stress",
