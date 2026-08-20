@@ -244,7 +244,7 @@ function FarmerJourneyContent() {
         data.pipeline_farmer_id ||
         identity.agristack_farmer_id.trim() ||
         data.farmer_id;
-      router.push(`/dashboard?farmer_id=${encodeURIComponent(dashId)}`);
+      router.push(`/dashboard?farmer_id=${encodeURIComponent(dashId)}&mode=assess`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save');
     } finally {

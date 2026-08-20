@@ -10,9 +10,7 @@ import { StreamingFarmList } from './components/StreamingFarmList';
 import { FarmSelectPanel } from './components/FarmSelectPanel';
 import { PlotBoundaryMap } from './components/PlotBoundaryMap';
 import { RefusalPanel } from './components/RefusalPanel';
-import { ScoreWaterfall } from './components/ScoreWaterfall';
 import { LandCoverPanel } from './components/LandCoverPanel';
-import { ProvenanceFooter } from './components/ProvenanceFooter';
 import { ConfidenceStrip } from './components/ConfidenceBadge';
 import { useRiskView } from '../lib/useRiskView';
 import { terminalStateOf } from '../lib/terminalState';
@@ -27,6 +25,7 @@ import {
   hasAgriStackSession,
   readSessionCreds,
 } from '../lib/agristackSession';
+import { farmerAssessHref } from '../lib/farmerRoutes';
 
 function plotKeyOf(f: Record<string, unknown>, i: number) {
   return String(f.plot_key || f.farm_id || `plot_${i}`);
@@ -187,6 +186,7 @@ function DashboardPageContent() {
   useEffect(() => {
     const qFarmerId = (searchParams.get('farmer_id') || '').trim();
     const qJobId = (searchParams.get('job_id') || '').trim();
+    const wantAssess = (searchParams.get('mode') || '').trim().toLowerCase() === 'assess';
 
     if (qFarmerId) {
       setFarmerId(qFarmerId);
@@ -200,17 +200,55 @@ function DashboardPageContent() {
       return;
     }
 
-    // Deep-link with farmer only → open farm SELECT when farm_info exists
     if (qFarmerId && !qJobId) {
       void (async () => {
         setHistoryLoading(true);
         const loaded = await loadFarmInfo(qFarmerId);
-        setHistoryLoading(false);
-        if (loaded && loaded.farms.length > 0) {
-          enterSelectWithFarms(loaded.farms, loaded.summary, qFarmerId);
+
+        if (wantAssess) {
+          setHistoryLoading(false);
+          if (loaded && loaded.farms.length > 0) {
+            enterSelectWithFarms(loaded.farms, loaded.summary, qFarmerId);
+            return;
+          }
+          setStatus('IDLE');
           return;
         }
-        // No farms yet — stay IDLE with ID prefilled (user can Prepare)
+
+        try {
+          const res = await fetch(
+            `/api/assessments/latest?farmer_id=${encodeURIComponent(qFarmerId)}`,
+            { credentials: 'include' }
+          );
+          const json = await res.json();
+          if (res.ok && json.assessment) {
+            const payload = json.assessment as AssessmentPayload;
+            setData(payload);
+            lastGoodDataRef.current = payload;
+            if (payload.farm_assessments) {
+              setPartialFarms(payload.farm_assessments);
+            }
+            if ((!loaded || loaded.farms.length === 0) && payload.farm_assessments?.length) {
+              setSeedFarms(
+                assignPlotKeysClient(
+                  payload.farm_assessments.map((a) => ({
+                    farm_id: a.farm_id || a.plot_key,
+                    plot_key: a.plot_key,
+                    area_ha: a.area_ha,
+                    primary_crop: a.crop,
+                  }))
+                )
+              );
+            }
+            setStatus('SUCCESS');
+            setHistoryLoading(false);
+            return;
+          }
+        } catch {
+          /* no stored analysis */
+        }
+
+        setHistoryLoading(false);
         setStatus('IDLE');
       })();
     }
@@ -228,9 +266,11 @@ function DashboardPageContent() {
     } else {
       setStatus('IDLE');
     }
-    const params = new URLSearchParams();
-    if (farmerId.trim()) params.set('farmer_id', farmerId.trim());
-    router.replace(params.toString() ? `/dashboard?${params}` : '/dashboard', { scroll: false });
+    if (farmerId.trim()) {
+      router.replace(farmerAssessHref(farmerId.trim()), { scroll: false });
+    } else {
+      router.replace('/dashboard', { scroll: false });
+    }
   };
   useEffect(() => {
     if (!jobId || status === 'SUCCESS' || status === 'FAILED') return;
@@ -401,7 +441,9 @@ function DashboardPageContent() {
     if (!farmerId.trim()) return;
 
     if (!hasAgriStackSession()) {
-      const next = `/dashboard${farmerId.trim() ? `?farmer_id=${encodeURIComponent(farmerId.trim())}` : ''}`;
+      const next = farmerId.trim()
+        ? farmerAssessHref(farmerId.trim())
+        : '/dashboard';
       router.push(`/agristack/connect?next=${encodeURIComponent(next)}`);
       return;
     }
@@ -588,7 +630,29 @@ function DashboardPageContent() {
           </div>
         )}
 
-        {status === 'IDLE' && !data && !historyLoading && (
+        {status === 'IDLE' && !data && !historyLoading && seedFarms.length > 0 && (
+          <div className="bg-white border border-rule rounded-xl p-8 max-w-2xl mx-auto mt-12 shadow-sm">
+            <h2 className="text-xl font-bold mb-2 text-stone-900">No stored analysis</h2>
+            <p className="text-sm text-stone-500 mb-4">
+              {farmInfo?.name || 'This farmer'} has {seedFarms.length} saved plot
+              {seedFarms.length === 1 ? '' : 's'}, but no completed assessment is stored yet.
+            </p>
+            {(farmInfo?.state || farmInfo?.district) && (
+              <p className="text-xs text-ink-muted mb-6">
+                {[farmInfo?.village, farmInfo?.district, farmInfo?.state].filter(Boolean).join(', ')}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => enterSelectWithFarms(seedFarms, farmInfo, farmerId.trim() || undefined)}
+              className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+            >
+              Assess farms
+            </button>
+          </div>
+        )}
+
+        {status === 'IDLE' && !data && !historyLoading && seedFarms.length === 0 && (
           <div className="bg-white border border-rule rounded-xl p-8 max-w-2xl mx-auto mt-12 shadow-sm">
             <h2 className="text-xl font-bold mb-2 text-stone-900">Run New Assessment</h2>
             <p className="text-sm text-stone-500 mb-6">
@@ -609,7 +673,7 @@ function DashboardPageContent() {
                   AgriStack credentials required.{' '}
                   <Link
                     href={`/agristack/connect?next=${encodeURIComponent(
-                      `/dashboard${farmerId.trim() ? `?farmer_id=${encodeURIComponent(farmerId.trim())}` : ''}`
+                      farmerId.trim() ? farmerAssessHref(farmerId.trim()) : '/dashboard'
                     )}`}
                     className="font-semibold underline underline-offset-2"
                   >
@@ -675,10 +739,7 @@ function DashboardPageContent() {
             onClearAll={() => setSelectedPlotKeys(new Set())}
             onAssessSelected={handleAssessSelected}
             onAssessAll={handleAssessAll}
-            onBack={() => {
-              setStatus('IDLE');
-              setErrorMsg('');
-            }}
+            onBack={resetToIdle}
           />
         )}
 
@@ -687,9 +748,11 @@ function DashboardPageContent() {
             <div className="flex items-center justify-between flex-wrap gap-3">
               <div>
                 <h2 className="text-xl font-bold text-stone-900">Assessment Insights</h2>
-                <p className="text-xs text-stone-500 font-mono mt-0.5">
+                <p className="text-xs text-stone-500 mt-0.5">
                   {status === 'SUCCESS'
-                    ? riskView.indexVersion || 'complete'
+                    ? riskView.nPlotsTotal != null
+                      ? `${riskView.nPlotsScored ?? 0} of ${riskView.nPlotsTotal} plots scored`
+                      : 'Complete'
                     : status === 'FAILED'
                       ? 'failed'
                       : loadingMsg || status}
@@ -709,7 +772,7 @@ function DashboardPageContent() {
                       onClick={startRerun}
                       className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium"
                     >
-                      Re-run Assessment
+                      Assess again
                     </button>
                   </>
                 )}
@@ -773,17 +836,6 @@ function DashboardPageContent() {
               )}
             </div>
 
-            {/* ── ZONE 2 · EVIDENCE ────────────────────────────────────────
-                Why this number, and what we could see. Reader ① (the loan
-                officer) usually stops above this line; reader ② starts here.
-
-                Holding level carries no driver captions — the aggregator does
-                not emit them, only the per-plot engine does — so none are
-                passed rather than invented. */}
-            {status === 'SUCCESS' && refusal.state === 'SCORED' && (
-              <ScoreWaterfall view={riskView} scopeLabel="holding" />
-            )}
-
             {status === 'SUCCESS' && data?.land_cover && (
               <LandCoverPanel landCover={data.land_cover} />
             )}
@@ -816,13 +868,6 @@ function DashboardPageContent() {
                 </div>
               </div>
             </div>
-
-            {/* ── ZONE 4 · PROVENANCE ──────────────────────────────────────
-                Collapsed by default. Reader ① never opens it; reader ② opens
-                nothing else, and provenance nobody can find is the same as
-                provenance that does not exist the first time a decision is
-                audited. */}
-            {status === 'SUCCESS' && <ProvenanceFooter data={data} />}
           </div>
         )}
       </main>

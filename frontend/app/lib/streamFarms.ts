@@ -52,6 +52,11 @@ export function buildStreamRows(opts: {
       plot_key: key,
       farm_id: String(f.farm_id || key),
       area_ha: typeof f.area_ha === 'number' ? f.area_ha : undefined,
+      measured_area_ha:
+        typeof assessment?.measured_area_ha === 'number'
+          ? assessment.measured_area_ha
+          : undefined,
+      geometry: f.geometry ?? f.boundary,
       crop: (f.primary_crop as string) || null,
       is_ror_owner: f.is_ror_owner as boolean | null | undefined,
       tenure_factor: typeof f.tenure_factor === 'number' ? f.tenure_factor : undefined,

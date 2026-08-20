@@ -598,14 +598,17 @@ export interface FarmAssessment {
    * exclusions and must not make a holding look broken.
    */
   skipped_reason?: string;
-  /** Slim land-cover verdict on a plot excluded as non-agricultural. */
-  land_cover?: Pick<LandCover, 'class' | 'confidence' | 'reason'>;
+  /** Slim land-cover verdict — stored on scored plots as well as exclusions. */
+  land_cover?: LandCover;
   /** Slim sufficiency verdict on a plot we could not observe. */
   data_sufficiency?: {
     reason?: string;
     observed_fraction?: number;
     largest_blind_gap_days?: number;
   };
+  parcel_viability?: ParcelViability;
+  /** Boundary-derived hectares; AgriStack `area_ha` is the registry claim. */
+  measured_area_ha?: number;
   /** Compact plot analysis for farm detail tabs (multi-farm slim payload). */
   detail?: {
     cropping_analysis?: CroppingAnalysis;
@@ -616,6 +619,8 @@ export interface FarmAssessment {
     continuous_data_stats?: ContinuousDataStats;
     location?: AssessmentPayload['location'];
     ai_enrichment?: AiEnrichment;
+    land_cover?: LandCover;
+    parcel_viability?: ParcelViability;
   };
 }
 

@@ -126,11 +126,6 @@ export function LocationStrip({ data }: { data: AssessmentPayload }) {
             <span className="font-mono text-stone-500">{data.sowing_date}</span>
           </span>
         )}
-        {data.ml_mode && (
-          <span className="text-[11px] px-2 py-0.5 rounded bg-paper border border-rule text-stone-500 font-mono ml-auto">
-            mode: {data.ml_mode}
-          </span>
-        )}
       </div>
     </div>
   );

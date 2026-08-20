@@ -99,17 +99,11 @@ export function LandCoverPanel({ landCover }: { landCover: LandCover | null | un
       title="Land classification"
       subtitle="Whether this parcel is farmland at all — checked before any credit signal is computed."
       note={
-        <>
-          {landCover.gate_version && (
-            <span className="font-mono">{landCover.gate_version}</span>
-          )}
-          {streams.length > 0 && (
-            <>
-              {landCover.gate_version && ' · '}
-              {agreeing} of {streams.length} streams reached the same verdict independently.
-            </>
-          )}
-        </>
+        streams.length > 0 ? (
+          <>
+            {agreeing} of {streams.length} streams reached the same verdict independently.
+          </>
+        ) : undefined
       }
     >
       <div className="rounded-lg border border-rule bg-paper/50 px-3.5 py-3">

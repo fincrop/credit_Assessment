@@ -41,6 +41,9 @@ export function buildFarmPlotPayload(
     location: d?.location ?? farmerPayload.location,
     field_area_ha: farm?.area_ha ?? farmerPayload.field_area_ha,
     crop_hint: farm?.crop ?? farmerPayload.crop_hint,
+    land_cover: d?.land_cover ?? farm?.land_cover ?? farmerPayload.land_cover,
+    parcel_viability:
+      d?.parcel_viability ?? farm?.parcel_viability ?? farmerPayload.parcel_viability,
     ai_enrichment: d?.ai_enrichment ?? farmerPayload.ai_enrichment,
     // Plot-scoped risk view via farmer_level shim
     farmer_level: farm

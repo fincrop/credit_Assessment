@@ -4,38 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from './components/providers/AuthProvider';
-
-type FarmerListItem = {
-  _id: string;
-  farmer_name?: string;
-  agristack_farmer_id?: string | null;
-  farms?: unknown[];
-  source?: string;
-  updated_at?: string | Date;
-  created_at?: string | Date;
-};
-
-function formatDate(value: string | Date | undefined): string {
-  if (!value) return '—';
-  try {
-    return new Date(value).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  } catch {
-    return '—';
-  }
-}
-
-function pipelineId(f: FarmerListItem): string {
-  return f.agristack_farmer_id || f._id;
-}
-
-function sourceLabel(f: FarmerListItem): string {
-  if (f.source === 'agristack_ingest' || f.agristack_farmer_id) return 'AgriStack';
-  return 'Journey';
-}
+import { LocationPortfolio } from './components/farmers/LocationPortfolio';
+import type { FarmerListItem } from './lib/farmerLocation';
 
 export default function HomePage() {
   const { user, loading, logout } = useAuth();
@@ -81,7 +51,6 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-paper text-stone-800 relative overflow-hidden">
-      {/* Atmosphere */}
       <div
         className="pointer-events-none absolute inset-0"
         style={{
@@ -97,7 +66,7 @@ export default function HomePage() {
         }}
       />
 
-      <header className="relative z-10 flex items-center justify-between px-6 py-5 max-w-6xl mx-auto w-full">
+      <header className="relative z-10 flex items-center justify-between px-6 py-5 max-w-7xl mx-auto w-full">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-paper text-sm">
             A
@@ -123,7 +92,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <main className="relative z-10 max-w-6xl mx-auto px-6 pt-10 pb-20">
+      <main className="relative z-10 max-w-7xl mx-auto px-6 pt-10 pb-20">
         <div className="mb-12 max-w-2xl animate-slide-in">
           <h1 className="text-3xl sm:text-4xl font-bold text-stone-900 tracking-tight mb-3">
             Choose your journey
@@ -189,9 +158,10 @@ export default function HomePage() {
         <section className="mt-14 animate-slide-in" style={{ animationDelay: '0.18s' }}>
           <div className="flex items-end justify-between gap-4 mb-5">
             <div>
-              <h2 className="text-xl font-bold text-stone-900 tracking-tight">My farmers &amp; farms</h2>
+              <h2 className="text-xl font-bold text-stone-900 tracking-tight">Portfolio summary</h2>
               <p className="text-sm text-stone-500 mt-1">
-                Farmers you have saved or assessed on this account.
+                Filter by state, then district. Widgets and the location chart sit on the left;
+                matching farms on the right.
               </p>
             </div>
             <Link
@@ -211,42 +181,7 @@ export default function HomePage() {
               </p>
             </div>
           ) : (
-            <ul className="space-y-3">
-              {farmers.slice(0, 8).map((f) => {
-                const farmCount = Array.isArray(f.farms) ? f.farms.length : 0;
-                const pid = pipelineId(f);
-                return (
-                  <li
-                    key={f._id}
-                    className="rounded-xl border border-rule bg-white/80 px-5 py-4 flex flex-wrap items-center justify-between gap-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="font-semibold text-stone-900 truncate">
-                        {f.farmer_name || 'Unnamed farmer'}
-                      </p>
-                      <p className="text-xs text-stone-500 mt-0.5">
-                        {farmCount} farm{farmCount === 1 ? '' : 's'} · {sourceLabel(f)} ·{' '}
-                        {formatDate(f.updated_at || f.created_at)}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Link
-                        href={`/dashboard?farmer_id=${encodeURIComponent(pid)}`}
-                        className="text-sm font-medium px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 transition-colors"
-                      >
-                        Assess
-                      </Link>
-                      <Link
-                        href={`/farmer/farms`}
-                        className="text-sm font-medium px-3 py-1.5 rounded-lg text-stone-600 hover:bg-stone-100 transition-colors"
-                      >
-                        Details
-                      </Link>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+            <LocationPortfolio farmers={farmers} />
           )}
         </section>
 

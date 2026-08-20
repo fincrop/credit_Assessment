@@ -171,6 +171,85 @@ def test_observed_fraction_is_reported_for_every_cycle():
 
 # ── threshold coherence guard ─────────────────────────────────────────────
 
+def test_kharif_and_rabi_peaks_are_both_kept():
+    """
+    Three-year mixed rotation: tall kharif peaks plus shorter rabi peaks.
+    Harvest walk used to swallow the next peak (135-day window past kharif
+    found the following rabi trough), so only two seasons survived.
+    """
+    def hat(peak, length, base=0.14):
+        half = length // 2
+        return list(np.linspace(base, peak, half)) + list(np.linspace(peak, base, length - half))
+
+    profile = (
+        [0.16] * 4 + hat(0.62, 14) + [0.18] * 6 + hat(0.42, 12)
+        + [0.16] * 6 + hat(0.66, 14) + [0.18] * 6 + hat(0.40, 12)
+        + [0.16] * 6 + hat(0.64, 14) + [0.18] * 6
+    )
+    cycles = _detect(_build(profile))
+    assert len(cycles) >= 4, f"expected kharif+rabi cycles, got {len(cycles)}"
+
+
+def test_harvest_does_not_swallow_the_next_peak():
+    """Two clear seasons ~120 days apart must remain two cycles."""
+    def hat(peak, length, base=0.14):
+        half = length // 2
+        return list(np.linspace(base, peak, half)) + list(np.linspace(peak, base, length - half))
+
+    profile = [0.14] * 4 + hat(0.70, 14) + [0.16] * 4 + hat(0.58, 12) + [0.14] * 6
+    cycles = _detect(_build(profile))
+    assert len(cycles) >= 2, f"second season was swallowed, got {len(cycles)}"
+
+
+def test_modest_ndvi_peaks_still_count_as_crops():
+    """Pulses / stressed cereals peak near NDVI 0.5 — still a crop on the land."""
+    def hat(peak, length, base=0.22):
+        half = length // 2
+        return list(np.linspace(base, peak, half)) + list(np.linspace(peak, base, length - half))
+
+    profile = (
+        [0.22] * 5 + hat(0.50, 12) + [0.20] * 6
+        + hat(0.48, 11) + [0.21] * 6
+        + hat(0.52, 12) + [0.20] * 5
+    )
+    cycles = _detect(_build(profile))
+    assert len(cycles) >= 3, f"NDVI ~0.5 seasons were missed, got {len(cycles)}"
+
+
+def test_mixed_vigor_kharif_and_rabi_are_both_found():
+    """
+    The dashboard case: tall kharif (~0.70) plus modest rabi (~0.50) over
+    three years. CVI/VS gating at 0.55 used to keep only the kharif peaks.
+    """
+    def hat(peak, length, base=0.20):
+        half = length // 2
+        return list(np.linspace(base, peak, half)) + list(np.linspace(peak, base, length - half))
+
+    profile = (
+        [0.22] * 3 + hat(0.74, 14) + [0.22] * 5 + hat(0.50, 11)
+        + [0.20] * 5 + hat(0.70, 14) + [0.21] * 5 + hat(0.48, 11)
+        + [0.20] * 5 + hat(0.72, 14) + [0.21] * 5 + hat(0.52, 11)
+        + [0.20] * 4
+    )
+    cycles = _detect(_build(profile))
+    assert len(cycles) >= 5, (
+        f"expected kharif + modest rabi seasons, got {len(cycles)}"
+    )
+    peaks = sorted(float(c.peak_ndvi) for c in cycles)
+    modest = [p for p in peaks if p < 0.58]
+    assert modest, f"modest NDVI ~0.5 crops were dropped; peaks={peaks}"
+
+
+def test_long_green_plateau_is_still_a_season():
+    """Kharif that stays high for months must not fail the duration cap."""
+    up = list(np.linspace(0.20, 0.74, 6))
+    plateau = [0.70 + 0.02 * ((i % 3) - 1) for i in range(10)]
+    down = list(np.linspace(0.68, 0.22, 6))
+    profile = [0.20] * 4 + up + plateau + down + [0.20] * 8
+    cycles = _detect(_build(profile))
+    assert len(cycles) >= 1, "a long green plateau produced no cycle"
+
+
 def test_config_thresholds_are_not_inverted():
     assert P.CROP_CYCLE_MIN_BASELINE_CVI < P.CROP_CYCLE_MIN_PEAK_CVI
 

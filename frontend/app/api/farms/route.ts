@@ -7,6 +7,7 @@ import {
   normalizeJourneyFarms,
 } from '../../lib/farmInfoSchema';
 import { ownerFields, ownerFilter } from '../../lib/ownerScope';
+import { lookupDistrictName, lookupStateName } from '../../lib/india_lgd_data';
 
 const TARGET_DB = process.env.MONGODB_DATABASE || process.env.MONGODB_DB || 'agristack';
 const COLLECTION = 'farmer_farms';
@@ -217,10 +218,24 @@ export async function GET(req: NextRequest) {
       (f) => String(f.agristack_farmer_id || f._id.toString())
     );
 
+    const infoDocs = pipelineIds.length
+      ? await db
+          .collection(FARM_INFO_COLLECTION)
+          .find({ farmer_id: { $in: pipelineIds } })
+          .toArray()
+      : [];
+    const infoMap = new Map(infoDocs.map((d) => [String(d.farmer_id), d]));
+
     /** farmer_id → latest assessment summary */
     const latestMap = new Map<
       string,
-      { assessment_date?: string | Date; status?: string; has_assessment: boolean }
+      {
+        assessment_date?: string | Date;
+        status?: string;
+        has_assessment: boolean;
+        index_score?: number | null;
+        risk_category?: string | null;
+      }
     >();
 
     if (pipelineIds.length) {
@@ -234,6 +249,16 @@ export async function GET(req: NextRequest) {
               _id: '$farmer_id',
               assessment_date: { $first: '$assessment_date' },
               status: { $first: '$status' },
+              index_score: {
+                $first: {
+                  $ifNull: ['$index_score', '$farmer_level.index_score'],
+                },
+              },
+              risk_category: {
+                $first: {
+                  $ifNull: ['$risk_category', '$farmer_level.risk_category'],
+                },
+              },
             },
           },
         ])
@@ -244,6 +269,8 @@ export async function GET(req: NextRequest) {
           assessment_date: row.assessment_date,
           status: row.status,
           has_assessment: true,
+          index_score: typeof row.index_score === 'number' ? row.index_score : null,
+          risk_category: row.risk_category ?? null,
         });
       }
 
@@ -265,6 +292,22 @@ export async function GET(req: NextRequest) {
                 _id: '$farmer_id',
                 assessment_date: { $first: '$completed_at' },
                 status: { $first: '$status' },
+                index_score: {
+                  $first: {
+                    $ifNull: [
+                      '$result.farmer_level.index_score',
+                      '$result.risk_assessment.index_score',
+                    ],
+                  },
+                },
+                risk_category: {
+                  $first: {
+                    $ifNull: [
+                      '$result.farmer_level.risk_category',
+                      '$result.risk_assessment.risk_category',
+                    ],
+                  },
+                },
               },
             },
           ])
@@ -274,6 +317,8 @@ export async function GET(req: NextRequest) {
             assessment_date: row.assessment_date,
             status: row.status,
             has_assessment: true,
+            index_score: typeof row.index_score === 'number' ? row.index_score : null,
+            risk_category: row.risk_category ?? null,
           });
         }
       }
@@ -284,12 +329,76 @@ export async function GET(req: NextRequest) {
       farmers: farmers.map((f) => {
         const pipeline_farmer_id = String(f.agristack_farmer_id || f._id.toString());
         const latest = latestMap.get(pipeline_farmer_id);
+        const info = infoMap.get(pipeline_farmer_id);
+        const loc = (f.location || {}) as {
+          state?: { name?: string; lgd_code?: string } | null;
+          district?: { name?: string; lgd_code?: string } | null;
+          taluka?: { name?: string; lgd_code?: string } | null;
+          village?: { name?: string; lgd_code?: string } | null;
+        };
+        const stateCode = loc.state?.lgd_code || (info?.state_lgd_code as string | undefined);
+        const districtCode =
+          loc.district?.lgd_code || (info?.district_lgd_code as string | undefined);
+        const stateName =
+          loc.state?.name ||
+          (info?.state as string | undefined) ||
+          lookupStateName(stateCode);
+        const districtName =
+          loc.district?.name ||
+          (info?.district as string | undefined) ||
+          lookupDistrictName(districtCode);
+        const villageName =
+          loc.village?.name || (info?.village as string | undefined) || null;
+
+        const infoFarms = Array.isArray(info?.farms)
+          ? (info.farms as Record<string, unknown>[])
+          : [];
+        const infoById = new Map(
+          infoFarms.map((p) => [String(p.farm_id || ''), p])
+        );
+        const rawFarms = Array.isArray(f.farms) ? (f.farms as Record<string, unknown>[]) : [];
+        const sourceFarms = rawFarms.length ? rawFarms : infoFarms;
+        const farms = sourceFarms.map((farm, i) => {
+          const id = String(farm.farm_id || farm.farm_name || `plot_${i + 1}`);
+          const fromInfo = infoById.get(id);
+          const area =
+            typeof farm.area_ha === 'number'
+              ? farm.area_ha
+              : typeof fromInfo?.area_ha === 'number'
+                ? fromInfo.area_ha
+                : null;
+          return {
+            farm_id: id,
+            farm_name: String(farm.farm_name || fromInfo?.farm_name || id),
+            primary_crop:
+              (farm.primary_crop as string | null) ||
+              (fromInfo?.primary_crop as string | null) ||
+              (info?.crop as string | null) ||
+              null,
+            area_ha: area,
+          };
+        });
+
         return {
           ...f,
           _id: f._id.toString(),
+          farmer_name: f.farmer_name || info?.name || 'Unnamed farmer',
           pipeline_farmer_id,
+          source: f.source || (f.agristack_farmer_id ? 'agristack_ingest' : 'farmer_journey'),
           has_assessment: !!latest?.has_assessment,
           latest_assessment_date: latest?.assessment_date ?? null,
+          index_score: latest?.index_score ?? null,
+          risk_category: latest?.risk_category ?? null,
+          location: {
+            state: stateName || stateCode ? { name: stateName || null, lgd_code: stateCode || null } : null,
+            district:
+              districtName || districtCode
+                ? { name: districtName || null, lgd_code: districtCode || null }
+                : null,
+            taluka: loc.taluka || null,
+            village: villageName ? { name: villageName } : loc.village || null,
+          },
+          farms,
         };
       }),
     });

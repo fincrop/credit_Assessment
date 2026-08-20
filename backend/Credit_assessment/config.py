@@ -581,6 +581,17 @@ class PipelineConfig:
     # us miss a marginal crop; it must never invent one.
     CROP_CYCLE_RELAXED_PEAK_FLOOR = 0.46
     CROP_CYCLE_RELAXED_RISE_FLOOR = 0.10
+    # Density pass may go below the adaptive floor to catch shorter rabi /
+    # pulse peaks (NDVI ~0.40) that never reach mid-vegetative VS 0.46.
+    # Prominence + min_rise still reject barren wobble.
+    CROP_CYCLE_DENSITY_PEAK_FLOOR = 0.38
+    # NDVI-anchored fallback (the series plotted on the dashboard).
+    # 0.38 NDVI is early vegetative — pulses and stressed cereals peak near 0.5.
+    CROP_CYCLE_NDVI_PEAK_FLOOR = 0.38
+    CROP_CYCLE_NDVI_MIN_PROMINENCE = 0.08
+    CROP_CYCLE_NDVI_MIN_RISE = 0.08
+    CROP_CYCLE_NDVI_MAX_HALF_DAYS = 120
+    CROP_CYCLE_NDVI_MAX_DURATION_DAYS = 240
     # Minimum prominence: how far a peak must stand above its higher flanking
     # trough to count as a growth event rather than a wobble on a plateau.
     # There was no prominence test at all, so two noise wiggles 45 days apart on
@@ -616,7 +627,7 @@ class PipelineConfig:
     # If validated cycles < ceil(years * EXPECTED_CYCLES_PER_YEAR), run one more
     # ultra-relaxed threshold + second peak scan (prominence scaled down).
     CROP_CYCLE_DENSITY_PASS = True
-    CROP_CYCLE_EXPECTED_CYCLES_PER_YEAR = 1.15
+    CROP_CYCLE_EXPECTED_CYCLES_PER_YEAR = 1.5
     CROP_CYCLE_DENSITY_PEAK_PROMINENCE_SCALE = 0.58
     # CVI windows (grid bins) combined for greenup union when multi-window is on.
     CROP_CYCLE_GREENUP_WINDOWS = (5, 4, 3)
@@ -863,9 +874,14 @@ class PipelineConfig:
             # NOTE: the generator reads GROQ_* env vars directly rather than this
             # block, so max_tokens here is advisory only (it sends 650).
             "max_tokens": 400,
-            # Off unless GROQ_ENABLE=1 (avoids calls when no API / dry runs)
-            "enabled":    _os.environ.get("GROQ_ENABLE", "").strip().lower()
-                          in ("1", "true", "yes"),
+            # Same as Sarvam: on when a key is present. GROQ_ENABLE=0 still
+            # forces it off; GROQ_ENABLE=1 with no key stays off.
+            "enabled":    (
+                bool(_os.environ.get("GROQ_API_KEY"))
+                if _os.environ.get("GROQ_ENABLE", "").strip().lower()
+                not in ("0", "false", "no", "off")
+                else False
+            ),
         },
         # SarvamAI — Indian language translation
         "sarvam": {

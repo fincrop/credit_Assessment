@@ -629,13 +629,37 @@ class CropCycleDetector:
             and len(cycles) < max(2, expected)
         ):
             scale = float(getattr(P, "CROP_CYCLE_DENSITY_PEAK_PROMINENCE_SCALE", 0.58))
+            density_floor = float(getattr(P, "CROP_CYCLE_DENSITY_PEAK_FLOOR", 0.38))
             c3, bias3 = run_pass(
-                max(relaxed_peak_floor, peak_cvi * scale),
+                max(density_floor, peak_cvi * scale),
                 max(relaxed_rise_floor, min_rise - 0.035),
             )
             if len(c3) > len(cycles):
                 cycles, sow_bias_n = c3, bias3
                 self.last_detection_meta["density_pass"] = True
+
+        cvi_cycle_n = len(cycles)
+
+        # NDVI-anchored fallback. Config advertised this for years; it was
+        # never wired. CVI/VS peaks at 0.55 miss real crops that only reach
+        # NDVI ~0.45–0.55, and CVI duration gates reject long plateaus (kharif
+        # that stays green 4–5 months). The NDVI series the dashboard shows is
+        # the honest signal — always try it and keep the richer set.
+        if bool(getattr(P, "CROP_CYCLE_PEAK_ANCHORED_FALLBACK", True)):
+            ndvi_cycles = self._detect_ndvi_anchored(
+                cvi_smooth, ndvi_smooth, reg_ndvi, reg_evi, reg_ndmi,
+                reg_dates, cloud_gaps, step,
+                min_days=min_days,
+                max_days=max(max_days, int(getattr(P, "CROP_CYCLE_NDVI_MAX_DURATION_DAYS", 220))),
+                observed_mask=observed_mask,
+            )
+            if len(ndvi_cycles) > len(cycles):
+                logger.info(
+                    "NDVI-anchored fallback recovered %d cycle(s) (CVI pass had %d)",
+                    len(ndvi_cycles), cvi_cycle_n,
+                )
+                cycles = ndvi_cycles
+                self.last_detection_meta["ndvi_anchored_pass"] = True
 
         # ── Perennial / plantation branch ────────────────────────────────
         #
@@ -835,14 +859,16 @@ class CropCycleDetector:
             # troughs, not merely be the largest value nearby.
             left = cvi_smooth[max(0, i - pbin): i + 1]
             right = cvi_smooth[i: min(n, i + pbin + 1)]
-            if left.size == 0 or right.size == 0:
-                continue
-            shoulder = max(float(np.nanmin(left)), float(np.nanmin(right)))
-            prominence = v - shoulder
-            if prominence < min_prom:
+            left_min = float(np.nanmin(left))
+            right_min = float(np.nanmin(right))
+            # A crop only has to drop on ONE side (sow or harvest). Measuring
+            # against the higher col rejects plateau kharif that stays green
+            # into the series edge or a shallow rabi col.
+            drop = max(v - left_min, v - right_min)
+            if drop < min_prom:
                 logger.debug(
-                    "  Peak @%d rejected: prominence %.3f < %.3f",
-                    i, prominence, min_prom,
+                    "  Peak @%d rejected: drop %.3f < %.3f",
+                    i, drop, min_prom,
                 )
                 continue
             raw_peaks.append((i, v))
@@ -856,12 +882,14 @@ class CropCycleDetector:
             else:
                 clean_peaks.append(pi)
 
+        clean_peaks = self._merge_plateau_peaks(clean_peaks, cvi_smooth, min_prom)
+
         logger.debug("  %d candidate peak(s) after deduplication", len(clean_peaks))
 
         cycles: List[CropCycle] = []
         used_up_to = -1
 
-        for peak_idx in clean_peaks:
+        for pi_i, peak_idx in enumerate(clean_peaks):
             if peak_idx <= used_up_to:
                 continue
 
@@ -880,8 +908,17 @@ class CropCycleDetector:
             )
             if sow_biased and sow_bias_hits is not None:
                 sow_bias_hits['count'] = int(sow_bias_hits.get('count', 0)) + 1
+            if used_up_to >= 0:
+                sow_idx = max(sow_idx, used_up_to + 1)
 
+            # Do not let harvest walk into the next crop. Searching 135 days
+            # past a kharif peak routinely finds the rabi trough *after* the
+            # next peak and then marks that peak as already used.
+            next_peak = clean_peaks[pi_i + 1] if pi_i + 1 < len(clean_peaks) else None
             h_hi = min(n - 1, peak_idx + harv_max_off)
+            if next_peak is not None:
+                h_hi = min(h_hi, int(next_peak) - 1)
+
             harv_idx = h_hi
             found_low = False
             for j in range(peak_idx + mbin, h_hi + 1):
@@ -905,12 +942,32 @@ class CropCycleDetector:
             ndvi_rise_v  = peak_ndvi_v - float(np.nanmean(ndvi_smooth[max(0, sow_idx - 2): sow_idx + 2]))
             duration     = (reg_dates[harv_idx] - reg_dates[sow_idx]).days
 
-            if cvi_rise_v < min_rise:
-                logger.debug("  Peak @%d rejected: CVI rise %.3f < %.3f", peak_idx, cvi_rise_v, min_rise)
-                continue
             if not (min_days <= duration <= max_days):
-                logger.debug("  Peak @%d rejected: duration %dd out of [%d, %d]",
-                             peak_idx, duration, min_days, max_days)
+                sow2, harv2 = self._trough_window(
+                    ndvi_smooth, peak_idx,
+                    lo=used_up_to + 1,
+                    hi=(int(next_peak) - 1) if next_peak is not None else n - 1,
+                    mbin=mbin,
+                    half_bins=max(mbin, int(120 / bd)),
+                )
+                duration2 = (reg_dates[harv2] - reg_dates[sow2]).days
+                if min_days <= duration2 <= max_days:
+                    sow_idx, harv_idx, duration = sow2, harv2, duration2
+                    sow_baseline = float(np.nanmean(cvi_smooth[max(0, sow_idx - 2): sow_idx + 2]))
+                    cvi_rise_v = peak_cvi_v - sow_baseline
+                    ndvi_rise_v = peak_ndvi_v - float(
+                        np.nanmean(ndvi_smooth[max(0, sow_idx - 2): sow_idx + 2])
+                    )
+                else:
+                    logger.debug(
+                        "  Peak @%d rejected: duration %dd out of [%d, %d]",
+                        peak_idx, duration, min_days, max_days,
+                    )
+                    continue
+
+            min_rise_ok = cvi_rise_v >= min_rise or ndvi_rise_v >= min_rise
+            if not min_rise_ok:
+                logger.debug("  Peak @%d rejected: CVI rise %.3f < %.3f", peak_idx, cvi_rise_v, min_rise)
                 continue
 
             # Cloud gaps OVERLAPPING the cycle, not merely contained in it.
@@ -971,6 +1028,217 @@ class CropCycleDetector:
             ))
             used_up_to = harv_idx
 
+        return cycles
+
+    @staticmethod
+    def _merge_plateau_peaks(
+        peaks: List[int],
+        signal: np.ndarray,
+        min_drop: float,
+    ) -> List[int]:
+        """Keep one peak per green plateau; split only when the canopy actually drops."""
+        if len(peaks) < 2:
+            return peaks
+        out: List[int] = [peaks[0]]
+        for pi in peaks[1:]:
+            prev = out[-1]
+            lo, hi = (prev, pi) if prev <= pi else (pi, prev)
+            seg = signal[lo: hi + 1]
+            if not seg.size or not np.isfinite(seg).any():
+                out.append(pi)
+                continue
+            valley = float(np.nanmin(seg))
+            ha = float(signal[prev])
+            hb = float(signal[pi])
+            if min(ha, hb) - valley < min_drop:
+                if hb > ha:
+                    out[-1] = pi
+            else:
+                out.append(pi)
+        return out
+
+    @staticmethod
+    def _trough_window(
+        signal: np.ndarray,
+        peak_idx: int,
+        *,
+        lo: int,
+        hi: int,
+        mbin: int,
+        half_bins: int,
+    ) -> Tuple[int, int]:
+        """Nearest troughs either side of a peak, clamped to [lo, hi].
+
+        Uses the valley closest to the peak that is within a small band of the
+        window minimum. Taking the global argmin over ±120 days stretches a
+        long kharif plateau into the neighbouring fallow and then fails the
+        duration cap — which is how a clearly cropped field returned no cycle.
+        """
+        n = len(signal)
+        left0 = max(int(lo), peak_idx - half_bins, 0)
+        left1 = max(left0, peak_idx - mbin)
+        right0 = min(n - 1, peak_idx + mbin)
+        right1 = min(int(hi), peak_idx + half_bins, n - 1)
+        slack = 0.04
+
+        sow = left0
+        if left1 >= left0:
+            seg = signal[left0: left1 + 1]
+            if seg.size and np.isfinite(seg).any():
+                vmin = float(np.nanmin(seg))
+                sow = left0 + int(np.nanargmin(seg))
+                for j in range(left1, left0 - 1, -1):
+                    v = float(signal[j])
+                    if np.isfinite(v) and v <= vmin + slack:
+                        sow = j
+                        break
+
+        harv = right1
+        if right1 >= right0:
+            seg = signal[right0: right1 + 1]
+            if seg.size and np.isfinite(seg).any():
+                vmin = float(np.nanmin(seg))
+                harv = right0 + int(np.nanargmin(seg))
+                for j in range(right0, right1 + 1):
+                    v = float(signal[j])
+                    if np.isfinite(v) and v <= vmin + slack:
+                        harv = j
+                        break
+
+        if sow >= peak_idx:
+            sow = max(0, peak_idx - mbin)
+        if harv <= peak_idx:
+            harv = min(n - 1, peak_idx + mbin)
+        return sow, harv
+
+    def _detect_ndvi_anchored(
+        self,
+        cvi_smooth: np.ndarray,
+        ndvi_smooth: np.ndarray,
+        reg_ndvi: np.ndarray,
+        reg_evi: np.ndarray,
+        reg_ndmi: np.ndarray,
+        reg_dates: List[datetime],
+        cloud_gaps: List[CloudGap],
+        bin_days: float,
+        *,
+        min_days: int,
+        max_days: int,
+        observed_mask: Optional[np.ndarray] = None,
+    ) -> List[CropCycle]:
+        """
+        Detect growing seasons from the NDVI curve (what the dashboard plots).
+
+        A canopy that peaks at NDVI 0.45–0.55 is still a crop — pulses, millet,
+        and stressed cereals sit there. CVI/VS gating at 0.55 never sees them.
+        Bounding sow/harvest by the flanking troughs (not an absolute bare-soil
+        crossing) keeps long green plateaus from failing the duration cap.
+        """
+        P = PipelineConfig
+        n = len(reg_dates)
+        if n < 12:
+            return []
+        bd = max(float(bin_days), 1.0)
+        peak_floor = float(getattr(P, "CROP_CYCLE_NDVI_PEAK_FLOOR", 0.38))
+        min_prom = float(getattr(P, "CROP_CYCLE_NDVI_MIN_PROMINENCE", 0.08))
+        min_rise = float(getattr(P, "CROP_CYCLE_NDVI_MIN_RISE", 0.08))
+        wbin = max(2, int(21 / bd))
+        mbin = max(3, int(min_days / bd))
+        half = max(mbin, int(int(getattr(P, "CROP_CYCLE_NDVI_MAX_HALF_DAYS", 120)) / bd))
+        min_sep = max(mbin, int(55 / bd))
+
+        raw: List[int] = []
+        for i in range(wbin, n - wbin):
+            v = float(ndvi_smooth[i])
+            if not np.isfinite(v) or v < peak_floor:
+                continue
+            neigh = ndvi_smooth[i - wbin: i + wbin + 1]
+            if v < float(np.nanmax(neigh)) - 0.005:
+                continue
+            left = ndvi_smooth[max(0, i - half): i + 1]
+            right = ndvi_smooth[i: min(n, i + half + 1)]
+            drop = max(v - float(np.nanmin(left)), v - float(np.nanmin(right)))
+            if drop < min_prom:
+                continue
+            raw.append(i)
+
+        peaks: List[int] = []
+        for pi in raw:
+            if peaks and (pi - peaks[-1]) < min_sep:
+                if float(ndvi_smooth[pi]) > float(ndvi_smooth[peaks[-1]]):
+                    peaks[-1] = pi
+            else:
+                peaks.append(pi)
+        peaks = self._merge_plateau_peaks(peaks, ndvi_smooth, min_prom)
+
+        cycles: List[CropCycle] = []
+        used = -1
+        for k, peak_idx in enumerate(peaks):
+            if peak_idx <= used:
+                continue
+            next_peak = peaks[k + 1] if k + 1 < len(peaks) else None
+            sow_idx, harv_idx = self._trough_window(
+                ndvi_smooth, peak_idx,
+                lo=used + 1,
+                hi=(int(next_peak) - 1) if next_peak is not None else n - 1,
+                mbin=mbin,
+                half_bins=half,
+            )
+            duration = (reg_dates[harv_idx] - reg_dates[sow_idx]).days
+            peak_ndvi_v = float(ndvi_smooth[peak_idx])
+            peak_cvi_v = float(cvi_smooth[peak_idx])
+            base = float(np.nanmean(ndvi_smooth[max(0, sow_idx - 2): sow_idx + 2]))
+            ndvi_rise_v = peak_ndvi_v - base
+            if ndvi_rise_v < min_rise:
+                continue
+            if not (min_days <= duration <= max_days):
+                continue
+
+            c_start, c_end = reg_dates[sow_idx], reg_dates[harv_idx]
+            cycle_gaps = [
+                g for g in cloud_gaps
+                if g.start_date <= c_end and g.end_date >= c_start
+            ]
+            if observed_mask is not None and len(observed_mask) == n:
+                seg_mask = observed_mask[sow_idx: harv_idx + 1]
+                n_obs = int(np.count_nonzero(seg_mask))
+                n_win = int(len(seg_mask))
+                peak_observed = bool(observed_mask[peak_idx])
+            else:
+                n_obs = n_win = int(harv_idx - sow_idx + 1)
+                peak_observed = True
+
+            ndvi_seg = reg_ndvi[sow_idx: harv_idx + 1]
+            day_offsets = np.array(
+                [(reg_dates[j] - reg_dates[sow_idx]).days
+                 for j in range(sow_idx, harv_idx + 1)],
+                dtype=float,
+            )
+            cycles.append(CropCycle(
+                sowing_date=reg_dates[sow_idx],
+                harvest_date=reg_dates[harv_idx],
+                peak_date=reg_dates[peak_idx],
+                duration_days=duration,
+                crop_type=self._crop_type(duration, peak_ndvi_v, peak_cvi_v),
+                peak_ndvi=peak_ndvi_v,
+                baseline_ndvi=float(np.nanmean(ndvi_smooth[max(0, sow_idx - 3): sow_idx + 1])),
+                ndvi_rise=ndvi_rise_v,
+                integral_ndvi=float(np.nansum(ndvi_seg)),
+                integral_ndvi_days=(
+                    float(np.trapz(ndvi_seg, day_offsets)) if len(ndvi_seg) > 1 else 0.0
+                ),
+                peak_evi=float(np.nanmean(reg_evi[peak_idx - 1: peak_idx + 2])),
+                peak_ndmi=float(np.nanmean(reg_ndmi[peak_idx - 1: peak_idx + 2])),
+                peak_cvi=peak_cvi_v,
+                confidence=self._confidence(ndvi_seg, duration, peak_cvi_v, sum(g.gap_days for g in cycle_gaps)),
+                cloud_gap_days=sum(g.gap_days for g in cycle_gaps),
+                has_cloud_gap=len(cycle_gaps) > 0,
+                peak_observed=peak_observed,
+                observed_fraction=(n_obs / n_win) if n_win else 0.0,
+                n_observed_bins=n_obs,
+                n_bins=n_win,
+            ))
+            used = harv_idx
         return cycles
 
     def _detect_perennial(

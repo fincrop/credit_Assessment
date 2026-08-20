@@ -8,6 +8,7 @@ import {
   centroidFromPlotGeometry,
   parseOwnerExtentHa,
 } from './farmerParcelCluster';
+import { lookupDistrictName, lookupStateName } from './india_lgd_data';
 
 export type FarmInfoGeometry =
   | { type: 'Polygon'; coordinates: number[][][] }
@@ -276,6 +277,11 @@ export function buildFarmInfoDocument(params: {
     params.district_lgd_code ||
     params.farms.find((f) => f.district_lgd_code)?.district_lgd_code ||
     null;
+  const stateCode = params.state_lgd_code || null;
+  const stateName =
+    (params.state && String(params.state).trim()) || lookupStateName(stateCode);
+  const districtName =
+    (params.district && String(params.district).trim()) || lookupDistrictName(district);
 
   return {
     farmer_id: params.farmer_id,
@@ -287,10 +293,10 @@ export function buildFarmInfoDocument(params: {
     field_area_ha: envelope.field_area_ha,
     crop: envelope.crop,
     sowing_date: envelope.sowing_date,
-    state_lgd_code: params.state_lgd_code || null,
+    state_lgd_code: stateCode,
     district_lgd_code: district,
-    state: params.state || null,
-    district: params.district || null,
+    state: stateName || null,
+    district: districtName || null,
     village: params.village || null,
     farmer_benefits: {
       pm_kisan_enrolled: params.farmer_benefits?.pm_kisan_enrolled ?? null,

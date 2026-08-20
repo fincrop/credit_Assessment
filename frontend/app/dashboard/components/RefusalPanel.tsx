@@ -7,6 +7,7 @@ import {
   type TerminalVerdict,
 } from '../../lib/terminalState';
 import { formatNumber } from '../../lib/format';
+import { areaMismatchOf, areaMismatchHeadline, formatHa } from '../../lib/areaMismatch';
 
 /**
  * The screens for when we did NOT produce a score.
@@ -106,12 +107,6 @@ function NotFarmland({ verdict }: { verdict: TerminalVerdict }) {
         Nothing failed here. The pipeline declines to produce a credit signal for
         land that is not being farmed — a score computed over a pond or a rooftop
         would look like any other number once it reached a lending decision.
-        {lc?.gate_version && (
-          <>
-            {' '}
-            <span className="font-mono text-[11px]">{lc.gate_version}</span>
-          </>
-        )}
       </p>
     </Shell>
   );
@@ -121,14 +116,55 @@ function Unobserved({ verdict }: { verdict: TerminalVerdict }) {
   const ev = verdict.dataSufficiency?.evidence;
   const pv = verdict.parcelViability;
   const pvEv = pv?.evidence;
-  // A viability failure and an observation failure both land here, but they
-  // have different fixes: re-draw the boundary vs wait for a clearer window.
+  const mismatch = areaMismatchOf({ viability: pv });
   const viabilityDrivenBy = pv?.outcome === 'not_viable';
+  const areaMismatch = Boolean(mismatch || pvEv?.areas_disagree);
+
+  if (areaMismatch && mismatch) {
+    return (
+      <Shell
+        eyebrow="Not scored · area mismatch"
+        headline="The AgriStack area does not match the mapped farm boundary."
+      >
+        <p className="text-sm text-ink-2 mt-3 leading-relaxed max-w-2xl">
+          {areaMismatchHeadline(mismatch)}
+          {mismatch.measuredHa < 0.05
+            ? ' The mapped plot is too small to score — a satellite pixel would mostly see the neighbouring field.'
+            : ''}
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-4">
+          <Figure
+            label="AgriStack area"
+            value={formatHa(mismatch.registeredHa)}
+            hint="Given on the land record"
+          />
+          <Figure
+            label="Mapped boundary"
+            value={formatHa(mismatch.measuredHa)}
+            hint="Calculated from the farm outline"
+          />
+          <Figure
+            label="Difference"
+            value={`${mismatch.registeredHa > 0 ? Math.round(Math.abs(1 - mismatch.ratio) * 100) : '—'}%`}
+            hint="These should be close if they describe the same plot."
+          />
+        </div>
+        <p className="text-[12px] text-ink-muted mt-4 leading-relaxed max-w-2xl">
+          Fix the pairing in AgriStack or re-draw the boundary so the outline matches the
+          recorded area, then assess again.
+        </p>
+      </Shell>
+    );
+  }
 
   return (
     <Shell
-      eyebrow="Not scored · insufficient observation"
-      headline="We could not see this parcel well enough to score it."
+      eyebrow={viabilityDrivenBy ? 'Not scored · plot too small' : 'Not scored · insufficient observation'}
+      headline={
+        viabilityDrivenBy
+          ? 'The mapped plot is too small to score honestly.'
+          : 'We could not see this parcel well enough to score it.'
+      }
     >
       {verdict.reason && (
         <p className="text-sm text-ink-2 mt-3 leading-relaxed max-w-2xl">

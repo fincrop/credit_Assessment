@@ -192,6 +192,30 @@
    "geometry_substituted": true,
    "note": "Measured over a substituted footprint."
   },
+  "parcels": [],
+  "holding": {
+   "n_plots_total": null,
+   "n_plots_scored": null,
+   "total_area_ha": null,
+   "owned_area_ha": null,
+   "leased_area_ha": null,
+   "n_owned": 0,
+   "n_leased": 0,
+   "centroid": null
+  },
+  "weather_snapshot": null,
+  "observations": {
+   "n_present": 41,
+   "n_total": 52,
+   "observed_fraction": 0.788,
+   "window_start": "2025-06-01",
+   "window_end": "2026-05-31",
+   "satellite_provider": "sentinel2"
+  },
+  "benefits": {
+   "pm_kisan": null,
+   "has_crop_insurance": null
+  },
   "narrative": {
    "text": "Narrative.",
    "source": "deterministic",

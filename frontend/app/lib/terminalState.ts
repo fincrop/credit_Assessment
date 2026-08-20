@@ -201,12 +201,12 @@ export function terminalStateOfFarm(farm: FarmAssessment | null | undefined): Te
   if (skipped.startsWith('insufficient_observation')) {
     return {
       state: 'UNOBSERVED',
-      reason: farm.data_sufficiency?.reason ?? null,
-      landCover: null,
+      reason: farm.data_sufficiency?.reason ?? farm.parcel_viability?.reason ?? null,
+      landCover: (farm.land_cover as LandCover) ?? null,
       dataSufficiency: farm.data_sufficiency
         ? { reason: farm.data_sufficiency.reason, evidence: farm.data_sufficiency }
         : null,
-      parcelViability: null,
+      parcelViability: farm.parcel_viability ?? null,
       scorable: false,
     };
   }

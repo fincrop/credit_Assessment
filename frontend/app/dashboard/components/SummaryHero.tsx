@@ -105,16 +105,6 @@ export function SummaryHero({ data }: { data: AssessmentPayload }) {
                 {view.nPlotsFailed ? ` · ${view.nPlotsFailed} failed` : ''}
               </span>
             )}
-            {view.indexVersion && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-paper border border-rule text-[11px] text-stone-600 font-mono">
-                {view.indexVersion}
-              </span>
-            )}
-            {view.method && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-paper border border-rule text-[11px] text-stone-500 font-mono">
-                {view.method}
-              </span>
-            )}
           </div>
           {view.diversification && view.diversification.bonus > 0 && (
             <p className="text-xs text-emerald-800">

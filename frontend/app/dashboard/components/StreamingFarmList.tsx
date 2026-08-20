@@ -6,6 +6,12 @@ import { plotKeyOf } from '../../lib/plotKey';
 import { formatScoreWhole } from '../../lib/formatRisk';
 import { bandForRiskCategory, bandChipStyle } from '../../lib/kbsScore';
 import { terminalStateOfFarm, landCoverLabel } from '../../lib/terminalState';
+import {
+  areaMismatchOf,
+  areaMismatchSkipNote,
+  formatHa,
+  geometryAreaHa,
+} from '../../lib/areaMismatch';
 
 export type StreamRowStatus = 'pending' | 'analyzing' | 'scored' | 'skipped' | 'failed';
 
@@ -13,6 +19,8 @@ export type StreamFarmRow = {
   plot_key: string;
   farm_id?: string;
   area_ha?: number;
+  measured_area_ha?: number | null;
+  geometry?: unknown;
   crop?: string | null;
   is_ror_owner?: boolean | null;
   tenure_factor?: number;
@@ -36,8 +44,31 @@ function tenureLabel(row: StreamFarmRow): string {
  * land, one is a finding about our view of it, one is our bug — so they get
  * different words and different tones.
  */
-function ExclusionNote({ farm }: { farm: FarmAssessment }) {
+function ExclusionNote({
+  farm,
+  registeredHa,
+  measuredHa,
+  geometry,
+}: {
+  farm: FarmAssessment;
+  registeredHa?: number;
+  measuredHa?: number | null;
+  geometry?: unknown;
+}) {
   const v = terminalStateOfFarm(farm);
+  const mismatch = areaMismatchOf({
+    registeredHa: registeredHa ?? farm.area_ha,
+    measuredHa: measuredHa ?? farm.measured_area_ha ?? geometryAreaHa(geometry),
+    viability: farm.parcel_viability,
+  });
+
+  if (mismatch && (v.state === 'UNOBSERVED' || String(farm.skipped_reason || '').includes('area_mismatch'))) {
+    return (
+      <p className="text-[11px] mt-1 leading-snug" style={{ color: '#7A5405' }}>
+        {areaMismatchSkipNote(mismatch)}
+      </p>
+    );
+  }
 
   if (v.state === 'NOT_FARMLAND') {
     const cls = landCoverLabel(farm.land_cover?.class);
@@ -50,6 +81,14 @@ function ExclusionNote({ farm }: { farm: FarmAssessment }) {
   }
 
   if (v.state === 'UNOBSERVED') {
+    if (farm.parcel_viability?.outcome === 'not_viable') {
+      return (
+        <p className="text-[11px] mt-1 leading-snug" style={{ color: '#7A5405' }}>
+          {farm.parcel_viability.reason ||
+            'Not scored — the mapped plot is too small to measure honestly.'}
+        </p>
+      );
+    }
     const ds = farm.data_sufficiency;
     const detail =
       ds?.observed_fraction != null
@@ -57,7 +96,7 @@ function ExclusionNote({ farm }: { farm: FarmAssessment }) {
         : '';
     return (
       <p className="text-[11px] mt-1 leading-snug" style={{ color: '#7A5405' }}>
-        Not scored — too little observation to say anything about this plot.{detail}
+        {ds?.reason || `Not scored — too few clear satellite views of this plot.${detail}`}
       </p>
     );
   }
@@ -73,6 +112,40 @@ function ExclusionNote({ farm }: { farm: FarmAssessment }) {
   return (
     <p className="text-[11px] text-ink-muted mt-1 leading-snug">{farm.skipped_reason}</p>
   );
+}
+
+function AreaLine({
+  registeredHa,
+  measuredHa,
+  geometry,
+  viability,
+}: {
+  registeredHa?: number;
+  measuredHa?: number | null;
+  geometry?: unknown;
+  viability?: FarmAssessment['parcel_viability'];
+}) {
+  const fromGeom = measuredHa ?? geometryAreaHa(geometry);
+  const mismatch = areaMismatchOf({
+    registeredHa,
+    measuredHa: fromGeom,
+    viability,
+  });
+  if (mismatch) {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5">
+        <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-amber-50 border-amber-200 text-amber-950">
+          AgriStack {formatHa(mismatch.registeredHa)}
+        </span>
+        <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-amber-50 border-amber-200 text-amber-950">
+          Mapped {formatHa(mismatch.measuredHa)}
+        </span>
+      </span>
+    );
+  }
+  if (registeredHa != null) return <span>{formatHa(Number(registeredHa))}</span>;
+  if (fromGeom != null) return <span>{formatHa(fromGeom)}</span>;
+  return null;
 }
 
 function statusBadge(status: StreamRowStatus) {
@@ -163,12 +236,24 @@ export function StreamingFarmList({
                 <p className="text-sm font-semibold text-stone-900 font-mono truncate">
                   {row.farm_id || key}
                 </p>
-                <p className="text-xs text-stone-500 mt-0.5">
-                  {tenureLabel(row)}
-                  {row.area_ha != null ? ` · ${Number(row.area_ha).toFixed(2)} ha` : ''}
-                  {row.crop ? ` · ${row.crop}` : ''}
+                <p className="text-xs text-stone-500 mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                  <span>{tenureLabel(row)}</span>
+                  <AreaLine
+                    registeredHa={row.area_ha}
+                    measuredHa={row.measured_area_ha ?? row.assessment?.measured_area_ha}
+                    geometry={row.geometry}
+                    viability={row.assessment?.parcel_viability}
+                  />
+                  {row.crop ? <span>· {row.crop}</span> : null}
                 </p>
-                {a?.skipped_reason && <ExclusionNote farm={a} />}
+                {a?.skipped_reason && (
+                  <ExclusionNote
+                    farm={a}
+                    registeredHa={row.area_ha}
+                    measuredHa={row.measured_area_ha ?? a.measured_area_ha}
+                    geometry={row.geometry}
+                  />
+                )}
               </div>
 
               <div className="flex items-center gap-2 shrink-0">

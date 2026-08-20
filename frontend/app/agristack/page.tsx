@@ -482,7 +482,7 @@ export default function AgristackPage() {
                       {savedFarmerIds.map((id) => (
                         <li key={id}>
                           <Link
-                            href={`/dashboard?farmer_id=${encodeURIComponent(id)}`}
+                            href={`/dashboard?farmer_id=${encodeURIComponent(id)}&mode=assess`}
                             className="inline-flex text-xs font-mono px-2 py-1 rounded-md bg-white border border-blue-200 text-blue-800 hover:bg-blue-100"
                           >
                             {id}
@@ -496,7 +496,7 @@ export default function AgristackPage() {
                       type="button"
                       onClick={() => {
                         const farmerId = encodeURIComponent(savedFarmerIds[0]);
-                        router.push(`/dashboard?farmer_id=${farmerId}`);
+                        router.push(`/dashboard?farmer_id=${farmerId}&mode=assess`);
                       }}
                       className="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-colors"
                     >

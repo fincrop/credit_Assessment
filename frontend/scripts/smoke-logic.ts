@@ -12,6 +12,8 @@
 import { terminalStateOf, terminalStateOfFarm, terminalStateOfReport, landCoverLabel } from '../app/lib/terminalState';
 import { bandForIndex, scoreColor, bandForRiskCategory, toKbsScore } from '../app/lib/kbsScore';
 import { linePath, segments, linearScale, ticks, areaPath } from '../app/lib/chart';
+import { areaMismatchOf, formatHa } from '../app/lib/areaMismatch';
+import { inferCyclesFromNdvi, resolveCropCycles } from '../app/lib/ndviCycles';
 
 let failures = 0;
 const t = (name: string, got: unknown, want: unknown) => {
@@ -55,6 +57,8 @@ t('plot not_agricultural',
   terminalStateOfFarm({ skipped_reason: 'not_agricultural:BUILTUP' } as never).state, 'NOT_FARMLAND');
 t('plot insufficient',
   terminalStateOfFarm({ skipped_reason: 'insufficient_observation' } as never).state, 'UNOBSERVED');
+t('plot area mismatch still UNOBSERVED',
+  terminalStateOfFarm({ skipped_reason: 'insufficient_observation:area_mismatch' } as never).state, 'UNOBSERVED');
 t('plot error',
   terminalStateOfFarm({ skipped_reason: 'error: ee timeout' } as never).state, 'FAILED');
 t('plot error strips prefix',
@@ -165,6 +169,66 @@ t('ticks land on round numbers', ticks([0, 1], 4).join(','), '0,0.2,0.4,0.6,0.8,
 t('ticks handle a flat domain', ticks([3, 3]).length, 1);
 t('ticks cover an integer domain', ticks([0, 100], 5).join(','), '0,20,40,60,80,100');
 t('ticks respect a non-zero start', ticks([12, 30], 3).join(','), '15,20,25,30');
+
+const mismatch = areaMismatchOf({ registeredHa: 0.67, measuredHa: 0.04 });
+t('agristack vs mapped mismatch detected', mismatch != null, true);
+t('mismatch flags measured much smaller', mismatch?.measuredMuchSmaller, true);
+t('matching areas are not flagged', areaMismatchOf({ registeredHa: 1.2, measuredHa: 1.18 }), null);
+t('formatHa keeps tiny plots precise', formatHa(0.004), '0.004 ha');
+
+/* Modest NDVI ~0.5 crops must still count as growing seasons. */
+function isoDaysFrom(start: string, n: number, step = 10): string[] {
+  const t0 = new Date(start).getTime();
+  return Array.from({ length: n }, (_, i) =>
+    new Date(t0 + i * step * 86400000).toISOString().slice(0, 10)
+  );
+}
+function hat(peak: number, length: number, base = 0.22): number[] {
+  const half = Math.floor(length / 2);
+  const up = Array.from({ length: half }, (_, i) => base + ((peak - base) * i) / Math.max(1, half - 1));
+  const down = Array.from(
+    { length: length - half },
+    (_, i) => peak + ((base - peak) * i) / Math.max(1, length - half - 1)
+  );
+  return [...up, ...down];
+}
+const modestProfile = [
+  ...Array(5).fill(0.22),
+  ...hat(0.50, 12),
+  ...Array(6).fill(0.20),
+  ...hat(0.48, 11),
+  ...Array(6).fill(0.21),
+  ...hat(0.52, 12),
+  ...Array(5).fill(0.20),
+];
+const modestTraj = { dates: isoDaysFrom('2023-06-15', modestProfile.length), ndvi: modestProfile, comparison_available: false };
+const modestCycles = inferCyclesFromNdvi(modestTraj);
+t('NDVI ~0.5 seasons are detected', modestCycles.length >= 3, true);
+
+const mixedProfile = [
+  ...Array(3).fill(0.22),
+  ...hat(0.74, 14, 0.20),
+  ...Array(5).fill(0.22),
+  ...hat(0.50, 11, 0.20),
+  ...Array(5).fill(0.20),
+  ...hat(0.70, 14, 0.20),
+  ...Array(5).fill(0.21),
+  ...hat(0.48, 11, 0.20),
+  ...Array(5).fill(0.20),
+  ...hat(0.72, 14, 0.20),
+  ...Array(5).fill(0.21),
+  ...hat(0.52, 11, 0.20),
+  ...Array(4).fill(0.20),
+];
+const mixedTraj = { dates: isoDaysFrom('2023-06-15', mixedProfile.length), ndvi: mixedProfile, comparison_available: false };
+const mixedCycles = inferCyclesFromNdvi(mixedTraj);
+t('kharif + modest rabi are both found', mixedCycles.length >= 5, true);
+t('resolveCropCycles prefers richer NDVI read', resolveCropCycles([], mixedTraj).length >= 5, true);
+t('barren wobble is not a season', inferCyclesFromNdvi({
+  dates: isoDaysFrom('2023-06-15', 40),
+  ndvi: Array.from({ length: 40 }, (_, i) => 0.12 + 0.012 * ((i * 7) % 5)),
+  comparison_available: false,
+}).length, 0);
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

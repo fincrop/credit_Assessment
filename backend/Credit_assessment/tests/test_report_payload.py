@@ -218,7 +218,58 @@ def test_narrative_provenance_travels_with_the_text():
     assert n["model"]["model"] == "llama-3.3-70b-versatile"
 
 
-# ── integrity ─────────────────────────────────────────────────────────────
+def test_parcels_are_listed_from_farm_assessments():
+    doc = _assessment(
+        farm_assessments=[
+            {
+                "plot_key": "MH-02/107",
+                "farm_id": "107",
+                "area_ha": 0.72,
+                "is_ror_owner": True,
+                "crop": "Cotton",
+                "index_score": 80.0,
+                "included": True,
+            },
+            {
+                "plot_key": "MH-02/109",
+                "farm_id": "109",
+                "area_ha": 0.68,
+                "is_ror_owner": False,
+                "crop": "Maize",
+                "index_score": 48.7,
+                "included": True,
+            },
+        ]
+    )
+    p = build_report_payload(doc)
+    assert len(p["parcels"]) == 2
+    assert p["parcels"][0]["tenure"] == "Owned"
+    assert p["parcels"][1]["tenure"] == "Leased"
+    assert p["holding"]["n_owned"] == 1
+    assert p["holding"]["n_leased"] == 1
+    assert p["holding"]["owned_area_ha"] == 0.72
+
+
+def test_weather_snapshot_is_absent_when_the_assessment_has_none():
+    assert build_report_payload(_assessment())["weather_snapshot"] is None
+
+
+def test_weather_snapshot_uses_recorded_indicators():
+    doc = _assessment(
+        weather_analysis={
+            "weather_risk_score": 23.7,
+            "total_extreme_events": 5,
+            "kharif_avg_rainfall_mm": None,
+            "seasonal_weather": [
+                {"weather_indicators": {"max_dry_spell_days": 32, "heat_stress_days": 0}},
+                {"weather_indicators": {"max_dry_spell_days": 38, "heat_stress_days": 29}},
+            ],
+        }
+    )
+    snap = build_report_payload(doc)["weather_snapshot"]
+    assert snap["total_extreme_events"] == 5
+    assert snap["max_dry_spell_days"] == 38
+    assert snap["max_heat_stress_days"] == 29
 
 def test_the_content_hash_is_stable_across_renders():
     """A hash that changes every render proves nothing."""

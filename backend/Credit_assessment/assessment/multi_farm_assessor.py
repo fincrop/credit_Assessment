@@ -293,7 +293,10 @@ class MultiFarmAssessor:
                     # which must not drag down the farmer's aggregate as though
                     # it were a bad plot.
                     ds = assessment.get("data_sufficiency") or {}
-                    rec = self._skipped_record(farm, tf, "insufficient_observation")
+                    pv = assessment.get("parcel_viability") or {}
+                    rec = self._skipped_record(
+                        farm, tf, self._insufficient_skip_reason(assessment)
+                    )
                     rec["data_sufficiency"] = {
                         "reason": assessment.get("insufficient_reason"),
                         "observed_fraction": (ds.get("evidence") or {}).get(
@@ -303,6 +306,11 @@ class MultiFarmAssessor:
                             "largest_blind_gap_days"
                         ),
                     }
+                    if pv:
+                        rec["parcel_viability"] = pv
+                        geo_ha = (pv.get("evidence") or {}).get("geometry_ha")
+                        if geo_ha is not None:
+                            rec["measured_area_ha"] = geo_ha
                     per_farm.append(rec)
                     _emit()
                     continue
@@ -545,6 +553,22 @@ class MultiFarmAssessor:
             "sub_indices": self._sub_scalars(assessment),
             "reason_codes": (ra.get("reason_codes") or [])[:8],
         }
+        lc = assessment.get("land_cover")
+        if isinstance(lc, dict) and lc:
+            rec["land_cover"] = {
+                "class": lc.get("class"),
+                "confidence": lc.get("confidence"),
+                "reason": lc.get("reason"),
+                "outcome": lc.get("outcome"),
+                "is_cultivable": lc.get("is_cultivable"),
+                "evidence": lc.get("evidence"),
+            }
+        pv = assessment.get("parcel_viability")
+        if isinstance(pv, dict) and pv:
+            rec["parcel_viability"] = pv
+        geo_ha = ((pv or {}).get("evidence") or {}).get("geometry_ha") if isinstance(pv, dict) else None
+        if geo_ha is not None:
+            rec["measured_area_ha"] = geo_ha
         detail = self._plot_detail_for_ui(assessment)
         if detail:
             rec["detail"] = detail
@@ -585,6 +609,8 @@ class MultiFarmAssessor:
             "continuous_data_stats",
             "location",
             "weather_intervals",
+            "land_cover",
+            "parcel_viability",
         ):
             val = assessment.get(key)
             if val is not None and val != {} and val != []:
@@ -611,6 +637,16 @@ class MultiFarmAssessor:
             "sub_indices": {},
             "skipped_reason": reason,
         }
+
+    @staticmethod
+    def _insufficient_skip_reason(assessment: Dict) -> str:
+        pv = assessment.get("parcel_viability") or {}
+        ev = pv.get("evidence") or {}
+        if pv.get("outcome") == "not_viable" and ev.get("areas_disagree"):
+            return "insufficient_observation:area_mismatch"
+        if pv.get("outcome") == "not_viable":
+            return "insufficient_observation:too_small"
+        return "insufficient_observation"
 
     def _persist(self, farmer_id: str, farmer_result: Dict) -> None:
         mongo = getattr(self.pipeline, "db", None) or getattr(

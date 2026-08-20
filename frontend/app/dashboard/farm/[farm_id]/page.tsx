@@ -9,24 +9,13 @@ import { plotKeyOf, assignPlotKeysClient } from '../../../lib/plotKey';
 import { rowStatusFromAssessment } from '../../../lib/streamFarms';
 import { PlotBoundaryMap, measuredFootprintOf } from '../../components/PlotBoundaryMap';
 import { FarmKbsPanel } from '../../components/FarmKbsPanel';
-import {
-  IndexInsightsCard,
-  FarmSlimFallbackCard,
-} from '../../components/IndexInsightsCard';
+import { FarmSlimFallbackCard } from '../../components/IndexInsightsCard';
 import { RefusalPanel } from '../../components/RefusalPanel';
-import { ScoreWaterfall } from '../../components/ScoreWaterfall';
 import { NdviTrajectory } from '../../components/NdviTrajectory';
-import { ObservationCalendar } from '../../components/ObservationCalendar';
-import { LandCoverPanel } from '../../components/LandCoverPanel';
-import { CropVerificationPanel } from '../../components/CropVerificationPanel';
-import { PeerCohortPanel } from '../../components/PeerCohortPanel';
-import { WeatherAnomalyChart } from '../../components/WeatherAnomalyChart';
+import { OverviewFindingsPanel } from '../../components/OverviewFindingsPanel';
+import { CropPerformanceSummary } from '../../components/CropPerformanceSummary';
 import { useReport } from '../../../lib/useReport';
-import { ConfidenceStrip } from '../../components/ConfidenceBadge';
 import { terminalStateOfFarm } from '../../../lib/terminalState';
-import { CropCyclesSection } from '../../components/CropCyclesSection';
-import { CroppingSection } from '../../components/CroppingSection';
-import { PerformanceSection } from '../../components/PerformanceSection';
 import { WeatherSection } from '../../components/WeatherSection';
 import { AIEnrichmentSection } from '../../components/AIEnrichmentSection';
 import { useRiskView } from '../../../lib/useRiskView';
@@ -34,14 +23,18 @@ import {
   buildFarmPlotPayload,
   plotHasAnalysisDetail,
 } from '../../../lib/farmPlotPayload';
+import {
+  areaMismatchOf,
+  formatHa,
+  geometryAreaHa,
+} from '../../../lib/areaMismatch';
 
-type TabId = 'overview' | 'cropPerf' | 'weather' | 'cycles' | 'ai';
+type TabId = 'overview' | 'cropPerf' | 'weather' | 'ai';
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'overview', label: 'Overview' },
-  { id: 'cropPerf', label: 'Crop & Performance' },
+  { id: 'cropPerf', label: 'Crops & seasons' },
   { id: 'weather', label: 'Weather' },
-  { id: 'cycles', label: 'Cycles' },
   { id: 'ai', label: 'Explainability' },
 ];
 
@@ -205,7 +198,7 @@ function FarmDetailContent() {
             This job may have expired or was not found. Re-run the assessment for this farmer.
           </p>
           <Link
-            href={`/dashboard?farmer_id=${encodeURIComponent(farmerId || '')}`}
+            href={`/dashboard?farmer_id=${encodeURIComponent(farmerId || '')}&mode=assess`}
             className="inline-flex bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-2 rounded-lg text-sm"
           >
             Re-run assessment
@@ -216,6 +209,16 @@ function FarmDetailContent() {
   }
 
   const scored = rowStatus === 'scored' && farmRow?.index_score != null;
+  const registeredHa = farmGeom?.area_ha ?? farmRow?.area_ha;
+  const measuredHa =
+    farmRow?.measured_area_ha ??
+    geometryAreaHa(farmGeom?.geometry) ??
+    plotPayload?.parcel_viability?.evidence?.geometry_ha;
+  const areaMismatch = areaMismatchOf({
+    registeredHa,
+    measuredHa,
+    viability: plotPayload?.parcel_viability ?? farmRow?.parcel_viability,
+  });
 
   return (
     <div className="min-h-screen bg-paper text-stone-800">
@@ -248,19 +251,38 @@ function FarmDetailContent() {
             <h1 className="text-lg font-bold text-stone-900 mt-0.5 font-mono truncate">
               {farmGeom?.farm_name || farmRow?.farm_id || plotKey}
             </h1>
-            <p className="text-xs text-stone-500 mt-1">
-              {farmGeom?.area_ha != null
-                ? `${farmGeom.area_ha.toFixed(2)} ha`
-                : farmRow?.area_ha != null
-                  ? `${farmRow.area_ha.toFixed(2)} ha`
-                  : '—'}
-              {farmRow?.crop ? ` · ${farmRow.crop}` : ''}
-              {farmRow?.is_ror_owner === false
-                ? ' · Leased / joint'
-                : farmRow?.is_ror_owner === true
-                  ? ' · Owned'
-                  : ''}
+            <p className="text-xs text-stone-500 mt-1 flex flex-wrap items-center gap-1.5">
+              {areaMismatch ? (
+                <>
+                  <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-amber-50 border-amber-200 text-amber-950">
+                    AgriStack {formatHa(areaMismatch.registeredHa)}
+                  </span>
+                  <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded border bg-amber-50 border-amber-200 text-amber-950">
+                    Mapped {formatHa(areaMismatch.measuredHa)}
+                  </span>
+                </>
+              ) : registeredHa != null ? (
+                <span>{formatHa(Number(registeredHa))}</span>
+              ) : measuredHa != null ? (
+                <span>{formatHa(Number(measuredHa))}</span>
+              ) : (
+                <span>—</span>
+              )}
+              {farmRow?.crop ? <span>· {farmRow.crop}</span> : null}
+              {farmRow?.is_ror_owner === false ? (
+                <span>· Leased / joint</span>
+              ) : farmRow?.is_ror_owner === true ? (
+                <span>· Owned</span>
+              ) : null}
             </p>
+            {areaMismatch && (
+              <p className="text-[11px] text-amber-900 mt-1.5 leading-snug">
+                The area on the land record does not match the mapped boundary
+                {areaMismatch.measuredMuchSmaller
+                  ? ' — the outline on the map is much smaller than AgriStack reports.'
+                  : '.'}
+              </p>
+            )}
             <div className="mt-3 flex-1 min-h-[220px]">
               <PlotBoundaryMap
                 geometry={farmGeom?.geometry}
@@ -300,7 +322,6 @@ function FarmDetailContent() {
                       : 'This plot was not scored in this run.'
                 }
               />
-              {scored && <ConfidenceStrip data={plotPayload} />}
             </div>
           )}
         </div>
@@ -331,68 +352,46 @@ function FarmDetailContent() {
 
         {activeTab === 'overview' && (
           <div className="space-y-4">
-            {scored && (
-              <ScoreWaterfall
-                view={farmView}
-                captions={plotPayload?.risk_assessment?.driver_captions}
-                footprint={plotPayload?.risk_assessment?.footprint}
-                scopeLabel="plot"
+            <div className="grid lg:grid-cols-[3fr_2fr] gap-4 items-stretch min-h-[420px]">
+              <NdviTrajectory
+                variant="overview"
+                trajectory={report?.ndvi_trajectory}
+                cycles={plotPayload?.crop_cycles?.cycles}
+                windowLabel={
+                  plotPayload?.continuous_data_stats?.date_range?.start &&
+                  plotPayload?.continuous_data_stats?.date_range?.end
+                    ? `${plotPayload.continuous_data_stats.date_range.start} → ${plotPayload.continuous_data_stats.date_range.end}`
+                    : undefined
+                }
               />
-            )}
-            {/* Evidence lives in the `evidence` collection, not on the job
-                result, so it arrives via the report endpoint. Both panels
-                render their own empty state when it is absent — an older
-                assessment with no evidence record is ordinary, and its score
-                is still valid. */}
-            {scored && (
-              <>
-                <NdviTrajectory
-                  trajectory={report?.ndvi_trajectory}
-                  windowLabel={
-                    plotPayload?.continuous_data_stats?.date_range?.start &&
-                    plotPayload?.continuous_data_stats?.date_range?.end
-                      ? `${plotPayload.continuous_data_stats.date_range.start} → ${plotPayload.continuous_data_stats.date_range.end}`
-                      : undefined
-                  }
-                />
-                <ObservationCalendar
-                  sufficiency={plotPayload?.data_sufficiency ?? report?.data_sufficiency}
-                  trajectory={report?.ndvi_trajectory}
-                />
-              </>
-            )}
-            {scored ? (
-              <IndexInsightsCard view={farmView} scopeLabel="plot" />
-            ) : (
-              <div className="bg-white rounded-xl border border-rule p-6 text-sm text-stone-500">
-                Plot-level index insights appear when this farm is scored.
-              </div>
-            )}
-            <LandCoverPanel landCover={plotPayload?.land_cover ?? report?.land_cover} />
+              <OverviewFindingsPanel
+                view={scored ? farmView : null}
+                landCover={plotPayload?.land_cover ?? report?.land_cover}
+                scored={scored}
+              />
+            </div>
             {farmRow && !hasDetail && <FarmSlimFallbackCard farm={farmRow} />}
           </div>
         )}
 
         {activeTab === 'cropPerf' && (
-          <div className="space-y-4">
+          <div>
             {hasDetail ||
             plotPayload.cropping_analysis ||
             plotPayload.performance_analysis ||
-            plotPayload.continuous_data_stats ? (
-              <>
-                <CropVerificationPanel
-                  verification={plotPayload.cropping_analysis?.crop_verification}
-                />
-                <PeerCohortPanel performance={plotPayload.performance_analysis} />
-                <CroppingSection data={plotPayload} />
-                <PerformanceSection data={plotPayload} />
-              </>
+            plotPayload.crop_cycles ||
+            plotPayload.continuous_data_stats ||
+            report?.ndvi_trajectory ? (
+              <CropPerformanceSummary
+                data={plotPayload}
+                ndviTrajectory={report?.ndvi_trajectory}
+              />
             ) : farmRow ? (
               <FarmSlimFallbackCard farm={farmRow} />
             ) : (
               <EmptyTab
-                title="Crop & performance"
-                body="No cropping or performance analysis is available for this plot."
+                title="Crops & seasons"
+                body="No crop or season analysis is available for this plot."
               />
             )}
           </div>
@@ -407,7 +406,6 @@ function FarmDetailContent() {
                     Showing holding-area weather (shared across plots in this assessment).
                   </p>
                 )}
-                <WeatherAnomalyChart weather={plotPayload.weather_analysis} />
                 <WeatherSection data={plotPayload} />
               </div>
             ) : farmRow ? (
@@ -427,25 +425,7 @@ function FarmDetailContent() {
             </div>
           ))}
 
-        {activeTab === 'cycles' &&
-          (plotPayload.crop_cycles ? (
-            <CropCyclesSection data={plotPayload} />
-          ) : farmRow ? (
-            <FarmSlimFallbackCard farm={farmRow} />
-          ) : (
-            <EmptyTab title="Cycles" body="No crop_cycles block in payload." />
-          ))}
-
-        {activeTab === 'ai' && (
-          <div className="space-y-2">
-            <p className="text-xs text-stone-500">
-              {farmRow?.detail?.ai_enrichment
-                ? 'Plot-level explainability from this assessment.'
-                : 'Showing reason codes for this plot; narrative AI may be holding-level when present.'}
-            </p>
-            <AIEnrichmentSection data={plotPayload} />
-          </div>
-        )}
+        {activeTab === 'ai' && <AIEnrichmentSection data={plotPayload} />}
       </main>
     </div>
   );

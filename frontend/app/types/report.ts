@@ -146,6 +146,52 @@ export interface ReportMethodology {
   weights_note?: string | null;
 }
 
+export interface ReportParcel {
+  plot_key?: string | null;
+  farm_id?: string | null;
+  tenure?: string | null;
+  area_ha?: number | null;
+  crop?: string | null;
+  kbs?: number | null;
+  band?: KbsBandRange | null;
+  included?: boolean;
+  skipped_reason?: string | null;
+}
+
+export interface ReportHolding {
+  n_plots_total?: number | null;
+  n_plots_scored?: number | null;
+  total_area_ha?: number | null;
+  owned_area_ha?: number | null;
+  leased_area_ha?: number | null;
+  n_owned?: number | null;
+  n_leased?: number | null;
+  centroid?: { latitude?: number | null; longitude?: number | null } | null;
+}
+
+export interface ReportWeatherSnapshot {
+  weather_risk_score?: number | null;
+  total_extreme_events?: number | null;
+  kharif_avg_rainfall_mm?: number | null;
+  rabi_avg_rainfall_mm?: number | null;
+  max_dry_spell_days?: number | null;
+  max_heat_stress_days?: number | null;
+}
+
+export interface ReportObservations {
+  n_present?: number | null;
+  n_total?: number | null;
+  observed_fraction?: number | null;
+  window_start?: string | null;
+  window_end?: string | null;
+  satellite_provider?: string | null;
+}
+
+export interface ReportBenefits {
+  pm_kisan?: boolean | null;
+  has_crop_insurance?: boolean | null;
+}
+
 export interface ReportIntegrity {
   /** Hash over report content, EXCLUDING generated_at — so the same
    *  assessment always hashes the same. A hash that changes on every render
@@ -171,6 +217,8 @@ export interface ReportSectionsPresent {
   land_cover: boolean;
   crop_verification: boolean;
   narrative: boolean;
+  holding?: boolean;
+  weather_snapshot?: boolean;
 }
 
 export interface ReportPayload {
@@ -198,6 +246,12 @@ export interface ReportPayload {
   data_sufficiency: DataSufficiency | null;
   crop_verification: CropVerification | null;
   footprint: Footprint | null;
+
+  parcels?: ReportParcel[];
+  holding?: ReportHolding;
+  weather_snapshot?: ReportWeatherSnapshot | null;
+  observations?: ReportObservations;
+  benefits?: ReportBenefits;
 
   narrative: ReportNarrative;
   methodology: ReportMethodology;

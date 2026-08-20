@@ -4,39 +4,14 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../components/providers/AuthProvider';
-
-interface FarmDoc {
-  _id: string;
-  farmer_name: string;
-  phone?: string | null;
-  agristack_farmer_id?: string | null;
-  pipeline_farmer_id?: string;
-  has_assessment?: boolean;
-  latest_assessment_date?: string | Date | null;
-  location?: {
-    state?: { name?: string };
-    district?: { name?: string };
-    taluka?: { name?: string };
-    village?: { name?: string };
-  };
-  farms?: { farm_name?: string; primary_crop?: string; area_ha?: number }[];
-  created_at?: string;
-  updated_at?: string;
-}
-
-function pipelineId(f: FarmDoc): string {
-  return f.pipeline_farmer_id || f.agristack_farmer_id || f._id;
-}
-
-function dashboardHref(f: FarmDoc): string {
-  return `/dashboard?farmer_id=${encodeURIComponent(pipelineId(f))}`;
-}
+import { FarmerDetailPanel, FarmerFarmsTable } from '../../components/farmers/FarmerFarmsTable';
+import type { FarmerListItem } from '../../lib/farmerLocation';
 
 export default function SavedFarmsPage() {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
-  const [farmers, setFarmers] = useState<FarmDoc[]>([]);
-  const [selected, setSelected] = useState<FarmDoc | null>(null);
+  const [farmers, setFarmers] = useState<FarmerListItem[]>([]);
+  const [selected, setSelected] = useState<FarmerListItem | null>(null);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -117,155 +92,24 @@ export default function SavedFarmsPage() {
         ) : farmers.length === 0 ? (
           <div className="text-center py-20 border border-dashed border-rule rounded-xl">
             <p className="text-stone-500 mb-4">No saved farmers yet.</p>
-            <Link href="/farmer" className="text-emerald-700 hover:text-emerald-300 text-sm font-medium">
+            <Link href="/farmer" className="text-emerald-700 hover:text-emerald-800 text-sm font-medium">
               Start Farmer Journey →
             </Link>
           </div>
         ) : (
           <div className="grid lg:grid-cols-[1fr_320px] gap-6">
-            <div className="overflow-x-auto border border-rule rounded-xl">
-              <table className="w-full text-sm text-left">
-                <thead className="bg-white text-stone-500 text-xs uppercase tracking-wider">
-                  <tr>
-                    <th className="px-4 py-3 font-semibold">Name</th>
-                    <th className="px-4 py-3 font-semibold">State</th>
-                    <th className="px-4 py-3 font-semibold">District</th>
-                    <th className="px-4 py-3 font-semibold">Farms</th>
-                    <th className="px-4 py-3 font-semibold">Crops</th>
-                    <th className="px-4 py-3 font-semibold">Assessment</th>
-                    <th className="px-4 py-3 font-semibold">Date</th>
-                    <th className="px-4 py-3 font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#30363d]">
-                  {farmers.map((f) => {
-                    const crops = [
-                      ...new Set((f.farms || []).map((x) => x.primary_crop).filter(Boolean)),
-                    ];
-                    const assessed = !!f.has_assessment;
-                    return (
-                      <tr
-                        key={f._id}
-                        className={`hover:bg-white/60 cursor-pointer ${
-                          selected?._id === f._id ? 'bg-white' : ''
-                        }`}
-                        onClick={() => setSelected(f)}
-                      >
-                        <td className="px-4 py-3 font-medium text-stone-900">{f.farmer_name}</td>
-                        <td className="px-4 py-3 text-stone-500">{f.location?.state?.name || '—'}</td>
-                        <td className="px-4 py-3 text-stone-500">{f.location?.district?.name || '—'}</td>
-                        <td className="px-4 py-3 font-mono text-stone-700">{f.farms?.length ?? 0}</td>
-                        <td className="px-4 py-3 text-stone-500 max-w-[160px] truncate">
-                          {crops.join(', ') || '—'}
-                        </td>
-                        <td className="px-4 py-3">
-                          {assessed ? (
-                            <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                              Assessed
-                            </span>
-                          ) : (
-                            <span className="text-[11px] text-ink-muted">Not assessed</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-stone-500 text-xs">
-                          {f.created_at ? new Date(f.created_at).toLocaleDateString() : '—'}
-                        </td>
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex flex-wrap gap-2">
-                            <Link
-                              href={`/farmer?edit=${encodeURIComponent(f._id)}`}
-                              className="text-xs font-semibold text-sky-400 hover:text-sky-300"
-                            >
-                              Edit
-                            </Link>
-                            <Link
-                              href={dashboardHref(f)}
-                              className="text-xs font-semibold text-emerald-700 hover:text-emerald-300"
-                            >
-                              {assessed ? 'View Assessment' : 'Run Assessment'}
-                            </Link>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(f._id)}
-                              className="text-xs text-red-400 hover:text-red-300"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            <aside className="bg-white border border-rule rounded-xl p-4 h-fit sticky top-20">
-              <h2 className="text-sm font-semibold text-stone-700 mb-3">Details</h2>
-              {!selected ? (
-                <p className="text-xs text-ink-muted">Click a row to view details.</p>
-              ) : (
-                <div className="space-y-3 text-sm">
-                  <div>
-                    <p className="text-[10px] text-ink-muted uppercase tracking-wider">Name</p>
-                    <p className="text-stone-900 font-medium">{selected.farmer_name}</p>
-                  </div>
-                  {selected.agristack_farmer_id && (
-                    <div>
-                      <p className="text-[10px] text-ink-muted uppercase tracking-wider">AgriStack ID</p>
-                      <p className="font-mono text-emerald-700 text-xs">{selected.agristack_farmer_id}</p>
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-[10px] text-ink-muted uppercase tracking-wider">Location</p>
-                    <p className="text-stone-500 text-xs">
-                      {[
-                        selected.location?.village?.name,
-                        selected.location?.taluka?.name,
-                        selected.location?.district?.name,
-                        selected.location?.state?.name,
-                      ]
-                        .filter(Boolean)
-                        .join(', ') || '—'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-ink-muted uppercase tracking-wider mb-1">Farms</p>
-                    <ul className="space-y-1">
-                      {(selected.farms || []).map((farm, i) => (
-                        <li key={i} className="text-xs text-stone-500">
-                          {farm.farm_name || `Farm ${i + 1}`} — {farm.primary_crop || '—'} —{' '}
-                          <span className="font-mono">{farm.area_ha?.toFixed?.(3) ?? farm.area_ha ?? '—'} ha</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  {selected.has_assessment && selected.latest_assessment_date && (
-                    <p className="text-[11px] text-emerald-700">
-                      Last assessed{' '}
-                      {new Date(selected.latest_assessment_date).toLocaleString('en-IN', {
-                        dateStyle: 'medium',
-                        timeStyle: 'short',
-                      })}
-                    </p>
-                  )}
-                  <div className="flex flex-col gap-2 pt-2">
-                    <Link
-                      href={dashboardHref(selected)}
-                      className="text-center text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg"
-                    >
-                      {selected.has_assessment ? 'View Assessment' : 'Run Assessment'}
-                    </Link>
-                    <Link
-                      href={`/farmer?edit=${encodeURIComponent(selected._id)}`}
-                      className="text-center text-xs font-semibold bg-[#21262d] hover:bg-[#30363d] text-sky-400 py-2 rounded-lg"
-                    >
-                      Edit in wizard
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </aside>
+            <FarmerFarmsTable
+              farmers={farmers}
+              selectedId={selected?._id}
+              onSelect={setSelected}
+              onDelete={handleDelete}
+              showManageActions
+            />
+            <FarmerDetailPanel
+              selected={selected}
+              onDelete={handleDelete}
+              showManageActions
+            />
           </div>
         )}
       </main>

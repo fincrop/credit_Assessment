@@ -52,3 +52,24 @@ export function getStateName(lgdCode: string): string {
 export function getDistrictName(lgdCode: string): string {
   return INDIA_DISTRICTS.find((d) => d.lgd_code === lgdCode)?.name ?? lgdCode;
 }
+
+/** Name only — null when the code is missing or unknown. */
+export function lookupStateName(lgdCode: string | null | undefined): string | null {
+  if (lgdCode == null || lgdCode === '') return null;
+  const raw = String(lgdCode).trim();
+  const alt = String(Number(raw));
+  return (
+    INDIA_STATES.find((s) => s.lgd_code === raw || (alt !== 'NaN' && s.lgd_code === alt))
+      ?.name ?? null
+  );
+}
+
+export function lookupDistrictName(lgdCode: string | null | undefined): string | null {
+  if (lgdCode == null || lgdCode === '') return null;
+  const raw = String(lgdCode).trim();
+  const alt = String(Number(raw));
+  return (
+    INDIA_DISTRICTS.find((d) => d.lgd_code === raw || (alt !== 'NaN' && d.lgd_code === alt))
+      ?.name ?? null
+  );
+}

@@ -122,6 +122,126 @@ def _trend(history: Optional[List[Dict]], current_kbs: Optional[int]) -> Optiona
     }
 
 
+def _tenure_of(farm: Dict) -> str:
+    if farm.get("is_ror_owner") is False:
+        return "Leased"
+    factor = farm.get("tenure_factor")
+    if isinstance(factor, (int, float)) and factor < 1:
+        return "Leased"
+    if farm.get("is_ror_owner") is True:
+        return "Owned"
+    return "—"
+
+
+def _parcels(assessment: Dict) -> List[Dict]:
+    farms = assessment.get("farm_assessments") or []
+    out: List[Dict] = []
+    for f in farms:
+        if not isinstance(f, dict):
+            continue
+        idx = _num(f.get("index_score"))
+        kbs = index_to_kbs(idx)
+        out.append(
+            {
+                "plot_key": f.get("plot_key") or f.get("farm_id"),
+                "farm_id": f.get("farm_id"),
+                "tenure": _tenure_of(f),
+                "area_ha": _num(f.get("area_ha")),
+                "crop": f.get("crop"),
+                "kbs": kbs,
+                "band": kbs_band(kbs),
+                "included": bool(f.get("included", True)),
+                "skipped_reason": f.get("skipped_reason"),
+            }
+        )
+    return out
+
+
+def _holding(assessment: Dict, parcels: List[Dict]) -> Dict:
+    fl = assessment.get("farmer_level") or {}
+    loc = assessment.get("location") or {}
+    owned = [p for p in parcels if p.get("tenure") == "Owned"]
+    leased = [p for p in parcels if p.get("tenure") == "Leased"]
+
+    def _area(rows: List[Dict]) -> Optional[float]:
+        vals = [p["area_ha"] for p in rows if isinstance(p.get("area_ha"), (int, float))]
+        return round(float(sum(vals)), 2) if vals else None
+
+    lat = _num(loc.get("latitude"))
+    lon = _num(loc.get("longitude"))
+    n_total = fl.get("n_plots_total")
+    n_scored = fl.get("n_plots_scored")
+    return {
+        "n_plots_total": n_total if n_total is not None else (len(parcels) or None),
+        "n_plots_scored": n_scored
+        if n_scored is not None
+        else (sum(1 for p in parcels if p.get("kbs") is not None) or None),
+        "total_area_ha": _num(fl.get("total_scored_area_ha")) or _area(parcels),
+        "owned_area_ha": _area(owned),
+        "leased_area_ha": _area(leased),
+        "n_owned": len(owned),
+        "n_leased": len(leased),
+        "centroid": (
+            {"latitude": lat, "longitude": lon} if lat is not None and lon is not None else None
+        ),
+    }
+
+
+def _weather_snapshot(assessment: Dict) -> Optional[Dict]:
+    wa = assessment.get("weather_analysis") or {}
+    if not isinstance(wa, dict) or not wa:
+        return None
+    dry: List[float] = []
+    heat: List[float] = []
+    for s in wa.get("seasonal_weather") or []:
+        if not isinstance(s, dict):
+            continue
+        wi = s.get("weather_indicators") or {}
+        d = _num(wi.get("max_dry_spell_days") or wi.get("dry_spell_max_days"))
+        h = _num(wi.get("heat_stress_days"))
+        if d is not None:
+            dry.append(d)
+        if h is not None:
+            heat.append(h)
+    return {
+        "weather_risk_score": _num(wa.get("weather_risk_score")),
+        "total_extreme_events": wa.get("total_extreme_events"),
+        "kharif_avg_rainfall_mm": _num(wa.get("kharif_avg_rainfall_mm")),
+        "rabi_avg_rainfall_mm": _num(wa.get("rabi_avg_rainfall_mm")),
+        "max_dry_spell_days": max(dry) if dry else None,
+        "max_heat_stress_days": max(heat) if heat else None,
+    }
+
+
+def _observations(assessment: Dict, evidence: Optional[Dict]) -> Dict:
+    ds = assessment.get("data_sufficiency") or {}
+    ev = (ds.get("evidence") or {}) if isinstance(ds, dict) else {}
+    series = ((evidence or {}).get("series_completeness") or {}).get("ndvi") or {}
+    window = (evidence or {}).get("window") or {}
+    return {
+        "n_present": series.get("n_present")
+        or ev.get("n_observed_bins")
+        or ev.get("n_observed"),
+        "n_total": series.get("n") or ev.get("n_bins"),
+        "observed_fraction": _num(ev.get("observed_fraction")),
+        "window_start": window.get("start_date") or window.get("start"),
+        "window_end": window.get("end_date") or window.get("end"),
+        "satellite_provider": assessment.get("satellite_provider"),
+    }
+
+
+def _benefits(assessment: Dict) -> Dict:
+    fb = assessment.get("farmer_benefits") or {}
+    flb = ((assessment.get("farmer_level") or {}).get("benefits") or {})
+    pm = flb.get("pm_kisan") if "pm_kisan" in flb else fb.get("pm_kisan_enrolled")
+    ins = (
+        flb.get("has_crop_insurance")
+        if "has_crop_insurance" in flb
+        else fb.get("has_crop_insurance")
+    )
+    return {"pm_kisan": pm, "has_crop_insurance": ins}
+
+
 def _ndvi_series(evidence: Optional[Dict]) -> Optional[Dict]:
     """
     The parcel's own NDVI trajectory, with provenance per point.
@@ -174,6 +294,7 @@ def build_report_payload(
     kbs = index_to_kbs(index_score)
     band = kbs_band(kbs)
     subs = risk.get("sub_indices") or {}
+    parcels = _parcels(assessment)
 
     payload: Dict[str, Any] = {
         "payload_version": REPORT_PAYLOAD_VERSION,
@@ -236,6 +357,13 @@ def build_report_payload(
             "crop_verification"
         ),
         "footprint": risk.get("footprint"),
+
+        # ── Holding & weather (real fields only; no policy action) ───────
+        "parcels": parcels,
+        "holding": _holding(assessment, parcels),
+        "weather_snapshot": _weather_snapshot(assessment),
+        "observations": _observations(assessment, evidence),
+        "benefits": _benefits(assessment),
 
         # ── Narrative, and where it came from ────────────────────────────
         "narrative": {

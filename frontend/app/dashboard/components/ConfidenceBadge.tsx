@@ -131,24 +131,20 @@ export function FootprintBanner({ footprint }: { footprint: Footprint | null | u
 export function ConfidenceStrip({ data }: { data: AssessmentPayload | null }) {
   if (!data) return null;
 
-  const risk = data.risk_assessment ?? data.farmer_level;
-  const gate = typeof risk?.confidence_gate === 'number' ? risk.confidence_gate : null;
   const footprint = data.risk_assessment?.footprint ?? null;
   const lc = data.land_cover;
   const viability = data.parcel_viability;
 
   const flagged = lc?.outcome === 'flag';
   const marginal = viability?.outcome === 'marginal';
-  const anything = gate != null && gate < 0.995;
 
-  if (!flagged && !marginal && !anything && !footprint?.geometry_substituted) return null;
+  if (!flagged && !marginal && !footprint?.geometry_substituted) return null;
 
   return (
     <div className="space-y-2">
       <FootprintBanner footprint={footprint} />
-      {(flagged || marginal || anything) && (
+      {(flagged || marginal) && (
         <div className="flex flex-wrap gap-1.5">
-          <GateBadge gate={gate} />
           {flagged && (
             <ConfidenceBadge
               label={`Land cover flagged${lc?.class ? ` — ${lc.class.toLowerCase()}` : ''}`}

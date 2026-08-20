@@ -306,18 +306,38 @@ textarea:focus-visible {
 /* =========================================================
    Report dossier — /report/[farmer_id]
 
-   Designed for A4 first rather than adapted to it. The charts are SVG, so
-   they print at full resolution instead of becoming a screenshot of a
-   website, which is what the old dashboard-with-print-overrides produced.
+   Designed as A4 sheets first. Each .report-page is one printed leaf.
    ========================================================= */
 @page {
   size: A4;
-  margin: 14mm;
+  margin: 0;
 }
 
-.report-header {
-  border-bottom: 2px solid var(--color-ink);
-  padding-bottom: 0.75rem;
+.report-dossier {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-items: center;
+}
+
+.report-page {
+  width: 210mm;
+  min-height: 297mm;
+  background: #fffefa;
+  border: 1px solid var(--color-rule);
+  box-shadow: var(--shadow-raised);
+  padding: 16mm 16mm 18mm;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.report-page-body {
+  flex: 1;
+}
+
+.report-running {
+  margin-top: auto;
 }
 
 @media print {
@@ -325,29 +345,33 @@ textarea:focus-visible {
     display: none !important;
   }
 
-  .report-sheet {
-    max-width: none;
-    font-size: 10.5pt;
+  .report-dossier {
+    gap: 0;
   }
 
-  /* A section split across a page break loses the figure from its caption,
-     which in a credit file is how a number ends up quoted without its
-     qualifier. */
-  .report-sheet > * > section,
-  .report-sheet section {
-    break-inside: avoid;
-    box-shadow: none !important;
+  .report-page {
+    width: 210mm;
+    min-height: 297mm;
+    height: 297mm;
+    border: none;
+    box-shadow: none;
+    page-break-after: always;
+    break-after: page;
+    padding: 14mm 16mm 16mm;
   }
 
-  .report-sheet a[href]::after {
-    content: '';
+  .report-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
   }
 
-  /* Tinted surfaces must survive the printer, or a band chip prints white
-     and the score loses the only colour cue it has left on paper. */
-  .report-sheet * {
+  .report-page * {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  .report-page a[href]::after {
+    content: '';
   }
 }
 

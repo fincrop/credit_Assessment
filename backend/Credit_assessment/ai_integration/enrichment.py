@@ -1,8 +1,8 @@
 """
 Stage 12 — AI / explainability enrichment after the assessment payload is complete.
 
-- Groq: only if explicitly enabled (GROQ_ENABLE) and API key present.
-- Sarvam: translates English narrative when key present and Groq produced text.
+- Groq: used when GROQ_API_KEY is set (GROQ_ENABLE=0 still disables it).
+- Sarvam: translates the English narrative when SARVAM_API_KEY is set.
 - Driver attribution: rule-based credit attribution + optional Tree SHAP on crop classifier.
 - Counterfactuals: actionable score-improvement scenarios (no external API).
 """

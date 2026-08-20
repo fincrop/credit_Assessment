@@ -36,6 +36,7 @@ const TYPED_TOP = [
   'status', 'farmer', 'prepared_by', 'score', 'trend', 'sub_indices',
   'data_confidence', 'reason_codes', 'ndvi_trajectory', 'land_cover',
   'parcel_viability', 'data_sufficiency', 'crop_verification', 'footprint',
+  'parcels', 'holding', 'weather_snapshot', 'observations', 'benefits',
   'narrative', 'methodology', 'omitted', 'integrity', 'sections_present',
 ];
 
