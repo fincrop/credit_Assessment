@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { TriStateSelect } from '../../components/TriStateSelect';
+import { asTriState } from '../../lib/triState';
 import type { FarmerIdentity } from '../types';
 import { LANGUAGE_OPTIONS } from '../types';
 
@@ -47,12 +49,35 @@ export function FarmerInfoForm({ value, onChange, optional = false }: Props) {
 
   const set = (patch: Partial<FarmerIdentity>) => onChange({ ...value, ...patch });
 
+  const applyFarmInfoHit = async (h: AgriStackHit) => {
+    set({
+      agristack_farmer_id: h.farmer_id,
+      farmer_name: value.farmer_name || h.farmer_name,
+    });
+    setQuery(h.farmer_id);
+    setHits([]);
+    try {
+      const res = await fetch(`/api/farm-info/${encodeURIComponent(h.farmer_id)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const benefits = data.farm_info?.farmer_benefits;
+      if (benefits) {
+        set({
+          pm_kisan_enrolled: asTriState(benefits.pm_kisan_enrolled),
+          has_crop_insurance: asTriState(benefits.has_crop_insurance),
+        });
+      }
+    } catch {
+      /* optional enrichment */
+    }
+  };
+
   const field =
     'w-full bg-white border border-rule rounded-lg px-3 py-2.5 text-sm text-stone-800 placeholder-stone-400 focus:outline-none focus:border-emerald-500';
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+    <div className="space-y-2.5">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 items-end">
         <div>
           <label className="block text-xs font-medium text-stone-600 mb-1">
             Full name{optional ? ' (optional)' : ' *'}
@@ -104,30 +129,26 @@ export function FarmerInfoForm({ value, onChange, optional = false }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-start">
-        <div>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 items-end">
+        <div className="md:col-span-2">
+          <label className="block text-xs font-medium text-stone-600 mb-1">
+            Search farm_info
+          </label>
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search farm_info by name or farmer ID…"
+            placeholder="By name or farmer ID…"
             className={field}
           />
           {searching && <p className="text-[11px] text-stone-500 mt-1">Searching…</p>}
           {hits.length > 0 && (
-            <ul className="mt-1 border border-rule rounded-lg divide-y divide-rule max-h-36 overflow-y-auto bg-white">
+            <ul className="mt-1 border border-rule rounded-lg divide-y divide-rule max-h-36 overflow-y-auto bg-white z-10 relative">
               {hits.map((h) => (
                 <li key={h.farmer_id}>
                   <button
                     type="button"
-                    onClick={() => {
-                      set({
-                        agristack_farmer_id: h.farmer_id,
-                        farmer_name: value.farmer_name || h.farmer_name,
-                      });
-                      setQuery(h.farmer_id);
-                      setHits([]);
-                    }}
+                    onClick={() => void applyFarmInfoHit(h)}
                     className="w-full text-left px-3 py-2 text-sm hover:bg-paper transition-colors"
                   >
                     <span className="font-mono text-emerald-700">{h.farmer_id}</span>
@@ -143,6 +164,18 @@ export function FarmerInfoForm({ value, onChange, optional = false }: Props) {
             </ul>
           )}
         </div>
+        <TriStateSelect
+          compact
+          label="PM-KISAN enrolled"
+          value={value.pm_kisan_enrolled}
+          onChange={(pm_kisan_enrolled) => set({ pm_kisan_enrolled })}
+        />
+        <TriStateSelect
+          compact
+          label="Crop insurance (PMFBY)"
+          value={value.has_crop_insurance}
+          onChange={(has_crop_insurance) => set({ has_crop_insurance })}
+        />
       </div>
     </div>
   );

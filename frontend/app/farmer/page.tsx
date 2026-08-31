@@ -10,6 +10,7 @@ import { FarmBoundaryMap } from './components/FarmBoundaryMap';
 import { FarmCard } from './components/FarmCard';
 import { GeospatialUpload } from './components/GeospatialUpload';
 import { fillLocationFromCoords } from './lib/fillLocationFromCoords';
+import { asTriState } from '../lib/triState';
 import type { FarmerIdentity, FarmerLocation, FarmPolygon } from './types';
 import { FARM_COLORS } from './types';
 
@@ -45,6 +46,8 @@ function FarmerJourneyContent() {
     phone: '',
     language: 'English',
     agristack_farmer_id: '',
+    pm_kisan_enrolled: null,
+    has_crop_insurance: null,
   });
 
   const [location, setLocation] = useState<FarmerLocation>({
@@ -78,6 +81,8 @@ function FarmerJourneyContent() {
           phone: f.phone || '',
           language: f.language || 'English',
           agristack_farmer_id: f.agristack_farmer_id || '',
+          pm_kisan_enrolled: asTriState(f.farmer_benefits?.pm_kisan_enrolled),
+          has_crop_insurance: asTriState(f.farmer_benefits?.has_crop_insurance),
         });
         const loc = f.location || {};
         const firstFarm = (f.farms || [])[0];
@@ -224,8 +229,8 @@ function FarmerJourneyContent() {
         })),
         historical_data: [],
         farmer_benefits: {
-          pm_kisan_enrolled: false,
-          has_crop_insurance: false,
+          pm_kisan_enrolled: identity.pm_kisan_enrolled,
+          has_crop_insurance: identity.has_crop_insurance,
         },
         irrigation_type: null,
         soil_type: null,
@@ -255,7 +260,7 @@ function FarmerJourneyContent() {
   return (
     <div className="min-h-screen bg-paper text-stone-800">
       <header className="bg-paper-raised/95 backdrop-blur border-b border-rule sticky top-0 z-20">
-        <div className="flex h-14 items-center px-6 max-w-7xl mx-auto w-full justify-between">
+        <div className="page-shell flex h-14 items-center w-full justify-between">
           <div className="flex items-center gap-4">
             <Link href="/" className="text-stone-500 hover:text-emerald-700 text-sm font-medium">
               Home
@@ -276,7 +281,7 @@ function FarmerJourneyContent() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-8 pb-24">
+      <main className="page-shell py-5 space-y-4 pb-20">
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
             {error}
@@ -288,9 +293,9 @@ function FarmerJourneyContent() {
           </div>
         )}
 
-        {/* Identity — single horizontal row */}
+        {/* Identity */}
         <section className="farmer-section">
-          <h2 className="text-lg font-bold text-stone-900 mb-3">Identity</h2>
+          <h2 className="farmer-section-title">Identity</h2>
           <FarmerInfoForm
             value={identity}
             onChange={setIdentity}
@@ -298,67 +303,70 @@ function FarmerJourneyContent() {
           />
         </section>
 
-        {/* Location + Farm boundaries side by side */}
-        <div className="grid lg:grid-cols-[minmax(280px,360px)_1fr] gap-6 items-start">
-          <section className="farmer-section">
-            <h2 className="text-lg font-bold text-stone-900 mb-1">Location</h2>
-            <p className="text-sm text-stone-500 mb-4">
-              Administrative details. Auto-filled when you draw, enter coordinates, or upload a
-              geospatial file.
-            </p>
+        {/* Location + Farm boundaries — equal-height columns */}
+        <div className="grid lg:grid-cols-[minmax(280px,360px)_1fr] gap-4 items-stretch">
+          <section className="farmer-section farmer-section-paired">
+            <h2 className="farmer-section-title">Location</h2>
             <LocationSelector
               value={location}
               onChange={setLocation}
               optional={hasBoundaries}
+              fillHeight
             />
           </section>
 
-          <section className="farmer-section min-w-0">
-            <h2 className="text-lg font-bold text-stone-900 mb-1">Farm boundaries</h2>
-            <p className="text-sm text-stone-500 mb-4">
-              Draw polygons on the satellite map (toolbar), or add coordinates manually. Name each
-              plot after drawing.
-            </p>
-            <div className="space-y-3 mb-4">
-              {farms.length === 0 ? (
-                <p className="text-xs text-stone-500 border border-dashed border-rule rounded-lg p-3">
-                  No farms yet. Draw a polygon on the map, then save it — or upload a file below.
+          <section className="farmer-section farmer-section-paired min-w-0">
+            <h2 className="farmer-section-title">Farm boundaries</h2>
+
+            <div className="grid sm:grid-cols-2 gap-3 mb-3 items-stretch shrink-0">
+              <div className="flex flex-col gap-2 min-h-[6.5rem]">
+                <p className="text-[11px] text-stone-500 leading-snug">
+                  Draw on the satellite map or enter coordinates. Name each plot after saving.
                 </p>
-              ) : (
-                <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {farms.map((f) => (
-                    <FarmCard
-                      key={f.farm_id}
-                      farm={f}
-                      onDelete={() => setFarms(farms.filter((x) => x.farm_id !== f.farm_id))}
-                      onEdit={(updated) =>
-                        setFarms(farms.map((x) => (x.farm_id === updated.farm_id ? updated : x)))
-                      }
-                    />
-                  ))}
-                </div>
-              )}
+                {farms.length === 0 ? (
+                  <p className="flex-1 text-[11px] text-stone-500 border border-dashed border-rule rounded-lg px-3 py-2 flex items-center">
+                    No farms yet — draw on the map or upload a file.
+                  </p>
+                ) : (
+                  <p className="flex-1 text-[11px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 flex items-center">
+                    {farms.length} plot{farms.length === 1 ? '' : 's'} added — edit below or draw more.
+                  </p>
+                )}
+              </div>
+              <GeospatialUpload
+                compact
+                farms={farms}
+                onFarmsChange={handleFarmsChange}
+              />
             </div>
-            <FarmBoundaryMap
-              farms={farms}
-              onFarmsChange={handleFarmsChange}
-              mapCenter={location.mapCenter}
-              onBoundaryDrawn={handleBoundaryDrawn}
-            />
+
+            {farms.length > 0 && (
+              <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-2.5 mb-3 shrink-0">
+                {farms.map((f) => (
+                  <FarmCard
+                    key={f.farm_id}
+                    farm={f}
+                    onDelete={() => setFarms(farms.filter((x) => x.farm_id !== f.farm_id))}
+                    onEdit={(updated) =>
+                      setFarms(farms.map((x) => (x.farm_id === updated.farm_id ? updated : x)))
+                    }
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className="flex-1 min-h-0 flex flex-col">
+              <FarmBoundaryMap
+                farms={farms}
+                onFarmsChange={handleFarmsChange}
+                mapCenter={location.mapCenter}
+                onBoundaryDrawn={handleBoundaryDrawn}
+              />
+            </div>
           </section>
         </div>
 
-        {/* Geospatial upload */}
-        <section className="farmer-section">
-          <h2 className="text-lg font-bold text-stone-900 mb-1">Upload geospatial file</h2>
-          <p className="text-sm text-stone-500 mb-4">
-            Import GeoJSON, KML/KMZ, or a shapefile ZIP. When you upload, Identity and Location
-            become optional and location is filled from the file coordinates.
-          </p>
-          <GeospatialUpload farms={farms} onFarmsChange={handleFarmsChange} />
-        </section>
-
-        <div className="flex items-center justify-end gap-3 pt-2">
+        <div className="flex items-center justify-end gap-3 pt-1">
           <Link
             href="/farmer/farms"
             className="px-4 py-2.5 text-sm text-stone-500 hover:text-stone-800"

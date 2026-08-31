@@ -210,6 +210,7 @@ class MultiFarmAssessor:
         farm_info: Dict,
         save_to_db: bool = True,
         on_plot_done: Optional[Callable[[List[Dict]], None]] = None,
+        enable_crop_classification: bool = True,
     ) -> Dict:
         farmer_id = farm_info.get("farmer_id")
         farms = list(farm_info.get("farms") or [])
@@ -264,7 +265,9 @@ class MultiFarmAssessor:
                 continue
 
             try:
-                assessment = self._assess_one(farmer_id, farm, farmer_benefits)
+                assessment = self._assess_one(
+                    farmer_id, farm, farmer_benefits, enable_crop_classification
+                )
                 status = str(assessment.get("status", "")).upper()
 
                 if status == "REJECTED_NOT_AGRICULTURAL":
@@ -455,7 +458,11 @@ class MultiFarmAssessor:
         return None
 
     def _assess_one(
-        self, farmer_id: str, farm: Dict, farmer_benefits: Optional[Dict]
+        self,
+        farmer_id: str,
+        farm: Dict,
+        farmer_benefits: Optional[Dict],
+        enable_crop_classification: bool = True,
     ) -> Dict:
         centroid = farm.get("centroid") or {}
         raw_geom = farm.get("geometry")
@@ -485,7 +492,7 @@ class MultiFarmAssessor:
                 "plot_key": farm.get("plot_key"),
             },
             save_to_db=False,
-            enable_crop_classification=False,
+            enable_crop_classification=enable_crop_classification,
             skip_ai_enrichment=True,
         )
 
@@ -642,9 +649,16 @@ class MultiFarmAssessor:
     def _insufficient_skip_reason(assessment: Dict) -> str:
         pv = assessment.get("parcel_viability") or {}
         ev = pv.get("evidence") or {}
-        if pv.get("outcome") == "not_viable" and ev.get("areas_disagree"):
-            return "insufficient_observation:area_mismatch"
         if pv.get("outcome") == "not_viable":
+            # Size is the hard stop — a sub-floor parcel is refused before any
+            # area-ratio disagreement can matter. Tagging these as area_mismatch
+            # was misleading when AgriStack vs mapped also differ on scored plots.
+            hard_px = int((ev.get("thresholds") or {}).get("min_pixels_hard", 15))
+            px = int(ev.get("approx_pixels") or 0)
+            if px < hard_px or not ev.get("geometry_ha"):
+                return "insufficient_observation:too_small"
+            if ev.get("areas_disagree"):
+                return "insufficient_observation:area_mismatch"
             return "insufficient_observation:too_small"
         return "insufficient_observation"
 

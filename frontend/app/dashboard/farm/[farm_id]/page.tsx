@@ -25,9 +25,14 @@ import {
 } from '../../../lib/farmPlotPayload';
 import {
   areaMismatchOf,
+  areaMismatchSkipNote,
   formatHa,
   geometryAreaHa,
 } from '../../../lib/areaMismatch';
+import {
+  isMonitoringAreaTooSmall,
+  monitoringAreaTooSmallMessages,
+} from '../../../lib/plotSkipMessage';
 
 type TabId = 'overview' | 'cropPerf' | 'weather' | 'ai';
 
@@ -219,11 +224,15 @@ function FarmDetailContent() {
     measuredHa,
     viability: plotPayload?.parcel_viability ?? farmRow?.parcel_viability,
   });
+  const tooSmallNote =
+    farmRow && isMonitoringAreaTooSmall(farmRow, measuredHa)
+      ? monitoringAreaTooSmallMessages(farmRow, measuredHa)
+      : null;
 
   return (
     <div className="min-h-screen bg-paper text-stone-800">
       <header className="bg-white border-b border-rule sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div className="page-shell h-14 flex items-center justify-between">
           <Link href={backHref} className="text-sm text-stone-500 hover:text-emerald-700">
             ← Assessment overview
           </Link>
@@ -241,7 +250,7 @@ function FarmDetailContent() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto p-6 space-y-5">
+      <main className="page-shell py-6 space-y-5">
         {/* Hero: farm identity + map | KBS */}
         <div className="grid lg:grid-cols-[38%_1fr] gap-4 items-stretch">
           <div className="bg-white rounded-xl border border-rule p-4 flex flex-col">
@@ -275,14 +284,15 @@ function FarmDetailContent() {
                 <span>· Owned</span>
               ) : null}
             </p>
-            {areaMismatch && (
+            {tooSmallNote ? (
               <p className="text-[11px] text-amber-900 mt-1.5 leading-snug">
-                The area on the land record does not match the mapped boundary
-                {areaMismatch.measuredMuchSmaller
-                  ? ' — the outline on the map is much smaller than AgriStack reports.'
-                  : '.'}
+                {tooSmallNote.detail} {tooSmallNote.skip}
               </p>
-            )}
+            ) : areaMismatch ? (
+              <p className="text-[11px] text-amber-900 mt-1.5 leading-snug">
+                {areaMismatchSkipNote(areaMismatch)}
+              </p>
+            ) : null}
             <div className="mt-3 flex-1 min-h-[220px]">
               <PlotBoundaryMap
                 geometry={farmGeom?.geometry}
@@ -406,7 +416,7 @@ function FarmDetailContent() {
                     Showing holding-area weather (shared across plots in this assessment).
                   </p>
                 )}
-                <WeatherSection data={plotPayload} />
+                <WeatherSection data={plotPayload} ndviTrajectory={report?.ndvi_trajectory} />
               </div>
             ) : farmRow ? (
               <div className="space-y-4">

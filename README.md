@@ -18,11 +18,45 @@ Satellite-based agricultural credit assessment: continuous Sentinel-2 → crop c
 
 ### 1. FastAPI backend (port 8000)
 
+Use the repo **`.conda`** interpreter (Python 3.11, gitignored at repo root). Do **not** use system/base `python` (often 3.12/3.13) — wrong versions and missing pins.
+
+**One-time setup** (from repo root):
+
+```bash
+conda env create -f backend/Credit_assessment/environment.yml -p .conda
+.conda/python -m pip install -r backend/Credit_assessment/requirements.txt
+```
+
+**Run API** (always via `.conda`):
+
+```powershell
+cd backend\Credit_assessment
+.\scripts\dev-api.ps1 -Reload
+```
+
+Or manually:
+
 ```bash
 cd backend/Credit_assessment
-# copy .env.example → .env and set MONGODB_URI (and GEE_* as needed)
-uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
+../../.conda/python.exe -m uvicorn api.app:app --host 127.0.0.1 --port 8000 --reload
 ```
+
+Use **`127.0.0.1`** (not `0.0.0.0`) so it matches `PIPELINE_API_URL=http://127.0.0.1:8000` in `frontend/.env.local` and you do not get two listeners on port 8000 on Windows.
+
+On Linux/macOS use `../../.conda/bin/python` instead of `../../.conda/python.exe`.
+
+**Assess flow:** the browser never calls uvicorn directly. Dashboard → Next.js `POST /api/assess/enqueue` → FastAPI `POST /v1/jobs/assess` (requires `PIPELINE_API_URL` in `frontend/.env.local`).
+
+**Windows / `--reload`:** if Assess says the pipeline is unreachable but uvicorn looks running, stale reload processes may all be listening on port 8000. Stop them, then start one server:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue |
+  ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+cd backend/Credit_assessment
+../../.conda/python.exe -m uvicorn api.app:app --host 127.0.0.1 --port 8000 --reload
+```
+
+Verify: `curl http://127.0.0.1:8000/health/live` should return `{"status":"ok"}` immediately.
 
 ### 2. Assessment jobs (pick one)
 

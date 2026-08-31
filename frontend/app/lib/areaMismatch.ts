@@ -10,8 +10,8 @@ import type { ParcelViability } from '../types/assessment';
 
 export const AREA_RATIO_LO = 0.8;
 export const AREA_RATIO_HI = 1.25;
-/** Below this, a 10 m pixel is mostly neighbouring land. */
-export const TINY_PLOT_HA = 0.05;
+/** Below PARCEL_MIN_PIXELS_HARD (15 px @ 10 m) — fundable / monitoring floor. */
+export const TINY_PLOT_HA = 0.15;
 
 export type AreaMismatch = {
   registeredHa: number;
@@ -104,9 +104,15 @@ export function areaMismatchHeadline(m: AreaMismatch): string {
   return `AgriStack lists ${formatHa(m.registeredHa)} but the mapped boundary is ${formatHa(m.measuredHa)} — those areas do not match.`;
 }
 
-export function areaMismatchSkipNote(m: AreaMismatch): string {
-  if (m.measuredHa < TINY_PLOT_HA) {
-    return `${areaMismatchHeadline(m)} The mapped plot is too small to score honestly.`;
+/** Why the pipeline declined to score this plot (area-mismatch-only skips). */
+export function areaMismatchSkipReason(m: AreaMismatch): string {
+  if (m.measuredMuchSmaller) {
+    return 'Skipped — the boundary on the map is much smaller than the land record, so they likely refer to different parcels.';
   }
-  return areaMismatchHeadline(m);
+  return 'Skipped — AgriStack and mapped areas must align before we can score this plot.';
+}
+
+/** Headline + skip rationale for farm lists and insight rows. */
+export function areaMismatchSkipNote(m: AreaMismatch): string {
+  return `${areaMismatchHeadline(m)} ${areaMismatchSkipReason(m)}`;
 }

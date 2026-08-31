@@ -1,0 +1,933 @@
+{
+  "tier": 0,
+  "source": "03_features_tier0.parquet",
+  "n_rows": 7907,
+  "n_features": 45,
+  "classes": [
+    "Bajra",
+    "Banana",
+    "Chilli",
+    "Cotton",
+    "Gram",
+    "Grapes",
+    "Groundnut",
+    "Jowar",
+    "Maize",
+    "Mustard",
+    "Onion",
+    "Potato",
+    "Rice",
+    "Soyabean",
+    "Sugarcane",
+    "Tobacco",
+    "Tur",
+    "Wheat"
+  ],
+  "generated_at": "2026-08-27T17:30:51.579121+00:00",
+  "estimator_selection": {
+    "xgboost": 0.642,
+    "random_forest": 0.6111,
+    "logistic": 0.5933
+  },
+  "estimator": "xgboost",
+  "blocked": {
+    "protocol": "blocked",
+    "estimator": "xgboost",
+    "n_folds": 5,
+    "folds": [
+      {
+        "fold": 1,
+        "n_train": 5209,
+        "n_cal": 1116,
+        "n_test": 1582,
+        "temperature": 0.98,
+        "test_classes": 18,
+        "train_classes": 18
+      },
+      {
+        "fold": 2,
+        "n_train": 5068,
+        "n_cal": 1257,
+        "n_test": 1582,
+        "temperature": 1.1,
+        "test_classes": 17,
+        "train_classes": 18
+      },
+      {
+        "fold": 3,
+        "n_train": 5419,
+        "n_cal": 907,
+        "n_test": 1581,
+        "temperature": 1.155,
+        "test_classes": 18,
+        "train_classes": 18
+      },
+      {
+        "fold": 4,
+        "n_train": 4931,
+        "n_cal": 1395,
+        "n_test": 1581,
+        "temperature": 0.94,
+        "test_classes": 16,
+        "train_classes": 18
+      },
+      {
+        "fold": 5,
+        "n_train": 5473,
+        "n_cal": 853,
+        "n_test": 1581,
+        "temperature": 0.975,
+        "test_classes": 17,
+        "train_classes": 18
+      }
+    ],
+    "mean_temperature": 1.03,
+    "raw": {
+      "n": 7907,
+      "balanced_accuracy": 0.642,
+      "accuracy": 0.6367,
+      "macro_f1": 0.6323,
+      "ece": 0.0255,
+      "min_class_recall": 0.2298,
+      "worst_class": "Gram",
+      "coverage_at_gate": 0.9328,
+      "precision_at_gate": 0.664,
+      "per_class": {
+        "Bajra": {
+          "precision": 0.3794,
+          "recall": 0.3857,
+          "f1": 0.3825,
+          "support": 477
+        },
+        "Banana": {
+          "precision": 0.6884,
+          "recall": 0.7054,
+          "f1": 0.6968,
+          "support": 404
+        },
+        "Chilli": {
+          "precision": 0.4491,
+          "recall": 0.699,
+          "f1": 0.5468,
+          "support": 309
+        },
+        "Cotton": {
+          "precision": 0.5514,
+          "recall": 0.762,
+          "f1": 0.6398,
+          "support": 479
+        },
+        "Gram": {
+          "precision": 0.6032,
+          "recall": 0.2298,
+          "f1": 0.3328,
+          "support": 496
+        },
+        "Grapes": {
+          "precision": 0.6749,
+          "recall": 0.7009,
+          "f1": 0.6876,
+          "support": 468
+        },
+        "Groundnut": {
+          "precision": 0.813,
+          "recall": 0.8746,
+          "f1": 0.8427,
+          "support": 343
+        },
+        "Jowar": {
+          "precision": 0.7608,
+          "recall": 0.6102,
+          "f1": 0.6772,
+          "support": 490
+        },
+        "Maize": {
+          "precision": 0.5373,
+          "recall": 0.5558,
+          "f1": 0.5464,
+          "support": 493
+        },
+        "Mustard": {
+          "precision": 0.7543,
+          "recall": 0.8755,
+          "f1": 0.8104,
+          "support": 498
+        },
+        "Onion": {
+          "precision": 0.7373,
+          "recall": 0.7705,
+          "f1": 0.7535,
+          "support": 488
+        },
+        "Potato": {
+          "precision": 0.6205,
+          "recall": 0.7174,
+          "f1": 0.6654,
+          "support": 499
+        },
+        "Rice": {
+          "precision": 0.7592,
+          "recall": 0.6896,
+          "f1": 0.7227,
+          "support": 480
+        },
+        "Soyabean": {
+          "precision": 0.6721,
+          "recall": 0.6508,
+          "f1": 0.6613,
+          "support": 252
+        },
+        "Sugarcane": {
+          "precision": 0.5991,
+          "recall": 0.6461,
+          "f1": 0.6217,
+          "support": 421
+        },
+        "Tobacco": {
+          "precision": 0.4417,
+          "recall": 0.4077,
+          "f1": 0.424,
+          "support": 390
+        },
+        "Tur": {
+          "precision": 0.8522,
+          "recall": 0.8199,
+          "f1": 0.8357,
+          "support": 422
+        },
+        "Wheat": {
+          "precision": 0.6431,
+          "recall": 0.4558,
+          "f1": 0.5335,
+          "support": 498
+        }
+      }
+    },
+    "calibrated": {
+      "n": 7907,
+      "balanced_accuracy": 0.642,
+      "accuracy": 0.6367,
+      "macro_f1": 0.6323,
+      "ece": 0.0218,
+      "min_class_recall": 0.2298,
+      "worst_class": "Gram",
+      "coverage_at_gate": 0.9278,
+      "precision_at_gate": 0.6658,
+      "per_class": {
+        "Bajra": {
+          "precision": 0.3794,
+          "recall": 0.3857,
+          "f1": 0.3825,
+          "support": 477
+        },
+        "Banana": {
+          "precision": 0.6884,
+          "recall": 0.7054,
+          "f1": 0.6968,
+          "support": 404
+        },
+        "Chilli": {
+          "precision": 0.4491,
+          "recall": 0.699,
+          "f1": 0.5468,
+          "support": 309
+        },
+        "Cotton": {
+          "precision": 0.5514,
+          "recall": 0.762,
+          "f1": 0.6398,
+          "support": 479
+        },
+        "Gram": {
+          "precision": 0.6032,
+          "recall": 0.2298,
+          "f1": 0.3328,
+          "support": 496
+        },
+        "Grapes": {
+          "precision": 0.6749,
+          "recall": 0.7009,
+          "f1": 0.6876,
+          "support": 468
+        },
+        "Groundnut": {
+          "precision": 0.813,
+          "recall": 0.8746,
+          "f1": 0.8427,
+          "support": 343
+        },
+        "Jowar": {
+          "precision": 0.7608,
+          "recall": 0.6102,
+          "f1": 0.6772,
+          "support": 490
+        },
+        "Maize": {
+          "precision": 0.5373,
+          "recall": 0.5558,
+          "f1": 0.5464,
+          "support": 493
+        },
+        "Mustard": {
+          "precision": 0.7543,
+          "recall": 0.8755,
+          "f1": 0.8104,
+          "support": 498
+        },
+        "Onion": {
+          "precision": 0.7373,
+          "recall": 0.7705,
+          "f1": 0.7535,
+          "support": 488
+        },
+        "Potato": {
+          "precision": 0.6205,
+          "recall": 0.7174,
+          "f1": 0.6654,
+          "support": 499
+        },
+        "Rice": {
+          "precision": 0.7592,
+          "recall": 0.6896,
+          "f1": 0.7227,
+          "support": 480
+        },
+        "Soyabean": {
+          "precision": 0.6721,
+          "recall": 0.6508,
+          "f1": 0.6613,
+          "support": 252
+        },
+        "Sugarcane": {
+          "precision": 0.5991,
+          "recall": 0.6461,
+          "f1": 0.6217,
+          "support": 421
+        },
+        "Tobacco": {
+          "precision": 0.4417,
+          "recall": 0.4077,
+          "f1": 0.424,
+          "support": 390
+        },
+        "Tur": {
+          "precision": 0.8522,
+          "recall": 0.8199,
+          "f1": 0.8357,
+          "support": 422
+        },
+        "Wheat": {
+          "precision": 0.6431,
+          "recall": 0.4558,
+          "f1": 0.5335,
+          "support": 498
+        }
+      }
+    },
+    "baselines": {
+      "dummy": 0.0465,
+      "logistic": 0.6099,
+      "random_forest": 0.6366
+    }
+  },
+  "random_diagnostic": {
+    "protocol": "random",
+    "estimator": "xgboost",
+    "n_folds": 5,
+    "folds": [
+      {
+        "fold": 1,
+        "n_train": 5060,
+        "n_cal": 1265,
+        "n_test": 1582,
+        "temperature": 0.85,
+        "test_classes": 18,
+        "train_classes": 18
+      },
+      {
+        "fold": 2,
+        "n_train": 5060,
+        "n_cal": 1265,
+        "n_test": 1582,
+        "temperature": 0.83,
+        "test_classes": 18,
+        "train_classes": 18
+      },
+      {
+        "fold": 3,
+        "n_train": 5061,
+        "n_cal": 1265,
+        "n_test": 1581,
+        "temperature": 0.855,
+        "test_classes": 18,
+        "train_classes": 18
+      },
+      {
+        "fold": 4,
+        "n_train": 5061,
+        "n_cal": 1265,
+        "n_test": 1581,
+        "temperature": 0.815,
+        "test_classes": 18,
+        "train_classes": 18
+      },
+      {
+        "fold": 5,
+        "n_train": 5061,
+        "n_cal": 1265,
+        "n_test": 1581,
+        "temperature": 0.82,
+        "test_classes": 18,
+        "train_classes": 18
+      }
+    ],
+    "mean_temperature": 0.834,
+    "raw": {
+      "n": 7907,
+      "balanced_accuracy": 0.7798,
+      "accuracy": 0.778,
+      "macro_f1": 0.7805,
+      "ece": 0.0597,
+      "min_class_recall": 0.6065,
+      "worst_class": "Maize",
+      "coverage_at_gate": 0.9528,
+      "precision_at_gate": 0.8025,
+      "per_class": {
+        "Bajra": {
+          "precision": 0.5903,
+          "recall": 0.6373,
+          "f1": 0.6129,
+          "support": 477
+        },
+        "Banana": {
+          "precision": 0.7724,
+          "recall": 0.7475,
+          "f1": 0.7597,
+          "support": 404
+        },
+        "Chilli": {
+          "precision": 0.7778,
+          "recall": 0.7929,
+          "f1": 0.7853,
+          "support": 309
+        },
+        "Cotton": {
+          "precision": 0.6409,
+          "recall": 0.8121,
+          "f1": 0.7164,
+          "support": 479
+        },
+        "Gram": {
+          "precision": 0.9144,
+          "recall": 0.8185,
+          "f1": 0.8638,
+          "support": 496
+        },
+        "Grapes": {
+          "precision": 0.7222,
+          "recall": 0.75,
+          "f1": 0.7358,
+          "support": 468
+        },
+        "Groundnut": {
+          "precision": 0.9259,
+          "recall": 0.8746,
+          "f1": 0.8996,
+          "support": 343
+        },
+        "Jowar": {
+          "precision": 0.8222,
+          "recall": 0.7551,
+          "f1": 0.7872,
+          "support": 490
+        },
+        "Maize": {
+          "precision": 0.7136,
+          "recall": 0.6065,
+          "f1": 0.6557,
+          "support": 493
+        },
+        "Mustard": {
+          "precision": 0.9322,
+          "recall": 0.9116,
+          "f1": 0.9218,
+          "support": 498
+        },
+        "Onion": {
+          "precision": 0.8067,
+          "recall": 0.7951,
+          "f1": 0.8008,
+          "support": 488
+        },
+        "Potato": {
+          "precision": 0.7899,
+          "recall": 0.8136,
+          "f1": 0.8016,
+          "support": 499
+        },
+        "Rice": {
+          "precision": 0.8472,
+          "recall": 0.8083,
+          "f1": 0.8273,
+          "support": 480
+        },
+        "Soyabean": {
+          "precision": 0.7732,
+          "recall": 0.8254,
+          "f1": 0.7985,
+          "support": 252
+        },
+        "Sugarcane": {
+          "precision": 0.6312,
+          "recall": 0.7197,
+          "f1": 0.6726,
+          "support": 421
+        },
+        "Tobacco": {
+          "precision": 0.7608,
+          "recall": 0.7256,
+          "f1": 0.7428,
+          "support": 390
+        },
+        "Tur": {
+          "precision": 0.8731,
+          "recall": 0.8152,
+          "f1": 0.8431,
+          "support": 422
+        },
+        "Wheat": {
+          "precision": 0.8224,
+          "recall": 0.8273,
+          "f1": 0.8248,
+          "support": 498
+        }
+      }
+    },
+    "calibrated": {
+      "n": 7907,
+      "balanced_accuracy": 0.7798,
+      "accuracy": 0.778,
+      "macro_f1": 0.7805,
+      "ece": 0.0107,
+      "min_class_recall": 0.6065,
+      "worst_class": "Maize",
+      "coverage_at_gate": 0.9696,
+      "precision_at_gate": 0.7942,
+      "per_class": {
+        "Bajra": {
+          "precision": 0.5903,
+          "recall": 0.6373,
+          "f1": 0.6129,
+          "support": 477
+        },
+        "Banana": {
+          "precision": 0.7724,
+          "recall": 0.7475,
+          "f1": 0.7597,
+          "support": 404
+        },
+        "Chilli": {
+          "precision": 0.7778,
+          "recall": 0.7929,
+          "f1": 0.7853,
+          "support": 309
+        },
+        "Cotton": {
+          "precision": 0.6409,
+          "recall": 0.8121,
+          "f1": 0.7164,
+          "support": 479
+        },
+        "Gram": {
+          "precision": 0.9144,
+          "recall": 0.8185,
+          "f1": 0.8638,
+          "support": 496
+        },
+        "Grapes": {
+          "precision": 0.7222,
+          "recall": 0.75,
+          "f1": 0.7358,
+          "support": 468
+        },
+        "Groundnut": {
+          "precision": 0.9259,
+          "recall": 0.8746,
+          "f1": 0.8996,
+          "support": 343
+        },
+        "Jowar": {
+          "precision": 0.8222,
+          "recall": 0.7551,
+          "f1": 0.7872,
+          "support": 490
+        },
+        "Maize": {
+          "precision": 0.7136,
+          "recall": 0.6065,
+          "f1": 0.6557,
+          "support": 493
+        },
+        "Mustard": {
+          "precision": 0.9322,
+          "recall": 0.9116,
+          "f1": 0.9218,
+          "support": 498
+        },
+        "Onion": {
+          "precision": 0.8067,
+          "recall": 0.7951,
+          "f1": 0.8008,
+          "support": 488
+        },
+        "Potato": {
+          "precision": 0.7899,
+          "recall": 0.8136,
+          "f1": 0.8016,
+          "support": 499
+        },
+        "Rice": {
+          "precision": 0.8472,
+          "recall": 0.8083,
+          "f1": 0.8273,
+          "support": 480
+        },
+        "Soyabean": {
+          "precision": 0.7732,
+          "recall": 0.8254,
+          "f1": 0.7985,
+          "support": 252
+        },
+        "Sugarcane": {
+          "precision": 0.6312,
+          "recall": 0.7197,
+          "f1": 0.6726,
+          "support": 421
+        },
+        "Tobacco": {
+          "precision": 0.7608,
+          "recall": 0.7256,
+          "f1": 0.7428,
+          "support": 390
+        },
+        "Tur": {
+          "precision": 0.8731,
+          "recall": 0.8152,
+          "f1": 0.8431,
+          "support": 422
+        },
+        "Wheat": {
+          "precision": 0.8224,
+          "recall": 0.8273,
+          "f1": 0.8248,
+          "support": 498
+        }
+      }
+    }
+  },
+  "leakage_gap": 0.1378,
+  "loeo": {
+    "protocol": "loeo",
+    "estimator": "xgboost",
+    "n_folds": 5,
+    "folds": [
+      {
+        "fold": 1,
+        "n_train": 3946,
+        "n_cal": 1297,
+        "n_test": 2664,
+        "temperature": 0.945,
+        "test_classes": 11,
+        "train_classes": 17
+      },
+      {
+        "fold": 2,
+        "n_train": 3874,
+        "n_cal": 786,
+        "n_test": 3247,
+        "temperature": 0.905,
+        "test_classes": 12,
+        "train_classes": 16
+      },
+      {
+        "fold": 3,
+        "n_train": 5185,
+        "n_cal": 1747,
+        "n_test": 975,
+        "temperature": 1.035,
+        "test_classes": 6,
+        "train_classes": 18
+      },
+      {
+        "fold": 4,
+        "n_train": 6674,
+        "n_cal": 1162,
+        "n_test": 71,
+        "temperature": 0.91,
+        "test_classes": 2,
+        "train_classes": 18
+      },
+      {
+        "fold": 5,
+        "n_train": 5440,
+        "n_cal": 1519,
+        "n_test": 948,
+        "temperature": 0.96,
+        "test_classes": 8,
+        "train_classes": 16
+      }
+    ],
+    "mean_temperature": 0.951,
+    "raw": {
+      "n": 7905,
+      "balanced_accuracy": 0.1618,
+      "accuracy": 0.1571,
+      "macro_f1": 0.1372,
+      "ece": 0.3804,
+      "min_class_recall": 0.0,
+      "worst_class": "Chilli",
+      "coverage_at_gate": 0.8832,
+      "precision_at_gate": 0.166,
+      "per_class": {
+        "Bajra": {
+          "precision": 0.0357,
+          "recall": 0.0314,
+          "f1": 0.0334,
+          "support": 477
+        },
+        "Banana": {
+          "precision": 0.3902,
+          "recall": 0.6683,
+          "f1": 0.4927,
+          "support": 404
+        },
+        "Chilli": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 309
+        },
+        "Cotton": {
+          "precision": 0.1489,
+          "recall": 0.2276,
+          "f1": 0.18,
+          "support": 479
+        },
+        "Gram": {
+          "precision": 0.136,
+          "recall": 0.0907,
+          "f1": 0.1088,
+          "support": 496
+        },
+        "Grapes": {
+          "precision": 0.0051,
+          "recall": 0.0043,
+          "f1": 0.0047,
+          "support": 468
+        },
+        "Groundnut": {
+          "precision": 0.0045,
+          "recall": 0.0029,
+          "f1": 0.0035,
+          "support": 343
+        },
+        "Jowar": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 490
+        },
+        "Maize": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 491
+        },
+        "Mustard": {
+          "precision": 0.5479,
+          "recall": 0.1606,
+          "f1": 0.2484,
+          "support": 498
+        },
+        "Onion": {
+          "precision": 0.5025,
+          "recall": 0.623,
+          "f1": 0.5563,
+          "support": 488
+        },
+        "Potato": {
+          "precision": 0.1613,
+          "recall": 0.2525,
+          "f1": 0.1969,
+          "support": 499
+        },
+        "Rice": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 480
+        },
+        "Soyabean": {
+          "precision": 0.2118,
+          "recall": 0.5278,
+          "f1": 0.3023,
+          "support": 252
+        },
+        "Sugarcane": {
+          "precision": 0.0412,
+          "recall": 0.0523,
+          "f1": 0.0461,
+          "support": 421
+        },
+        "Tobacco": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 390
+        },
+        "Tur": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 422
+        },
+        "Wheat": {
+          "precision": 0.3261,
+          "recall": 0.2711,
+          "f1": 0.2961,
+          "support": 498
+        }
+      }
+    },
+    "calibrated": {
+      "n": 7905,
+      "balanced_accuracy": 0.1618,
+      "accuracy": 0.1571,
+      "macro_f1": 0.1372,
+      "ece": 0.4037,
+      "min_class_recall": 0.0,
+      "worst_class": "Chilli",
+      "coverage_at_gate": 0.9003,
+      "precision_at_gate": 0.1647,
+      "per_class": {
+        "Bajra": {
+          "precision": 0.0357,
+          "recall": 0.0314,
+          "f1": 0.0334,
+          "support": 477
+        },
+        "Banana": {
+          "precision": 0.3902,
+          "recall": 0.6683,
+          "f1": 0.4927,
+          "support": 404
+        },
+        "Chilli": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 309
+        },
+        "Cotton": {
+          "precision": 0.1489,
+          "recall": 0.2276,
+          "f1": 0.18,
+          "support": 479
+        },
+        "Gram": {
+          "precision": 0.136,
+          "recall": 0.0907,
+          "f1": 0.1088,
+          "support": 496
+        },
+        "Grapes": {
+          "precision": 0.0051,
+          "recall": 0.0043,
+          "f1": 0.0047,
+          "support": 468
+        },
+        "Groundnut": {
+          "precision": 0.0045,
+          "recall": 0.0029,
+          "f1": 0.0035,
+          "support": 343
+        },
+        "Jowar": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 490
+        },
+        "Maize": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 491
+        },
+        "Mustard": {
+          "precision": 0.5479,
+          "recall": 0.1606,
+          "f1": 0.2484,
+          "support": 498
+        },
+        "Onion": {
+          "precision": 0.5025,
+          "recall": 0.623,
+          "f1": 0.5563,
+          "support": 488
+        },
+        "Potato": {
+          "precision": 0.1613,
+          "recall": 0.2525,
+          "f1": 0.1969,
+          "support": 499
+        },
+        "Rice": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 480
+        },
+        "Soyabean": {
+          "precision": 0.2118,
+          "recall": 0.5278,
+          "f1": 0.3023,
+          "support": 252
+        },
+        "Sugarcane": {
+          "precision": 0.0412,
+          "recall": 0.0523,
+          "f1": 0.0461,
+          "support": 421
+        },
+        "Tobacco": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 390
+        },
+        "Tur": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "support": 422
+        },
+        "Wheat": {
+          "precision": 0.3261,
+          "recall": 0.2711,
+          "f1": 0.2961,
+          "support": 498
+        }
+      }
+    }
+  },
+  "gates": {
+    "balanced_accuracy>=0.55": true,
+    "macro_f1>=0.50": true,
+    "min_class_recall>=0.30": false,
+    "ece<=0.05": true,
+    "precision_at_gate>=0.70": false,
+    "coverage_at_gate>=0.40": true
+  },
+  "gates_passed": false
+}

@@ -48,7 +48,7 @@ from api.job_runner import (
 )
 from api.report_payload import build_report_payload
 from api.serialization import slim_assessment_for_api
-from config import resolve_package_path
+from config import DEFAULT_CROP_MODEL_PATH, crop_classification_enabled, resolve_package_path
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ def _create_pipeline() -> Any:
 
     model_path = str(
         resolve_package_path(
-            os.environ.get("CROP_MODEL_PATH", "models/crop_classifier_model.joblib")
+            os.environ.get("CROP_MODEL_PATH", DEFAULT_CROP_MODEL_PATH)
         )
     )
     ml_mode = os.environ.get("ML_MODE", "rule_based")
@@ -230,6 +230,12 @@ def verify_service_key(x_api_key: Optional[str] = Header(default=None)) -> None:
         raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
 
 
+@app.get("/health/live")
+async def health_live() -> Dict[str, str]:
+    """Fast liveness probe — no Mongo or pipeline work (use before enqueue)."""
+    return {"status": "ok"}
+
+
 @app.get("/health")
 async def health() -> Dict[str, Any]:
     use_mdb = os.environ.get("USE_MONGODB", "true").strip().lower() in (
@@ -240,7 +246,11 @@ async def health() -> Dict[str, Any]:
     reaped = 0
     if _jobs_col is not None:
         try:
-            reaped = reap_stuck_running_jobs(_jobs_col)
+            loop = asyncio.get_event_loop()
+            reaped = await asyncio.wait_for(
+                loop.run_in_executor(None, reap_stuck_running_jobs, _jobs_col),
+                timeout=2.0,
+            )
         except Exception as exc:
             logger.debug("health reaper skipped: %s", exc)
     return {
@@ -460,8 +470,8 @@ async def _claim_and_run_job(job_id: str) -> None:
     except Exception:
         pass
 
-    _env_classify = os.environ.get("ENABLE_CROP_CLASSIFICATION", "false").strip().lower()
-    env_classification_enabled = _env_classify in ("1", "true", "yes")
+    _env_classify = crop_classification_enabled()
+    env_classification_enabled = _env_classify
 
     loop = asyncio.get_event_loop()
     async with _pipeline_job_lock:

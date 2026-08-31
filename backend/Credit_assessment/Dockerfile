@@ -17,7 +17,7 @@ ENV PYTHONUNBUFFERED=1
 COPY requirements.txt .
 RUN pip install --no-cache-dir --no-compile -r requirements.txt
 
-# Application code + model artifacts (ensure crop_classifier_model.joblib is in repo or image build context)
+# Application code + model artifacts (ensure crop_classifier_tier1_v1.joblib is in repo or image build context)
 COPY . .
 
 # Render injects PORT (often 10000); bind 0.0.0.0 so the port scan succeeds.

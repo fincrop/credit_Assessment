@@ -6,7 +6,7 @@
     "dev": "next dev",
     "clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\"",
     "dev:clean": "npm run clean && next dev",
-    "build": "next build",
+    "build": "next build && tsx scripts/check-api-routes.ts",
     "start": "next start",
     "lint": "eslint",
     "smoke": "tsx scripts/smoke-logic.ts",

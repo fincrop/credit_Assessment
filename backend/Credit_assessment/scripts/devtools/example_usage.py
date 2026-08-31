@@ -29,10 +29,11 @@ def example_1_pipeline_init():
     print("EXAMPLE 1: PIPELINE INITIALIZATION")
     print("="*70)
 
+    from config import DEFAULT_CROP_MODEL_PATH
     from main import SatelliteBasedCreditPipeline
 
     pipeline = SatelliteBasedCreditPipeline(
-        crop_model_path='models/crop_classifier_model.joblib',
+        crop_model_path=DEFAULT_CROP_MODEL_PATH,
         ml_mode='hybrid',
         use_mongodb=False,
         verbose=True,
@@ -50,10 +51,11 @@ def example_2_direct_assessment():
     print("EXAMPLE 2: DIRECT ASSESSMENT (no DB)")
     print("="*70)
 
+    from config import DEFAULT_CROP_MODEL_PATH
     from main import SatelliteBasedCreditPipeline
 
     pipeline = SatelliteBasedCreditPipeline(
-        crop_model_path='models/crop_classifier_model.joblib',
+        crop_model_path=DEFAULT_CROP_MODEL_PATH,
         ml_mode='hybrid',
         use_mongodb=False,
         verbose=True,
@@ -235,12 +237,14 @@ def main():
         import traceback
         traceback.print_exc()
         
+        from config import DEFAULT_CROP_MODEL_PATH
+
         print("\n" + "#"*70)
         print("# TROUBLESHOOTING:")
         print("#"*70)
         print("1. cd backend/Credit_assessment")
         print("2. pip install -r requirements.txt")
-        print("3. Check that models/crop_classifier_model.joblib exists")
+        print(f"3. Check that {DEFAULT_CROP_MODEL_PATH} exists")
         print("#"*70)
 
 

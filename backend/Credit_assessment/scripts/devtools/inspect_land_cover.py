@@ -49,13 +49,13 @@ def main() -> int:
     import logging
     logging.basicConfig(level=logging.WARNING)
 
-    from config import PipelineConfig, resolve_package_path
+    from config import DEFAULT_CROP_MODEL_PATH, PipelineConfig, resolve_package_path
     from crop_analysis.land_cover_gate import classify_land_cover
     from main import SatelliteBasedCreditPipeline
 
     pipeline = SatelliteBasedCreditPipeline(
         crop_model_path=str(resolve_package_path(
-            os.environ.get("CROP_MODEL_PATH", "models/crop_classifier_model.joblib"))),
+            os.environ.get("CROP_MODEL_PATH", DEFAULT_CROP_MODEL_PATH))),
         verbose=False,
         use_mongodb=True,
     )

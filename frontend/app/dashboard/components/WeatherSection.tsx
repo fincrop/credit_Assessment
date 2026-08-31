@@ -1,6 +1,9 @@
 'use client';
 
 import type { AssessmentPayload, CropCycle, WeatherIndicators } from '../../types/assessment';
+import type { ReportNdviTrajectory } from '../../types/report';
+import { resolveCropCycles } from '../../lib/ndviCycles';
+import { prettySeasonTitle, yearOfCycle } from '../../lib/seasonLabels';
 import { readWeatherIndicator } from '../../lib/formatRisk';
 
 type ExtremeEvent = Record<string, unknown>;
@@ -30,58 +33,6 @@ function prettyEventType(raw: unknown): string {
   if (key.includes('rain')) return 'Heavy rain';
   if (!key || key === 'unknown') return 'Weather event';
   return String(raw).replace(/_/g, ' ');
-}
-
-function prettySeasonTitle(
-  season: string | null | undefined,
-  year: number | null | undefined,
-  cycle: CropCycle | undefined,
-  index: number
-): string {
-  const fromCycle = cycle?.season_label || cycle?.season_type;
-  if (fromCycle) return String(fromCycle).replace(/_/g, ' ');
-  const s = String(season || '').trim();
-  const upper = s.toUpperCase();
-  if (s && !upper.startsWith('CYCLE')) {
-    if (year != null && !s.includes(String(year))) return `${s.replace(/_/g, ' ')} ${year}`;
-    return s.replace(/_/g, ' ');
-  }
-  const cycleMatch = upper.match(/^CYCLE[_\s-]?(\d+)$/);
-  if (cycleMatch) {
-    return year != null ? `Season ${cycleMatch[1]} · ${year}` : `Season ${cycleMatch[1]}`;
-  }
-  if (upper === 'KHARIF') return year != null ? `Kharif ${year}` : 'Kharif';
-  if (upper === 'RABI') return year != null ? `Rabi ${year}` : 'Rabi';
-  if (s) return year != null ? `${s.replace(/_/g, ' ')} ${year}` : s.replace(/_/g, ' ');
-  return year != null ? `Season ${index + 1} · ${year}` : `Season ${index + 1}`;
-}
-
-function yearOfCycle(cycle: CropCycle): number | null {
-  const fromLabel = String(cycle.season_label || '').match(/20\d{2}/)?.[0];
-  const fromSos = cycle.phenology?.sos?.slice(0, 4);
-  const fromSow = cycle.sowing_date?.slice(0, 4);
-  const y = Number(fromLabel || fromSos || fromSow);
-  return Number.isFinite(y) ? y : null;
-}
-
-function matchCycle(
-  cycles: CropCycle[],
-  season: string | undefined,
-  year: number | undefined,
-  index: number
-): CropCycle | undefined {
-  const upper = String(season || '').toUpperCase();
-  const hit = cycles.find((c, i) => {
-    const cy = yearOfCycle(c);
-    const label = `${c.season_label || ''} ${c.season_type || ''}`.toUpperCase();
-    if (year != null && cy != null && cy !== year) return false;
-    if (upper.includes('KHARIF') && label.includes('KHARIF')) return true;
-    if (upper.includes('RABI') && label.includes('RABI')) return true;
-    const n = upper.match(/CYCLE[_\s-]?(\d+)/)?.[1];
-    if (n && i === Number(n) - 1) return true;
-    return year != null && cy === year;
-  });
-  return hit || cycles[index];
 }
 
 function riskBand(score: number | null): {
@@ -208,12 +159,16 @@ function StatTile({
   color?: string;
 }) {
   return (
-    <div className="rounded-lg bg-paper/80 border border-rule px-4 py-3">
-      <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest">{label}</p>
+    <div className="h-full rounded-lg bg-paper/80 border border-rule px-4 py-3 flex flex-col">
+      <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-wider">{label}</p>
       <p className="text-2xl font-bold mt-1 leading-none" style={{ color: color || '#1C1917' }}>
         {value}
       </p>
-      {hint && <p className="text-[11px] text-ink-muted mt-1.5 leading-snug">{hint}</p>}
+      {hint ? (
+        <p className="text-[11px] text-ink-muted mt-auto pt-1.5 leading-snug">{hint}</p>
+      ) : (
+        <span className="mt-auto" aria-hidden />
+      )}
     </div>
   );
 }
@@ -265,7 +220,13 @@ function daysLabel(n: number | null, unit = 'days'): string {
   return `${rounded} ${unit}`;
 }
 
-export function WeatherSection({ data }: { data: AssessmentPayload }) {
+export function WeatherSection({
+  data,
+  ndviTrajectory,
+}: {
+  data: AssessmentPayload;
+  ndviTrajectory?: ReportNdviTrajectory | null;
+}) {
   const wa = data.weather_analysis;
   if (!wa) {
     return (
@@ -276,7 +237,10 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
     );
   }
 
-  const cycles: CropCycle[] = data.crop_cycles?.cycles ?? [];
+  const cycles: CropCycle[] = resolveCropCycles(
+    data.crop_cycles?.cycles ?? [],
+    ndviTrajectory
+  );
   const seasonal = wa.seasonal_weather ?? [];
   const cycleRisks = wa.cycle_risk_scores ?? [];
   const events: ExtremeEvent[] = wa.extreme_events ?? [];
@@ -338,30 +302,90 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
   }
   summaryParts.push(band.why);
 
-  const rows = seasonal.map((s, i) => {
-    const extra = s as {
+  type SeasonWeather = (typeof seasonal)[number];
+
+  function matchSeasonWeather(
+    cycle: CropCycle,
+    index: number,
+    used: Set<number>
+  ): SeasonWeather | undefined {
+    const label = String(cycle.season_label || cycle.season_type || '')
+      .replace(/_/g, ' ')
+      .trim()
+      .toLowerCase();
+    const year = yearOfCycle(cycle);
+    const cycleId = cycle.cycle_id != null ? String(cycle.cycle_id) : '';
+
+    for (let j = 0; j < seasonal.length; j++) {
+      if (used.has(j)) continue;
+      const s = seasonal[j];
+      const extra = s as { season_label?: unknown; cycle_id?: unknown };
+      const sl =
+        extra.season_label != null
+          ? String(extra.season_label).replace(/_/g, ' ').trim().toLowerCase()
+          : '';
+      if (sl && label && sl === label) {
+        used.add(j);
+        return s;
+      }
+      if (cycleId && extra.cycle_id != null && String(extra.cycle_id) === cycleId) {
+        used.add(j);
+        return s;
+      }
+    }
+
+    for (let j = 0; j < seasonal.length; j++) {
+      if (used.has(j)) continue;
+      const s = seasonal[j];
+      const sy = typeof s.year === 'number' ? s.year : num(s.year) ?? undefined;
+      const sn = String(s.season || '').toUpperCase();
+      const ct = String(cycle.season_type || '').toUpperCase();
+      if (year != null && sy === year && (!ct || sn.includes(ct) || ct.includes(sn))) {
+        used.add(j);
+        return s;
+      }
+    }
+
+    if (index < seasonal.length && !used.has(index)) {
+      used.add(index);
+      return seasonal[index];
+    }
+    return undefined;
+  }
+
+  function buildWeatherRow(s: SeasonWeather | undefined, cycle: CropCycle | undefined, i: number) {
+    const extra = (s || {}) as {
       cycle_id?: unknown;
       season_label?: unknown;
       season_type?: unknown;
       extreme_events?: ExtremeEvent[];
+      year?: unknown;
+      season?: unknown;
+      weather_indicators?: WeatherIndicators;
     };
-    const year = typeof s.year === 'number' ? s.year : num(s.year) ?? undefined;
+    const year =
+      cycle != null
+        ? yearOfCycle(cycle)
+        : typeof extra.year === 'number'
+          ? extra.year
+          : num(extra.year) ?? undefined;
     const seasonName =
-      extra.season_label != null
-        ? String(extra.season_label)
-        : extra.season_type != null
-          ? String(extra.season_type)
-          : s.season != null
-            ? String(s.season)
-            : undefined;
-    const cycle = matchCycle(cycles, seasonName, year, i);
-    const ind: WeatherIndicators | undefined = s.weather_indicators;
+      cycle?.season_label != null
+        ? String(cycle.season_label)
+        : extra.season_label != null
+          ? String(extra.season_label)
+          : extra.season_type != null
+            ? String(extra.season_type)
+            : s?.season != null
+              ? String(s.season)
+              : undefined;
+    const ind: WeatherIndicators | undefined = s?.weather_indicators;
     const dry = readWeatherIndicator(ind, 'max_dry_spell_days', 'dry_spell_max_days');
     const wet = readWeatherIndicator(ind, 'max_wet_spell_days', 'wet_spell_max_days');
     const heat = readWeatherIndicator(ind, 'heat_stress_days');
     const cold = readWeatherIndicator(ind, 'cold_stress_days');
     const onset = readWeatherIndicator(ind, 'monsoon_onset_offset_days', 'monsoon_onset_anomaly_days');
-    const cycleId = String(extra.cycle_id ?? s.season ?? '');
+    const cycleId = String(extra.cycle_id ?? s?.season ?? cycle?.cycle_id ?? '');
     const riskScore =
       num(cycleRisks.find((c) => String(c.cycle_id || '') === cycleId)?.risk_score) ??
       num(cycleRisks[i]?.risk_score);
@@ -371,84 +395,134 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
         ? nested
         : events.filter((ev) => {
             const evCycle = String(ev.cycle_id ?? ev.season ?? '');
-            const evYear = num(ev.year) ?? Number(String(ev.date_or_start ?? ev.date ?? '').slice(0, 4));
+            const evYear =
+              num(ev.year) ?? Number(String(ev.date_or_start ?? ev.date ?? '').slice(0, 4));
             if (evCycle && cycleId && evCycle.toLowerCase() === cycleId.toLowerCase()) return true;
-            if (year != null && Number.isFinite(evYear) && evYear === year) return true;
+            if (year != null && Number.isFinite(evYear) && evYear === year) {
+              const ct = String(cycle?.season_type || '').toUpperCase();
+              const es = String(ev.season || '').toUpperCase();
+              if (!ct || !es || es.includes(ct) || ct.includes(es)) return true;
+            }
             return false;
           });
     return { s, i, cycle, dry, wet, heat, cold, onset, riskScore, seasonEvents, year, seasonName };
-  });
+  }
+
+  const usedSeasonIdx = new Set<number>();
+  const rows =
+    cycles.length > 0
+      ? cycles.map((cycle, i) => {
+          const matched = matchSeasonWeather(cycle, i, usedSeasonIdx);
+          return buildWeatherRow(matched, cycle, i);
+        })
+      : seasonal.map((s, i) => buildWeatherRow(s, cycles[i], i));
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl border border-rule p-5">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
-            <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">What we found</p>
-            <h2 className="text-base font-bold text-stone-900 mt-0.5">Weather on this plot</h2>
-            <p className="text-xs text-stone-500 mt-1">
-              {seasonal.length > 0
-                ? `${seasonal.length} growing season${seasonal.length === 1 ? '' : 's'} watched`
-                : 'Across the assessed window'}
-            </p>
+      {/* What we found + forward / response */}
+      <div className="grid lg:grid-cols-[3fr_2fr] gap-4 items-stretch">
+        <div className="bg-white rounded-xl border border-rule p-5 flex flex-col">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">What we found</p>
+              <h2 className="text-base font-bold text-stone-900 mt-0.5">Weather on this plot</h2>
+              <p className="text-xs text-stone-500 mt-1">
+                {rows.length > 0
+                  ? `${rows.length} growing season${rows.length === 1 ? '' : 's'} watched`
+                  : 'Across the assessed window'}
+              </p>
+            </div>
+            <span
+              className="text-[11px] font-bold px-2.5 py-1 rounded-full border shrink-0"
+              style={{ color: band.ink, background: band.surface, borderColor: band.border }}
+            >
+              {band.word}
+            </span>
           </div>
-          <span
-            className="text-[11px] font-bold px-2.5 py-1 rounded-full border"
-            style={{ color: band.ink, background: band.surface, borderColor: band.border }}
-          >
-            {band.word}
-          </span>
-        </div>
 
-        <div className="grid sm:grid-cols-3 gap-3 mt-4">
-          <StatTile
-            label="Weather"
-            value={band.word}
-            hint={risk == null ? undefined : risk < 20 ? 'Manageable for the crop' : risk < 40 ? 'Some harsh spells' : 'Hard on the crop'}
-            color={band.ink}
-          />
-          <StatTile
-            label="Alerts"
-            value={String(nEvents)}
-            hint={typeHint}
-            color={nEvents > 0 ? '#B45309' : '#15803D'}
-          />
-          <StatTile
-            label="Crop held up"
-            value={tested <= 0 || resilience == null ? 'Untested' : resilience >= 70 ? 'Well' : resilience >= 50 ? 'Fairly' : 'Poorly'}
-            hint={tested <= 0 ? 'Not seen under hard weather yet' : 'How green cover held during stress'}
-            color={tested <= 0 || resilience == null ? '#57534E' : resilience >= 70 ? '#006446' : resilience >= 50 ? '#7A5405' : '#9A2E1F'}
-          />
-        </div>
+          <div className="grid sm:grid-cols-3 gap-3 mt-4 items-stretch">
+            <StatTile
+              label="Weather"
+              value={band.word}
+              hint={risk == null ? undefined : risk < 20 ? 'Manageable for the crop' : risk < 40 ? 'Some harsh spells' : 'Hard on the crop'}
+              color={band.ink}
+            />
+            <StatTile
+              label="Alerts"
+              value={String(nEvents)}
+              hint={typeHint}
+              color={nEvents > 0 ? '#B45309' : '#15803D'}
+            />
+            <StatTile
+              label="Crop held up"
+              value={tested <= 0 || resilience == null ? 'Untested' : resilience >= 70 ? 'Well' : resilience >= 50 ? 'Fairly' : 'Poorly'}
+              hint={tested <= 0 ? 'Not seen under hard weather yet' : 'How green cover held during stress'}
+              color={tested <= 0 || resilience == null ? '#57534E' : resilience >= 70 ? '#006446' : resilience >= 50 ? '#7A5405' : '#9A2E1F'}
+            />
+          </div>
 
-        <p className="text-[13px] text-stone-600 mt-4 leading-relaxed">{summaryParts.join(' ')}</p>
+          <p className="text-[13px] text-stone-600 mt-4 leading-relaxed">{summaryParts.join(' ')}</p>
 
-        {events.length > 0 && (
-          <div className="flex flex-wrap gap-2 mt-4">
-            {Object.entries(typeCounts).map(([label, count]) => {
-              const sample = events.find((ev) => prettyEventType(ev.type) === label);
-              const kind = eventKind(sample?.type);
-              return (
-                <span
-                  key={label}
-                  className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1 rounded-full border bg-paper border-rule text-stone-700"
-                >
-                  <WxIcon kind={kind} className="w-3.5 h-3.5 text-amber-800" />
-                  {count}× {label.toLowerCase()}
+          {events.length > 0 && (
+            <div className="flex flex-wrap gap-2 mt-4 -mx-0.5">
+              {Object.entries(typeCounts).map(([label, count]) => {
+                const sample = events.find((ev) => prettyEventType(ev.type) === label);
+                const kind = eventKind(sample?.type);
+                return (
+                  <span
+                    key={label}
+                    className="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-1 rounded-full border bg-paper border-rule text-stone-700"
+                  >
+                    <WxIcon kind={kind} className="w-3.5 h-3.5 text-amber-800 shrink-0" />
+                    {count}× {label.toLowerCase()}
+                  </span>
+                );
+              })}
+              {nCritical > 0 && (
+                <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1 rounded-full border bg-amber-50 border-amber-200 text-amber-900">
+                  <WxIcon kind="alert" className="w-3.5 h-3.5 shrink-0" />
+                  {nCritical} at a sensitive stage
                 </span>
-              );
-            })}
-            {nCritical > 0 && (
-              <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1 rounded-full border bg-amber-50 border-amber-200 text-amber-900">
-                <WxIcon kind="alert" className="w-3.5 h-3.5" />
-                {nCritical} at a sensitive stage
-              </span>
-            )}
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-4 min-h-full">
+          <div className="flex-1 bg-white rounded-xl border border-rule p-5 flex flex-col">
+            <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">Going forward</p>
+            <h2 className="text-base font-bold text-stone-900 mt-0.5">
+              {exposure == null
+                ? 'Weather pattern'
+                : exposure >= 60
+                  ? 'Higher chance of stress ahead'
+                  : exposure >= 30
+                    ? 'Some weather risk ahead'
+                    : 'Weather risk looks contained'}
+            </h2>
+            <p className="text-[13px] text-stone-600 mt-2 leading-relaxed flex-1">{goingForward}</p>
           </div>
-        )}
+          <div className="flex-1 bg-white rounded-xl border border-rule p-5 flex flex-col">
+            <div className="flex items-center gap-1.5">
+              <WxIcon kind="leaf" className="w-3.5 h-3.5 text-emerald-800 shrink-0" />
+              <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">Crop response</p>
+            </div>
+            <h2 className="text-base font-bold text-stone-900 mt-0.5">
+              {tested <= 0 || resilience == null
+                ? 'Not stress-tested yet'
+                : resilience >= 70
+                  ? 'Held up well'
+                  : resilience >= 50
+                    ? 'Held up fairly'
+                    : 'Struggled under stress'}
+            </h2>
+            <p className="text-[13px] text-stone-600 mt-2 leading-relaxed flex-1">{heldUp}</p>
+          </div>
+        </div>
       </div>
 
-      <div className="grid lg:grid-cols-[3fr_2fr] gap-4 items-start">
+      {/* Each season + alerts — row height follows season cards; alerts scroll inside matched column */}
+      <div className="grid lg:grid-cols-[3fr_2fr] gap-4">
         <div className="bg-white rounded-xl border border-rule p-5">
           <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">Each season</p>
           <h2 className="text-sm font-bold text-stone-900 mt-0.5 mb-3">What the weather did while the crop grew</h2>
@@ -477,7 +551,7 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
                   <article key={row.i} className="rounded-lg border border-rule bg-paper/50 p-4">
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <p className="text-sm font-semibold text-stone-900">
-                        {prettySeasonTitle(row.seasonName, row.year, row.cycle, row.i)}
+                        {prettySeasonTitle(row.cycle, undefined, row.i)}
                       </p>
                       <span
                         className="text-[11px] font-bold px-2 py-0.5 rounded-full border shrink-0"
@@ -549,81 +623,54 @@ export function WeatherSection({ data }: { data: AssessmentPayload }) {
           )}
         </div>
 
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-rule p-4">
-            <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">Going forward</p>
-            <h2 className="text-sm font-bold text-stone-900 mt-0.5">
-              {exposure == null
-                ? 'Weather pattern'
-                : exposure >= 60
-                  ? 'Higher chance of stress ahead'
-                  : exposure >= 30
-                    ? 'Some weather risk ahead'
-                    : 'Weather risk looks contained'}
-            </h2>
-            <p className="text-[13px] text-stone-600 mt-2 leading-relaxed">{goingForward}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-rule p-4">
-            <div className="flex items-center gap-1.5">
-              <WxIcon kind="leaf" className="w-3.5 h-3.5 text-emerald-800" />
-              <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">Crop response</p>
-            </div>
-            <h2 className="text-sm font-bold text-stone-900 mt-0.5">
-              {tested <= 0 || resilience == null
-                ? 'Not stress-tested yet'
-                : resilience >= 70
-                  ? 'Held up well'
-                  : resilience >= 50
-                    ? 'Held up fairly'
-                    : 'Struggled under stress'}
-            </h2>
-            <p className="text-[13px] text-stone-600 mt-2 leading-relaxed">{heldUp}</p>
-          </div>
-        </div>
-      </div>
-
-      {events.length > 0 && (
-        <div className="bg-white rounded-xl border border-rule p-5">
-          <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">Alerts</p>
-          <h2 className="text-sm font-bold text-stone-900 mt-0.5 mb-3">When weather turned harsh</h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {events.slice(0, 12).map((ev, i) => {
-              const kind = eventKind(ev.type);
-              const sev = severityStyle(ev.severity);
-              const when = eventDate(ev);
-              const duration = num(ev.duration_days);
-              return (
-                <div key={i} className="flex items-start gap-3 rounded-lg border border-rule bg-paper/50 px-3 py-2.5">
-                  <span
-                    className="mt-0.5 inline-flex items-center justify-center w-8 h-8 rounded-full shrink-0"
-                    style={{ background: sev.surface, color: sev.ink }}
-                  >
-                    <WxIcon kind={kind} className="w-4 h-4" />
-                  </span>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-sm font-semibold text-stone-900">{prettyEventType(ev.type)}</p>
-                      <span
-                        className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border"
-                        style={{ color: sev.ink, background: sev.surface, borderColor: sev.border }}
-                      >
-                        {sev.word}
-                      </span>
+        {events.length > 0 ? (
+          <div className="relative min-h-0 lg:self-stretch">
+            <div className="bg-white rounded-xl border border-rule p-5 flex flex-col overflow-hidden lg:absolute lg:inset-0">
+              <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold shrink-0">Alerts</p>
+              <h2 className="text-sm font-bold text-stone-900 mt-0.5 shrink-0">When weather turned harsh</h2>
+              <div className="flex-1 min-h-0 overflow-y-auto mt-3 space-y-2 pr-0.5 overscroll-contain">
+              {events.map((ev, i) => {
+                const kind = eventKind(ev.type);
+                const sev = severityStyle(ev.severity);
+                const when = eventDate(ev);
+                const duration = num(ev.duration_days);
+                return (
+                  <div key={i} className="flex items-start gap-3 rounded-lg border border-rule bg-paper/50 px-3 py-2.5">
+                    <span
+                      className="mt-0.5 inline-flex items-center justify-center w-8 h-8 rounded-full shrink-0"
+                      style={{ background: sev.surface, color: sev.ink }}
+                    >
+                      <WxIcon kind={kind} className="w-4 h-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold text-stone-900">{prettyEventType(ev.type)}</p>
+                        <span
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border"
+                          style={{ color: sev.ink, background: sev.surface, borderColor: sev.border }}
+                        >
+                          {sev.word}
+                        </span>
+                      </div>
+                      <p className="text-[12px] text-stone-500 mt-0.5">
+                        {[when, duration != null ? daysLabel(duration) : null].filter(Boolean).join(' · ') ||
+                          'Date not stored'}
+                      </p>
                     </div>
-                    <p className="text-[12px] text-stone-500 mt-0.5">
-                      {[when, duration != null ? daysLabel(duration) : null].filter(Boolean).join(' · ') ||
-                        'Date not stored'}
-                    </p>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+              </div>
+            </div>
           </div>
-          {events.length > 12 && (
-            <p className="text-[11px] text-ink-muted mt-3">{events.length - 12} more alerts are stored in this assessment.</p>
-          )}
-        </div>
-      )}
+        ) : (
+          <div className="bg-white rounded-xl border border-rule p-5 flex flex-col">
+            <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">Alerts</p>
+            <h2 className="text-sm font-bold text-stone-900 mt-0.5">When weather turned harsh</h2>
+            <p className="text-sm text-stone-500 mt-2">No extreme weather alerts were flagged for this plot.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

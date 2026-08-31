@@ -213,6 +213,16 @@ export default function FarmBoundaryMapInner({
     }
   }, [mapCenter]);
 
+  useEffect(() => {
+    const shell = containerRef.current?.parentElement;
+    if (!shell) return;
+    const ro = new ResizeObserver(() => {
+      mapRef.current?.invalidateSize();
+    });
+    ro.observe(shell);
+    return () => ro.disconnect();
+  }, []);
+
   const savePending = () => {
     if (!pendingRing) return;
     const color = FARM_COLORS[farms.length % FARM_COLORS.length];
@@ -354,8 +364,8 @@ export default function FarmBoundaryMapInner({
       </div>
       {coordError && <p className="text-xs text-red-600">{coordError}</p>}
 
-      <div className="farm-map-container flex-1 relative" style={{ minHeight: 420 }}>
-        <div ref={containerRef} style={{ width: '100%', height: '100%', minHeight: 420 }} />
+      <div className="farm-map-container flex-1 relative min-h-[280px]">
+        <div ref={containerRef} className="absolute inset-0" />
         <div className="farm-map-area-badge">
           {farms.length} farm(s) · {totalArea.toFixed(3)} ha
         </div>

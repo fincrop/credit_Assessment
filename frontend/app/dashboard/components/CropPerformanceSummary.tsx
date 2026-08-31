@@ -1,6 +1,7 @@
 'use client';
 
 import { resolveCropCycles } from '../../lib/ndviCycles';
+import { prettySeasonTitle } from '../../lib/seasonLabels';
 import type {
   AssessmentPayload,
   CropCycle,
@@ -17,21 +18,6 @@ function isNamedCrop(name: string | null | undefined): boolean {
 
 function prettyCrop(name: string | null | undefined): string {
   return isNamedCrop(name) ? String(name) : 'Not identified';
-}
-
-function prettySeasonTitle(cycle: CropCycle | undefined, season: SeasonPerformance | undefined, index: number): string {
-  const fromCycle = cycle?.season_label || cycle?.season_type;
-  if (fromCycle) return String(fromCycle).replace(/_/g, ' ');
-  const s = String(season?.season || '').trim();
-  const upper = s.toUpperCase();
-  const cycleMatch = upper.match(/^CYCLE[_\s-]?(\d+)$/);
-  if (cycleMatch) {
-    return season?.year != null ? `Season ${cycleMatch[1]} · ${season.year}` : `Season ${cycleMatch[1]}`;
-  }
-  if (upper === 'KHARIF') return season?.year != null ? `Kharif ${season.year}` : 'Kharif';
-  if (upper === 'RABI') return season?.year != null ? `Rabi ${season.year}` : 'Rabi';
-  if (s) return season?.year != null ? `${s.replace(/_/g, ' ')} ${season.year}` : s.replace(/_/g, ' ');
-  return `Season ${index + 1}`;
 }
 
 function prettyDate(value: string | null | undefined): string | null {
@@ -194,8 +180,8 @@ function StatTile({
   color?: string;
 }) {
   return (
-    <div className="rounded-lg bg-paper/80 border border-rule px-4 py-3">
-      <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-widest">{label}</p>
+    <div className="h-full rounded-lg bg-paper/80 border border-rule px-4 py-3 flex flex-col">
+      <p className="text-[10px] font-semibold text-ink-muted uppercase tracking-wider">{label}</p>
       <p className="text-2xl font-bold mt-1 leading-none" style={{ color: color || '#1C1917' }}>
         {value}
       </p>
@@ -287,53 +273,73 @@ export function CropPerformanceSummary({
 
   return (
     <div className="space-y-4">
-      <div className="bg-white rounded-xl border border-rule p-5">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div>
-            <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">
-              What we found
-            </p>
-            <h2 className="text-base font-bold text-stone-900 mt-0.5">Growing seasons on this plot</h2>
-            {window && <p className="text-xs text-stone-500 mt-1">Watched {window}</p>}
+      {/* What we found + crop check — same row as Weather tab */}
+      <div className="grid lg:grid-cols-[3fr_2fr] gap-4 items-stretch">
+        <div className="bg-white rounded-xl border border-rule p-5 flex flex-col">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">
+                What we found
+              </p>
+              <h2 className="text-base font-bold text-stone-900 mt-0.5">
+                Growing seasons on this plot
+              </h2>
+              {window && (
+                <p className="text-xs text-stone-500 mt-1">Watched {window}</p>
+              )}
+            </div>
+            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full border shrink-0 bg-emerald-50 border-emerald-200 text-emerald-800">
+              {nCycles} season{nCycles === 1 ? '' : 's'}
+            </span>
           </div>
-          <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full border bg-emerald-50 border-emerald-200 text-emerald-800">
-            {nCycles} season{nCycles === 1 ? '' : 's'}
-          </span>
+
+          <div className="grid sm:grid-cols-3 gap-3 mt-4 items-stretch">
+            <StatTile
+              label="Land in use"
+              value={inferredLuiDisplay}
+              hint={
+                inferredLui == null
+                  ? undefined
+                  : inferredLui < 0.35
+                    ? 'Cropped for a small part of the year'
+                    : inferredLui < 0.65
+                      ? 'Cropped for about half the year'
+                      : 'Cropped for most of the year'
+              }
+              color="#15803D"
+            />
+            <StatTile
+              label="Crops / year"
+              value={cropsPerYear != null ? cropsPerYear.toFixed(1) : '—'}
+              hint={patternLabel === '—' ? undefined : patternLabel}
+              color="#B45309"
+            />
+            <StatTile
+              label="Growth"
+              value={overall.word}
+              hint={prettyCrop(ca?.dominant_crop || seasons.find((s) => isNamedCrop(s.crop))?.crop)}
+              color={overall.ink}
+            />
+          </div>
+
+          <p className="text-[13px] text-stone-600 mt-4 leading-relaxed">
+            {landUseCopy(inferredLui, cropsPerYear, nCycles)}{' '}
+            {health != null
+              ? `Overall, growth looked ${overall.word.toLowerCase()}. ${overall.why}`
+              : ''}
+          </p>
         </div>
 
-        <div className="grid sm:grid-cols-3 gap-3 mt-4">
-          <StatTile
-            label="Land in use"
-            value={inferredLuiDisplay}
-            hint={
-              inferredLui == null
-                ? undefined
-                : inferredLui < 0.35
-                  ? 'Cropped for a small part of the year'
-                  : inferredLui < 0.65
-                    ? 'Cropped for about half the year'
-                    : 'Cropped for most of the year'
-            }
-            color="#15803D"
-          />
-          <StatTile
-            label="Crops / year"
-            value={cropsPerYear != null ? cropsPerYear.toFixed(1) : '—'}
-            hint={patternLabel === '—' ? undefined : patternLabel}
-            color="#B45309"
-          />
-          <StatTile
-            label="Growth"
-            value={overall.word}
-            hint={prettyCrop(ca?.dominant_crop || seasons.find((s) => isNamedCrop(s.crop))?.crop)}
-            color={overall.ink}
-          />
+        <div className="bg-white rounded-xl border border-rule p-5 flex flex-col min-h-full">
+          <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">
+            Crop check
+          </p>
+          <h2 className="text-base font-bold text-stone-900 mt-0.5">{check.title}</h2>
+          {isNamedCrop(verification?.declared_crop) && (
+            <p className="text-xs text-stone-500 mt-1">Declared: {verification?.declared_crop}</p>
+          )}
+          <p className="text-[13px] text-stone-600 mt-2 leading-relaxed flex-1">{check.body}</p>
         </div>
-
-        <p className="text-[13px] text-stone-600 mt-4 leading-relaxed">
-          {landUseCopy(inferredLui, cropsPerYear, nCycles)}{' '}
-          {health != null ? `Overall, growth looked ${overall.word.toLowerCase()}. ${overall.why}` : ''}
-        </p>
       </div>
 
       <div className="grid lg:grid-cols-[3fr_2fr] gap-4 items-start">
@@ -405,35 +411,23 @@ export function CropPerformanceSummary({
           )}
         </div>
 
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-rule p-4">
-            <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">
-              Crop check
+        <div className="bg-white rounded-xl border border-rule p-5">
+          <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">
+            Nearby farms
+          </p>
+          <h2 className="text-sm font-bold text-stone-900 mt-0.5">
+            {peerWarm ? 'Compared with similar farms' : 'Judged on this plot’s own growth'}
+          </h2>
+          <p className="text-[13px] text-stone-600 mt-2 leading-relaxed">
+            {peerWarm
+              ? `${peerN} season${peerN === 1 ? '' : 's'} were also checked against other farms in the same climate zone.`
+              : `Not enough neighbouring farms in this area have been assessed yet, so this plot is scored from its own canopy — how green it grew, how long each season lasted, and how steadily. Neighbour comparison will appear here once more farms nearby are assessed.`}
+          </p>
+          {!peerWarm && health != null && (
+            <p className="text-[12px] text-stone-500 mt-2 leading-snug">
+              On its own terms, growth looked {overall.word.toLowerCase()}. {overall.why}
             </p>
-            <h2 className="text-sm font-bold text-stone-900 mt-0.5">{check.title}</h2>
-            {isNamedCrop(verification?.declared_crop) && (
-              <p className="text-[12px] text-stone-500 mt-1">Declared: {verification?.declared_crop}</p>
-            )}
-            <p className="text-[13px] text-stone-600 mt-2 leading-relaxed">{check.body}</p>
-          </div>
-          <div className="bg-white rounded-xl border border-rule p-4">
-            <p className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold">
-              Nearby farms
-            </p>
-            <h2 className="text-sm font-bold text-stone-900 mt-0.5">
-              {peerWarm ? 'Compared with similar farms' : 'Judged on this plot’s own growth'}
-            </h2>
-            <p className="text-[13px] text-stone-600 mt-2 leading-relaxed">
-              {peerWarm
-                ? `${peerN} season${peerN === 1 ? '' : 's'} were also checked against other farms in the same climate zone.`
-                : `Not enough neighbouring farms in this area have been assessed yet, so this plot is scored from its own canopy — how green it grew, how long each season lasted, and how steadily. Neighbour comparison will appear here once more farms nearby are assessed.`}
-            </p>
-            {!peerWarm && health != null && (
-              <p className="text-[12px] text-stone-500 mt-2 leading-snug">
-                On its own terms, growth looked {overall.word.toLowerCase()}. {overall.why}
-              </p>
-            )}
-          </div>
+          )}
         </div>
       </div>
     </div>

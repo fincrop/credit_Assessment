@@ -12,8 +12,13 @@
 import { terminalStateOf, terminalStateOfFarm, terminalStateOfReport, landCoverLabel } from '../app/lib/terminalState';
 import { bandForIndex, scoreColor, bandForRiskCategory, toKbsScore } from '../app/lib/kbsScore';
 import { linePath, segments, linearScale, ticks, areaPath } from '../app/lib/chart';
-import { areaMismatchOf, formatHa } from '../app/lib/areaMismatch';
+import { areaMismatchOf, areaMismatchSkipReason, formatHa } from '../app/lib/areaMismatch';
+import {
+  isMonitoringAreaTooSmall,
+  MONITORING_MIN_HA,
+} from '../app/lib/plotSkipMessage';
 import { inferCyclesFromNdvi, resolveCropCycles } from '../app/lib/ndviCycles';
+import { apiErrorMessage, nonJsonApiMessage } from '../app/lib/httpJson';
 
 let failures = 0;
 const t = (name: string, got: unknown, want: unknown) => {
@@ -175,6 +180,31 @@ t('agristack vs mapped mismatch detected', mismatch != null, true);
 t('mismatch flags measured much smaller', mismatch?.measuredMuchSmaller, true);
 t('matching areas are not flagged', areaMismatchOf({ registeredHa: 1.2, measuredHa: 1.18 }), null);
 t('formatHa keeps tiny plots precise', formatHa(0.004), '0.004 ha');
+t(
+  'area mismatch skip reason explains scoring',
+  areaMismatchSkipReason({ registeredHa: 0.04, measuredHa: 0.07, ratio: 1.75, measuredMuchSmaller: false }).startsWith('Skipped'),
+  true
+);
+t(
+  '0.07 ha plot is below monitoring floor',
+  isMonitoringAreaTooSmall({
+    skipped_reason: 'insufficient_observation:too_small',
+    parcel_viability: {
+      outcome: 'not_viable',
+      reason: 'Parcel covers about 7 Sentinel-2 pixel(s) (0.0700 ha).',
+      evidence: {
+        effective_ha: 0.07,
+        geometry_ha: 0.07,
+        registered_ha: 0.04,
+        approx_pixels: 7,
+        areas_disagree: true,
+        thresholds: { min_pixels_hard: 15 },
+      },
+    },
+  } as never),
+  true
+);
+t('monitoring floor matches backend policy', MONITORING_MIN_HA, 0.15);
 
 /* Modest NDVI ~0.5 crops must still count as growing seasons. */
 function isoDaysFrom(start: string, n: number, step = 10): string[] {
@@ -229,6 +259,28 @@ t('barren wobble is not a season', inferCyclesFromNdvi({
   ndvi: Array.from({ length: 40 }, (_, i) => 0.12 + 0.012 * ((i * 7) % 5)),
   comparison_available: false,
 }).length, 0);
+
+// --- httpJson (API error messages) ---
+
+t(
+  'nonJson 404 mentions redeploy',
+  nonJsonApiMessage(404, '<!DOCTYPE html><html>', 'Prepare farms').includes('404'),
+  true
+);
+t(
+  'apiErrorMessage prefers JSON error field',
+  apiErrorMessage(
+    {
+      status: 502,
+      ok: false,
+      data: { error: 'AgriStack token failed' },
+      text: '{"error":"AgriStack token failed"}',
+      isJson: true,
+    },
+    'fallback'
+  ),
+  'AgriStack token failed'
+);
 
 console.log(failures === 0 ? '\nall checks pass' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

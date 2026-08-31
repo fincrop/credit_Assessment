@@ -583,9 +583,9 @@ export function NdviTrajectory({
         {hoverHint}
         {cycleBands.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-2">
-            {cycleBands.map((b) => (
+            {cycleBands.map((b, i) => (
               <span
-                key={b.label}
+                key={`cycle-band-${i}-${b.x0}`}
                 className="text-[10px] font-semibold px-2 py-0.5 rounded-full border"
                 style={{ color: b.color, borderColor: b.color }}
               >

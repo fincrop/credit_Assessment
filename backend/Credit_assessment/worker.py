@@ -23,7 +23,7 @@ except ImportError:
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure
 
-from config import resolve_package_path
+from config import DEFAULT_CROP_MODEL_PATH, crop_classification_enabled, resolve_package_path
 from main import SatelliteBasedCreditPipeline
 from api.job_runner import (
     process_assessment_job,
@@ -61,18 +61,16 @@ def main():
         
     model_path = str(
         resolve_package_path(
-            os.environ.get("CROP_MODEL_PATH", "models/crop_classifier_model.joblib")
+            os.environ.get("CROP_MODEL_PATH", DEFAULT_CROP_MODEL_PATH)
         )
     )
     ml_mode = os.environ.get("ML_MODE", "rule_based")
 
-    # Global env flag — set ENABLE_CROP_CLASSIFICATION=true to enable ML crop
-    # classification for ALL jobs. Individual jobs can still override via payload.
-    _env_classify = os.environ.get("ENABLE_CROP_CLASSIFICATION", "false").strip().lower()
-    env_classification_enabled = _env_classify in ("1", "true", "yes")
+    env_classification_enabled = crop_classification_enabled()
     logger.info(
-        "Crop classification default (env): %s",
+        "Crop classification default (env): %s | model=%s",
         "ENABLED" if env_classification_enabled else "DISABLED",
+        model_path,
     )
     
     # Pre-load pipeline (heavy operation, do once at startup)

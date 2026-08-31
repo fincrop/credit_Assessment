@@ -66,7 +66,7 @@ export default function HomePage() {
         }}
       />
 
-      <header className="relative z-10 flex items-center justify-between px-6 py-5 max-w-7xl mx-auto w-full">
+      <header className="page-shell relative z-10 flex items-center justify-between py-5 w-full">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-paper text-sm">
             A
@@ -92,7 +92,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <main className="relative z-10 max-w-7xl mx-auto px-6 pt-10 pb-20">
+      <main className="page-shell relative z-10 pt-10 pb-20">
         <div className="mb-12 max-w-2xl animate-slide-in">
           <h1 className="text-3xl sm:text-4xl font-bold text-stone-900 tracking-tight mb-3">
             Choose your journey
@@ -156,29 +156,16 @@ export default function HomePage() {
         </div>
 
         <section className="mt-14 animate-slide-in" style={{ animationDelay: '0.18s' }}>
-          <div className="flex items-end justify-between gap-4 mb-5">
-            <div>
-              <h2 className="text-xl font-bold text-stone-900 tracking-tight">Portfolio summary</h2>
-              <p className="text-sm text-stone-500 mt-1">
-                Filter by state, then district. Widgets and the location chart sit on the left;
-                matching farms on the right.
-              </p>
-            </div>
-            <Link
-              href="/farmer/farms"
-              className="text-sm font-medium text-emerald-700 hover:text-emerald-800 shrink-0"
-            >
-              Manage all →
-            </Link>
-          </div>
-
           {historyLoading ? (
             <p className="text-sm text-stone-500 py-8">Loading your history…</p>
           ) : farmers.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-rule bg-white/50 px-6 py-10 text-center">
-              <p className="text-stone-600 text-sm">
-                No assessments yet — start Farmer Assessment or connect AgriStack.
-              </p>
+            <div>
+              <h2 className="text-xl font-bold text-stone-900 tracking-tight">Portfolio summary</h2>
+              <div className="rounded-2xl border border-dashed border-rule bg-white/50 px-6 py-10 text-center mt-5">
+                <p className="text-stone-600 text-sm">
+                  No assessments yet — start Farmer Assessment or connect AgriStack.
+                </p>
+              </div>
             </div>
           ) : (
             <LocationPortfolio farmers={farmers} />

@@ -1,0 +1,277 @@
+{
+  "abstain_sweep": [
+    {
+      "n_scenes_min": 5,
+      "p_min": 0.25,
+      "coverage": 0.9108,
+      "precision": 0.7889,
+      "n_kept": 7202
+    },
+    {
+      "n_scenes_min": 5,
+      "p_min": 0.3,
+      "coverage": 0.9039,
+      "precision": 0.7922,
+      "n_kept": 7147
+    },
+    {
+      "n_scenes_min": 5,
+      "p_min": 0.35,
+      "coverage": 0.89,
+      "precision": 0.7992,
+      "n_kept": 7037
+    },
+    {
+      "n_scenes_min": 5,
+      "p_min": 0.4,
+      "coverage": 0.8649,
+      "precision": 0.8111,
+      "n_kept": 6839
+    },
+    {
+      "n_scenes_min": 5,
+      "p_min": 0.5,
+      "coverage": 0.7945,
+      "precision": 0.8445,
+      "n_kept": 6282
+    },
+    {
+      "n_scenes_min": 6,
+      "p_min": 0.25,
+      "coverage": 0.875,
+      "precision": 0.7871,
+      "n_kept": 6919
+    },
+    {
+      "n_scenes_min": 6,
+      "p_min": 0.3,
+      "coverage": 0.8683,
+      "precision": 0.7904,
+      "n_kept": 6866
+    },
+    {
+      "n_scenes_min": 6,
+      "p_min": 0.35,
+      "coverage": 0.8549,
+      "precision": 0.7975,
+      "n_kept": 6760
+    },
+    {
+      "n_scenes_min": 6,
+      "p_min": 0.4,
+      "coverage": 0.8309,
+      "precision": 0.8094,
+      "n_kept": 6570
+    },
+    {
+      "n_scenes_min": 6,
+      "p_min": 0.5,
+      "coverage": 0.7636,
+      "precision": 0.8433,
+      "n_kept": 6038
+    },
+    {
+      "n_scenes_min": 7,
+      "p_min": 0.25,
+      "coverage": 0.8265,
+      "precision": 0.7856,
+      "n_kept": 6535
+    },
+    {
+      "n_scenes_min": 7,
+      "p_min": 0.3,
+      "coverage": 0.8203,
+      "precision": 0.7888,
+      "n_kept": 6486
+    },
+    {
+      "n_scenes_min": 7,
+      "p_min": 0.35,
+      "coverage": 0.8078,
+      "precision": 0.7958,
+      "n_kept": 6387
+    },
+    {
+      "n_scenes_min": 7,
+      "p_min": 0.4,
+      "coverage": 0.7847,
+      "precision": 0.8079,
+      "n_kept": 6205
+    },
+    {
+      "n_scenes_min": 7,
+      "p_min": 0.5,
+      "coverage": 0.7216,
+      "precision": 0.8421,
+      "n_kept": 5706
+    },
+    {
+      "n_scenes_min": 8,
+      "p_min": 0.25,
+      "coverage": 0.7606,
+      "precision": 0.787,
+      "n_kept": 6014
+    },
+    {
+      "n_scenes_min": 8,
+      "p_min": 0.3,
+      "coverage": 0.7554,
+      "precision": 0.7899,
+      "n_kept": 5973
+    },
+    {
+      "n_scenes_min": 8,
+      "p_min": 0.35,
+      "coverage": 0.7438,
+      "precision": 0.7968,
+      "n_kept": 5881
+    },
+    {
+      "n_scenes_min": 8,
+      "p_min": 0.4,
+      "coverage": 0.7239,
+      "precision": 0.8078,
+      "n_kept": 5724
+    },
+    {
+      "n_scenes_min": 8,
+      "p_min": 0.5,
+      "coverage": 0.6654,
+      "precision": 0.8424,
+      "n_kept": 5261
+    },
+    {
+      "n_scenes_min": 10,
+      "p_min": 0.25,
+      "coverage": 0.5888,
+      "precision": 0.7831,
+      "n_kept": 4656
+    },
+    {
+      "n_scenes_min": 10,
+      "p_min": 0.3,
+      "coverage": 0.5851,
+      "precision": 0.786,
+      "n_kept": 4626
+    },
+    {
+      "n_scenes_min": 10,
+      "p_min": 0.35,
+      "coverage": 0.5766,
+      "precision": 0.7923,
+      "n_kept": 4559
+    },
+    {
+      "n_scenes_min": 10,
+      "p_min": 0.4,
+      "coverage": 0.5613,
+      "precision": 0.8028,
+      "n_kept": 4438
+    },
+    {
+      "n_scenes_min": 10,
+      "p_min": 0.5,
+      "coverage": 0.5165,
+      "precision": 0.8372,
+      "n_kept": 4084
+    }
+  ],
+  "template_baseline_balanced_accuracy": 0.0935,
+  "adversarial_ecoregion": {
+    "balanced_accuracy": 0.5323,
+    "n_classes": 6,
+    "chance": 0.1667
+  },
+  "top_features": [
+    [
+      "LSWI_t14",
+      0.02653682604432106
+    ],
+    [
+      "PSRI_t03",
+      0.017726102843880653
+    ],
+    [
+      "LSWI_t11",
+      0.017659783363342285
+    ],
+    [
+      "integral_ndvi_days",
+      0.01703367568552494
+    ],
+    [
+      "observed_fraction",
+      0.016761764883995056
+    ],
+    [
+      "NDMI_t15",
+      0.01566838100552559
+    ],
+    [
+      "cycle_confidence",
+      0.015614131465554237
+    ],
+    [
+      "log_duration",
+      0.015511918812990189
+    ],
+    [
+      "NDMI_t11",
+      0.015339599922299385
+    ],
+    [
+      "duration_days",
+      0.015305384062230587
+    ],
+    [
+      "baseline_ndvi",
+      0.015041853301227093
+    ],
+    [
+      "PSRI_t15",
+      0.014735124073922634
+    ]
+  ],
+  "confusion_pairs_over_8pct": [
+    [
+      "Gram",
+      "Chilli",
+      0.409
+    ],
+    [
+      "Jowar",
+      "Bajra",
+      0.157
+    ],
+    [
+      "Wheat",
+      "Mustard",
+      0.141
+    ],
+    [
+      "Soyabean",
+      "Tur",
+      0.135
+    ],
+    [
+      "Wheat",
+      "Maize",
+      0.135
+    ],
+    [
+      "Gram",
+      "Tobacco",
+      0.095
+    ],
+    [
+      "Banana",
+      "Sugarcane",
+      0.092
+    ],
+    [
+      "Bajra",
+      "Maize",
+      0.088
+    ]
+  ]
+}

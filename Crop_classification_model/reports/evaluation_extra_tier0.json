@@ -1,0 +1,317 @@
+{
+  "abstain_sweep": [
+    {
+      "n_scenes_min": 5,
+      "p_min": 0.25,
+      "coverage": 0.8557,
+      "precision": 0.6938,
+      "n_kept": 6766
+    },
+    {
+      "n_scenes_min": 5,
+      "p_min": 0.3,
+      "coverage": 0.8431,
+      "precision": 0.6995,
+      "n_kept": 6666
+    },
+    {
+      "n_scenes_min": 5,
+      "p_min": 0.35,
+      "coverage": 0.8097,
+      "precision": 0.714,
+      "n_kept": 6402
+    },
+    {
+      "n_scenes_min": 5,
+      "p_min": 0.4,
+      "coverage": 0.7615,
+      "precision": 0.7354,
+      "n_kept": 6021
+    },
+    {
+      "n_scenes_min": 5,
+      "p_min": 0.5,
+      "coverage": 0.6595,
+      "precision": 0.7758,
+      "n_kept": 5215
+    },
+    {
+      "n_scenes_min": 6,
+      "p_min": 0.25,
+      "coverage": 0.8241,
+      "precision": 0.6955,
+      "n_kept": 6516
+    },
+    {
+      "n_scenes_min": 6,
+      "p_min": 0.3,
+      "coverage": 0.8123,
+      "precision": 0.7011,
+      "n_kept": 6423
+    },
+    {
+      "n_scenes_min": 6,
+      "p_min": 0.35,
+      "coverage": 0.7794,
+      "precision": 0.7159,
+      "n_kept": 6163
+    },
+    {
+      "n_scenes_min": 6,
+      "p_min": 0.4,
+      "coverage": 0.7337,
+      "precision": 0.7368,
+      "n_kept": 5801
+    },
+    {
+      "n_scenes_min": 6,
+      "p_min": 0.5,
+      "coverage": 0.6353,
+      "precision": 0.7774,
+      "n_kept": 5023
+    },
+    {
+      "n_scenes_min": 7,
+      "p_min": 0.25,
+      "coverage": 0.7796,
+      "precision": 0.6965,
+      "n_kept": 6164
+    },
+    {
+      "n_scenes_min": 7,
+      "p_min": 0.3,
+      "coverage": 0.7689,
+      "precision": 0.7016,
+      "n_kept": 6080
+    },
+    {
+      "n_scenes_min": 7,
+      "p_min": 0.35,
+      "coverage": 0.7376,
+      "precision": 0.7164,
+      "n_kept": 5832
+    },
+    {
+      "n_scenes_min": 7,
+      "p_min": 0.4,
+      "coverage": 0.6963,
+      "precision": 0.7361,
+      "n_kept": 5506
+    },
+    {
+      "n_scenes_min": 7,
+      "p_min": 0.5,
+      "coverage": 0.6038,
+      "precision": 0.7767,
+      "n_kept": 4774
+    },
+    {
+      "n_scenes_min": 8,
+      "p_min": 0.25,
+      "coverage": 0.717,
+      "precision": 0.6989,
+      "n_kept": 5669
+    },
+    {
+      "n_scenes_min": 8,
+      "p_min": 0.3,
+      "coverage": 0.7077,
+      "precision": 0.7035,
+      "n_kept": 5596
+    },
+    {
+      "n_scenes_min": 8,
+      "p_min": 0.35,
+      "coverage": 0.6791,
+      "precision": 0.7175,
+      "n_kept": 5370
+    },
+    {
+      "n_scenes_min": 8,
+      "p_min": 0.4,
+      "coverage": 0.641,
+      "precision": 0.7372,
+      "n_kept": 5068
+    },
+    {
+      "n_scenes_min": 8,
+      "p_min": 0.5,
+      "coverage": 0.5552,
+      "precision": 0.7763,
+      "n_kept": 4390
+    },
+    {
+      "n_scenes_min": 10,
+      "p_min": 0.25,
+      "coverage": 0.5551,
+      "precision": 0.6965,
+      "n_kept": 4389
+    },
+    {
+      "n_scenes_min": 10,
+      "p_min": 0.3,
+      "coverage": 0.5474,
+      "precision": 0.7015,
+      "n_kept": 4328
+    },
+    {
+      "n_scenes_min": 10,
+      "p_min": 0.35,
+      "coverage": 0.5247,
+      "precision": 0.7146,
+      "n_kept": 4149
+    },
+    {
+      "n_scenes_min": 10,
+      "p_min": 0.4,
+      "coverage": 0.495,
+      "precision": 0.7335,
+      "n_kept": 3914
+    },
+    {
+      "n_scenes_min": 10,
+      "p_min": 0.5,
+      "coverage": 0.4303,
+      "precision": 0.7722,
+      "n_kept": 3402
+    }
+  ],
+  "template_baseline_balanced_accuracy": 0.0935,
+  "adversarial_ecoregion": {
+    "balanced_accuracy": 0.4501,
+    "n_classes": 6,
+    "chance": 0.1667
+  },
+  "top_features": [
+    [
+      "EVI_t01",
+      0.0433814562857151
+    ],
+    [
+      "NDMI_t15",
+      0.03917631506919861
+    ],
+    [
+      "NDMI_t11",
+      0.03466330096125603
+    ],
+    [
+      "NDMI_t01",
+      0.03348212689161301
+    ],
+    [
+      "NDMI_t12",
+      0.03295474126935005
+    ],
+    [
+      "EVI_t06",
+      0.031791333109140396
+    ],
+    [
+      "EVI_t15",
+      0.030920064076781273
+    ],
+    [
+      "NDMI_t10",
+      0.030632294714450836
+    ],
+    [
+      "NDMI_t09",
+      0.028787439689040184
+    ],
+    [
+      "NDMI_t13",
+      0.028261683881282806
+    ],
+    [
+      "NDVI_t01",
+      0.027892397716641426
+    ],
+    [
+      "NDMI_t08",
+      0.02584393508732319
+    ]
+  ],
+  "confusion_pairs_over_8pct": [
+    [
+      "Gram",
+      "Chilli",
+      0.371
+    ],
+    [
+      "Wheat",
+      "Mustard",
+      0.199
+    ],
+    [
+      "Gram",
+      "Tobacco",
+      0.147
+    ],
+    [
+      "Jowar",
+      "Bajra",
+      0.135
+    ],
+    [
+      "Tobacco",
+      "Bajra",
+      0.131
+    ],
+    [
+      "Wheat",
+      "Potato",
+      0.127
+    ],
+    [
+      "Tobacco",
+      "Cotton",
+      0.113
+    ],
+    [
+      "Bajra",
+      "Maize",
+      0.105
+    ],
+    [
+      "Soyabean",
+      "Tur",
+      0.103
+    ],
+    [
+      "Sugarcane",
+      "Cotton",
+      0.102
+    ],
+    [
+      "Potato",
+      "Wheat",
+      0.096
+    ],
+    [
+      "Gram",
+      "Maize",
+      0.095
+    ],
+    [
+      "Banana",
+      "Sugarcane",
+      0.089
+    ],
+    [
+      "Sugarcane",
+      "Banana",
+      0.086
+    ],
+    [
+      "Grapes",
+      "Cotton",
+      0.083
+    ],
+    [
+      "Soyabean",
+      "Groundnut",
+      0.083
+    ]
+  ]
+}

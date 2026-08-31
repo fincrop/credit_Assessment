@@ -468,8 +468,8 @@ export default function AgristackPage() {
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header activeTab={activeTab} onTabChange={setActiveTab} />
-        <main className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-5xl mx-auto space-y-6">
+        <main className="flex-1 overflow-y-auto py-6">
+          <div className="page-shell space-y-6">
             {showContinuation && (
               <div className="sticky top-0 z-20 bg-blue-50 border border-blue-200 rounded-xl p-5 shadow-sm">
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">

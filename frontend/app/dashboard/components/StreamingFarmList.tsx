@@ -8,10 +8,16 @@ import { bandForRiskCategory, bandChipStyle } from '../../lib/kbsScore';
 import { terminalStateOfFarm, landCoverLabel } from '../../lib/terminalState';
 import {
   areaMismatchOf,
-  areaMismatchSkipNote,
+  areaMismatchHeadline,
+  areaMismatchSkipReason,
   formatHa,
   geometryAreaHa,
 } from '../../lib/areaMismatch';
+import {
+  isAreaMismatchSkip,
+  isMonitoringAreaTooSmall,
+  monitoringAreaTooSmallMessages,
+} from '../../lib/plotSkipMessage';
 
 export type StreamRowStatus = 'pending' | 'analyzing' | 'scored' | 'skipped' | 'failed';
 
@@ -56,37 +62,68 @@ function ExclusionNote({
   geometry?: unknown;
 }) {
   const v = terminalStateOfFarm(farm);
+  const measured =
+    measuredHa ?? farm.measured_area_ha ?? geometryAreaHa(geometry);
   const mismatch = areaMismatchOf({
     registeredHa: registeredHa ?? farm.area_ha,
-    measuredHa: measuredHa ?? farm.measured_area_ha ?? geometryAreaHa(geometry),
+    measuredHa: measured,
     viability: farm.parcel_viability,
   });
 
-  if (mismatch && (v.state === 'UNOBSERVED' || String(farm.skipped_reason || '').includes('area_mismatch'))) {
+  if (isMonitoringAreaTooSmall(farm, measured)) {
+    const { detail, skip } = monitoringAreaTooSmallMessages(farm, measured);
     return (
-      <p className="text-[11px] mt-1 leading-snug" style={{ color: '#7A5405' }}>
-        {areaMismatchSkipNote(mismatch)}
-      </p>
+      <div className="mt-1 space-y-0.5">
+        <p className="text-[11px] leading-snug" style={{ color: '#7A5405' }}>
+          {detail}
+        </p>
+        <p className="text-[11px] leading-snug font-medium" style={{ color: '#7A5405' }}>
+          {skip}
+        </p>
+      </div>
+    );
+  }
+
+  if (mismatch && isAreaMismatchSkip(farm)) {
+    return (
+      <div className="mt-1 space-y-0.5">
+        <p className="text-[11px] leading-snug" style={{ color: '#7A5405' }}>
+          {areaMismatchHeadline(mismatch)}
+        </p>
+        <p className="text-[11px] leading-snug font-medium" style={{ color: '#7A5405' }}>
+          {areaMismatchSkipReason(mismatch)}
+        </p>
+      </div>
     );
   }
 
   if (v.state === 'NOT_FARMLAND') {
     const cls = landCoverLabel(farm.land_cover?.class);
     return (
-      <p className="text-[11px] mt-1 leading-snug" style={{ color: '#7A5405' }}>
-        Excluded — observed as {cls.toLowerCase()}, not farmland.
-        {v.reason ? ` ${v.reason}` : ''}
-      </p>
+      <div className="mt-1 space-y-0.5">
+        <p className="text-[11px] leading-snug" style={{ color: '#7A5405' }}>
+          Excluded — observed as {cls.toLowerCase()}, not farmland.
+          {v.reason ? ` ${v.reason}` : ''}
+        </p>
+        <p className="text-[11px] leading-snug font-medium" style={{ color: '#7A5405' }}>
+          Skipped — we do not score non-agricultural land.
+        </p>
+      </div>
     );
   }
 
   if (v.state === 'UNOBSERVED') {
     if (farm.parcel_viability?.outcome === 'not_viable') {
+      const { detail, skip } = monitoringAreaTooSmallMessages(farm, measured);
       return (
-        <p className="text-[11px] mt-1 leading-snug" style={{ color: '#7A5405' }}>
-          {farm.parcel_viability.reason ||
-            'Not scored — the mapped plot is too small to measure honestly.'}
-        </p>
+        <div className="mt-1 space-y-0.5">
+          <p className="text-[11px] leading-snug" style={{ color: '#7A5405' }}>
+            {detail}
+          </p>
+          <p className="text-[11px] leading-snug font-medium" style={{ color: '#7A5405' }}>
+            {skip}
+          </p>
+        </div>
       );
     }
     const ds = farm.data_sufficiency;
@@ -95,17 +132,27 @@ function ExclusionNote({
         ? ` Clear on ${Math.round(ds.observed_fraction * 100)}% of the window.`
         : '';
     return (
-      <p className="text-[11px] mt-1 leading-snug" style={{ color: '#7A5405' }}>
-        {ds?.reason || `Not scored — too few clear satellite views of this plot.${detail}`}
-      </p>
+      <div className="mt-1 space-y-0.5">
+        <p className="text-[11px] leading-snug" style={{ color: '#7A5405' }}>
+          {ds?.reason || `Too few clear satellite views of this plot.${detail}`}
+        </p>
+        <p className="text-[11px] leading-snug font-medium" style={{ color: '#7A5405' }}>
+          Skipped — insufficient observation to score reliably.
+        </p>
+      </div>
     );
   }
 
   if (v.state === 'FAILED') {
     return (
-      <p className="text-[11px] mt-1 leading-snug" style={{ color: '#9A2E1F' }}>
-        Error: {v.reason}
-      </p>
+      <div className="mt-1 space-y-0.5">
+        <p className="text-[11px] leading-snug" style={{ color: '#9A2E1F' }}>
+          {v.reason || 'The analysis did not complete.'}
+        </p>
+        <p className="text-[11px] leading-snug font-medium" style={{ color: '#9A2E1F' }}>
+          Failed — re-run assessment or check pipeline logs.
+        </p>
+      </div>
     );
   }
 
@@ -226,13 +273,13 @@ export function StreamingFarmList({
                   onSelectPlot?.(key);
                 }
               }}
-              className={`px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 cursor-pointer transition-colors ${
+              className={`px-5 py-3.5 flex items-start gap-4 cursor-pointer transition-colors ${
                 selected
                   ? 'bg-amber-50/80 border-l-4 border-l-amber-400'
                   : 'hover:bg-paper/70 border-l-4 border-l-transparent'
               }`}
             >
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-stone-900 font-mono truncate">
                   {row.farm_id || key}
                 </p>
@@ -246,7 +293,7 @@ export function StreamingFarmList({
                   />
                   {row.crop ? <span>· {row.crop}</span> : null}
                 </p>
-                {a?.skipped_reason && (
+                {a && (row.status === 'skipped' || row.status === 'failed') && (
                   <ExclusionNote
                     farm={a}
                     registeredHa={row.area_ha}
@@ -256,7 +303,7 @@ export function StreamingFarmList({
                 )}
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 shrink-0 self-center">
                 <span
                   className={`inline-flex px-2 py-0.5 rounded-md text-[11px] font-medium border ${badge.className}`}
                 >
@@ -277,16 +324,21 @@ export function StreamingFarmList({
                     </span>
                   </>
                 )}
+              </div>
+
+              <div className="shrink-0 self-center">
                 {canOpenDetails ? (
                   <Link
                     href={detailHref}
                     onClick={(e) => e.stopPropagation()}
-                    className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 px-3 py-1.5 rounded-lg hover:bg-emerald-50 transition-colors"
+                    className="inline-flex items-center justify-center min-w-[5.5rem] px-4 py-2 text-sm font-bold rounded-lg border-2 border-emerald-600 bg-emerald-600 text-white shadow-sm hover:bg-emerald-500 hover:border-emerald-500 transition-colors"
                   >
                     Details
                   </Link>
                 ) : (
-                  <span className="text-sm text-ink-muted px-3 py-1.5">Details</span>
+                  <span className="inline-flex items-center justify-center min-w-[5.5rem] px-4 py-2 text-sm font-semibold rounded-lg border border-stone-200 bg-stone-100 text-stone-400 cursor-not-allowed">
+                    Details
+                  </span>
                 )}
               </div>
             </li>

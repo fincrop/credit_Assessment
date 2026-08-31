@@ -79,54 +79,76 @@ export async function POST(req: NextRequest) {
       if (key) headers['X-API-Key'] = key;
 
       const assessUrl = `${base}/v1/jobs/assess`;
+      const healthTimeoutMs = Number(process.env.PIPELINE_HEALTH_TIMEOUT_MS || 20000);
 
-      // Fail fast if PIPELINE_API_URL points at the wrong process (HTML apps, Next, etc.)
+      // Liveness first (no Mongo/reaper) — catches wrong port / dead uvicorn quickly.
+      try {
+        const liveRes = await fetch(`${base}/health/live`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(Math.min(healthTimeoutMs, 8000)),
+        });
+        const liveText = await liveRes.text();
+        let liveJson: Record<string, unknown> | null = null;
+        try {
+          liveJson = liveText ? JSON.parse(liveText) : null;
+        } catch {
+          liveJson = null;
+        }
+        const looksHtml =
+          /^\s*<!doctype/i.test(liveText) || /^\s*<html/i.test(liveText);
+        if (!liveRes.ok || looksHtml || liveJson?.status !== 'ok') {
+          console.error('[assess/enqueue] pipeline liveness failed', {
+            base,
+            status: liveRes.status,
+            preview: liveText.slice(0, 160),
+          });
+          return NextResponse.json(
+            {
+              error:
+                `PIPELINE_API_URL (${base}) is not responding as the Agri-Credit FastAPI service. ` +
+                `Expected GET /health/live → {"status":"ok"}. ` +
+                `Got HTTP ${liveRes.status}` +
+                (looksHtml ? ' (HTML — wrong process on port 8000?).' : '.') +
+                ` On Windows, kill stale uvicorn listeners on port 8000, then restart: ` +
+                `cd backend/Credit_assessment && uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload`,
+            },
+            { status: 502 }
+          );
+        }
+      } catch (e) {
+        console.error('[assess/enqueue] pipeline liveness unreachable', base, e);
+        return NextResponse.json(
+          {
+            error:
+              `Cannot reach pipeline at ${base}/health/live. ` +
+              `Is uvicorn running on port 8000? (${e instanceof Error ? e.message : 'network error'}) ` +
+              `If you restarted with --reload on Windows, multiple processes may be bound to port 8000 — kill them and start one uvicorn.`,
+          },
+          { status: 502 }
+        );
+      }
+
+      // Optional readiness (pipeline warm-up may still be in progress — enqueue is OK).
       try {
         const healthRes = await fetch(`${base}/health`, {
           method: 'GET',
           headers: key ? { 'X-API-Key': key } : undefined,
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(healthTimeoutMs),
         });
         const healthText = await healthRes.text();
-        const looksHtml =
-          /^\s*<!doctype/i.test(healthText) || /^\s*<html/i.test(healthText);
         let healthJson: Record<string, unknown> | null = null;
         try {
           healthJson = healthText ? JSON.parse(healthText) : null;
         } catch {
           healthJson = null;
         }
-        const looksLikeOurApi =
-          healthJson != null &&
-          (healthJson.status === 'ok' || healthJson.pipeline_loaded != null);
-        if (!healthRes.ok || looksHtml || !looksLikeOurApi) {
-          console.error('[assess/enqueue] pipeline health failed', {
-            base,
-            status: healthRes.status,
-            preview: healthText.slice(0, 160),
-          });
-          return NextResponse.json(
-            {
-              error:
-                `PIPELINE_API_URL (${base}) is not the Agri-Credit FastAPI service. ` +
-                `Expected GET /health JSON with status/pipeline_loaded. ` +
-                `Got HTTP ${healthRes.status}` +
-                (looksHtml ? ' (HTML — wrong process on this port?).' : '.') +
-                ` Start: cd backend/Credit_assessment && uvicorn api.app:app --host 0.0.0.0 --port 8000`,
-            },
-            { status: 502 }
+        if (healthJson?.status === 'ok' && healthJson.pipeline_loaded === false) {
+          console.info(
+            '[assess/enqueue] pipeline warming (pipeline_loaded=false); enqueue will proceed'
           );
         }
       } catch (e) {
-        console.error('[assess/enqueue] pipeline health unreachable', base, e);
-        return NextResponse.json(
-          {
-            error:
-              `Cannot reach pipeline at ${base}/health. ` +
-              `Is uvicorn running? (${e instanceof Error ? e.message : 'network error'})`,
-          },
-          { status: 502 }
-        );
+        console.warn('[assess/enqueue] pipeline /health readiness skipped', e);
       }
 
       console.info('[assess/enqueue] POST', assessUrl);

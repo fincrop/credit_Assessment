@@ -94,7 +94,7 @@ from assessment.parcel_viability import (
 )
 from utils.geometry_utils import GeometryUtils
 from utils.peer_benchmark import PeerBenchmark
-from config import PipelineConfig
+from config import DEFAULT_CROP_MODEL_PATH, PipelineConfig
 from utils.farmer_benefits import merge_farmer_benefits, normalize_farmer_benefits
 from utils.india_geo_context import infer_agro_ecoregion
 
@@ -1421,7 +1421,7 @@ def main():
     parser.add_argument('--ml-mode', type=str, default='rule_based',
                        choices=['rule_based', 'unsupervised', 'supervised', 'hybrid'],
                        help='Credit scorer mode (default: rule_based; ML blend controlled in config)')
-    parser.add_argument('--model-path', type=str, default='models/crop_classifier_model.joblib',
+    parser.add_argument('--model-path', type=str, default=DEFAULT_CROP_MODEL_PATH,
                        help='Path to crop classification model')
     parser.add_argument('--batch-file', type=str, help='JSON file with farmer IDs for batch processing')
     

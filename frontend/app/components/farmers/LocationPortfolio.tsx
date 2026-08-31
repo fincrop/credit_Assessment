@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import {
   farmerLocationParts,
@@ -10,7 +11,7 @@ import {
   type FarmerListItem,
   type LocationBucket,
 } from '../../lib/farmerLocation';
-import { FarmerDetailPanel, FarmerFarmsTable } from './FarmerFarmsTable';
+import { FarmerFarmsTable } from './FarmerFarmsTable';
 import { vegetationAt } from '../../lib/vizPalette';
 
 function StatChip({
@@ -86,7 +87,6 @@ function LocationBars({
 export function LocationPortfolio({ farmers }: { farmers: FarmerListItem[] }) {
   const [selectedState, setSelectedState] = useState<string | null>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
-  const [selectedFarmer, setSelectedFarmer] = useState<FarmerListItem | null>(null);
 
   const stateBuckets = useMemo(() => groupFarmersByState(farmers), [farmers]);
 
@@ -141,7 +141,6 @@ export function LocationPortfolio({ farmers }: { farmers: FarmerListItem[] }) {
       : 'All locations';
 
   const handleChartClick = (key: string) => {
-    setSelectedFarmer(null);
     if (!selectedState) {
       setSelectedState(key);
       setSelectedDistrict(null);
@@ -153,12 +152,38 @@ export function LocationPortfolio({ farmers }: { farmers: FarmerListItem[] }) {
   const backToStates = () => {
     setSelectedState(null);
     setSelectedDistrict(null);
-    setSelectedFarmer(null);
   };
 
   return (
-    <div className="grid lg:grid-cols-[minmax(280px,36%)_1fr] gap-5 items-start">
-      <div className="rounded-2xl border border-rule bg-white shadow-card overflow-hidden lg:sticky lg:top-4">
+    <div className="grid lg:grid-cols-[minmax(280px,36%)_1fr] gap-x-5 gap-y-4 items-start">
+      <div className="lg:col-start-1 lg:row-start-1">
+        <h2 className="text-xl font-bold text-stone-900 tracking-tight">Portfolio summary</h2>
+        <p className="text-sm text-stone-500 mt-1 leading-relaxed">
+          Filter by state, then district. Widgets and the location chart sit on the left; matching
+          farms on the right.
+        </p>
+      </div>
+
+      <div className="lg:col-start-2 lg:row-start-1 flex items-start justify-between gap-4 min-w-0">
+        <div className="min-w-0">
+          <h3 className="text-xl font-bold text-stone-900 tracking-tight">{farmsTitle}</h3>
+          <p className="text-sm text-stone-500 mt-1 leading-relaxed">
+            {filtered.length} farmer{filtered.length === 1 ? '' : 's'}
+            {selectedState && !selectedDistrict ? ' in this state — pick a district to narrow' : ''}
+            {selectedDistrict ? ' in this district' : ''}
+            {!selectedState ? ' · pick a state on the left to filter' : ''}. Details opens stored
+            analysis; Assess starts a new run.
+          </p>
+        </div>
+        <Link
+          href="/farmer/farms"
+          className="text-sm font-medium text-emerald-700 hover:text-emerald-800 shrink-0 pt-1"
+        >
+          Manage all →
+        </Link>
+      </div>
+
+      <div className="lg:col-start-1 lg:row-start-2 rounded-2xl border border-rule bg-white shadow-card overflow-hidden lg:sticky lg:top-4">
         <div className="grid grid-cols-2 gap-2 p-3 border-b border-rule">
           <StatChip label="Farmers" value={stats.farmers} />
           <StatChip
@@ -218,34 +243,16 @@ export function LocationPortfolio({ farmers }: { farmers: FarmerListItem[] }) {
         </div>
       </div>
 
-      <div className="min-w-0 space-y-3">
-        <div>
-          <h3 className="text-base font-bold text-stone-900">{farmsTitle}</h3>
-          <p className="text-[12px] text-stone-500 mt-0.5">
-            {filtered.length} farmer{filtered.length === 1 ? '' : 's'}
-            {selectedState && !selectedDistrict ? ' in this state — pick a district to narrow' : ''}
-            {selectedDistrict ? ' in this district' : ''}
-            {!selectedState ? ' · pick a state on the left to filter' : ''}. Details opens stored
-            analysis; Assess starts a new run.
-          </p>
+      <div className="lg:col-start-2 lg:row-start-2 relative min-h-0 lg:self-stretch">
+        <div className="lg:absolute lg:inset-0 flex flex-col min-h-0 overflow-hidden rounded-xl border border-rule bg-white shadow-card">
+          {filtered.length === 0 ? (
+            <div className="px-6 py-10 text-center text-sm text-stone-500">No farmers in this location.</div>
+          ) : (
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+              <FarmerFarmsTable farmers={filtered} compact />
+            </div>
+          )}
         </div>
-
-        {filtered.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-rule bg-white px-6 py-10 text-center text-sm text-stone-500">
-            No farmers in this location.
-          </div>
-        ) : (
-          <FarmerFarmsTable
-            farmers={filtered}
-            selectedId={selectedFarmer?._id}
-            onSelect={setSelectedFarmer}
-            compact
-          />
-        )}
-
-        {selectedFarmer && (
-          <FarmerDetailPanel selected={selectedFarmer} sticky={false} />
-        )}
       </div>
     </div>
   );

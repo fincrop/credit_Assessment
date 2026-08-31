@@ -24,7 +24,7 @@ earthengine-api==0.1.419
 # ========================================
 # MACHINE LEARNING
 # ========================================
-# Pin to the series used to train/export models/crop_classifier_model.joblib (avoids unpickle warnings)
+# Pin to the series used to train/export crop_classifier_tier1_v1.joblib (avoids unpickle warnings)
 scikit-learn==1.6.1
 xgboost==2.0.3
 joblib==1.4.2

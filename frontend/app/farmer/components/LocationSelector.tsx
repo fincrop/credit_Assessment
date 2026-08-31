@@ -9,6 +9,8 @@ interface Props {
   onChange: (v: FarmerLocation) => void;
   /** Soften required markers when farms/upload already provide location. */
   optional?: boolean;
+  /** Fill paired column height beside Farm boundaries map. */
+  fillHeight?: boolean;
 }
 
 interface LocItem {
@@ -16,7 +18,7 @@ interface LocItem {
   name: string;
 }
 
-export function LocationSelector({ value, onChange, optional = false }: Props) {
+export function LocationSelector({ value, onChange, optional = false, fillHeight = false }: Props) {
   const [states, setStates] = useState<LocItem[]>([]);
   const [districts, setDistricts] = useState<LocItem[]>([]);
   const [talukas, setTalukas] = useState<LocItem[]>([]);
@@ -162,24 +164,28 @@ export function LocationSelector({ value, onChange, optional = false }: Props) {
   const req = optional ? '' : ' *';
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-stone-500">
+    <div className={`space-y-3 ${fillHeight ? 'flex flex-col flex-1 min-h-0' : ''}`}>
+      <div className="shrink-0 min-h-[6.5rem] flex flex-col justify-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[11px] text-stone-500 leading-snug">
           {optional
-            ? 'Optional when boundaries are drawn or uploaded — auto-filled from map coordinates when possible.'
-            : 'Select administrative location, or use GPS / draw-upload to auto-fill.'}
+            ? 'Optional when boundaries exist — auto-filled from map or upload.'
+            : 'Select location, or use GPS / draw-upload to auto-fill.'}
         </p>
         <button
           type="button"
           onClick={useMyLocation}
-          className="text-xs font-medium px-3 py-2 rounded-lg border border-rule text-sky-700 hover:bg-sky-50 transition-colors"
+          className="text-xs font-medium px-3 py-1.5 rounded-lg border border-rule text-sky-700 hover:bg-sky-50 transition-colors shrink-0"
         >
           Use my location
         </button>
+        </div>
       </div>
-      {geoMsg && <p className="text-xs text-stone-500">{geoMsg}</p>}
+      {geoMsg && <p className="text-xs text-stone-500 shrink-0">{geoMsg}</p>}
 
-      <div className="grid grid-cols-1 gap-3">
+      <div
+        className={`grid grid-cols-1 gap-2.5 ${fillHeight ? 'flex-1 content-start' : ''}`}
+      >
         <div>
           <label className="block text-xs font-medium text-stone-600 mb-1">
             State{req}

@@ -7,7 +7,8 @@ import {
   type TerminalVerdict,
 } from '../../lib/terminalState';
 import { formatNumber } from '../../lib/format';
-import { areaMismatchOf, areaMismatchHeadline, formatHa } from '../../lib/areaMismatch';
+import { areaMismatchOf, areaMismatchHeadline, areaMismatchSkipReason, formatHa } from '../../lib/areaMismatch';
+import { MONITORING_MIN_HA } from '../../lib/plotSkipMessage';
 
 /**
  * The screens for when we did NOT produce a score.
@@ -118,9 +119,59 @@ function Unobserved({ verdict }: { verdict: TerminalVerdict }) {
   const pvEv = pv?.evidence;
   const mismatch = areaMismatchOf({ viability: pv });
   const viabilityDrivenBy = pv?.outcome === 'not_viable';
-  const areaMismatch = Boolean(mismatch || pvEv?.areas_disagree);
+  const areaMismatchOnly = Boolean(mismatch || pvEv?.areas_disagree);
 
-  if (areaMismatch && mismatch) {
+  if (viabilityDrivenBy) {
+    return (
+      <Shell
+        eyebrow="Not scored · monitoring area too small"
+        headline="This plot is below our minimum monitoring area for scoring."
+      >
+        {verdict.reason && (
+          <p className="text-sm text-ink-2 mt-3 leading-relaxed max-w-2xl">
+            {verdict.reason}
+          </p>
+        )}
+        <p className="text-sm font-medium text-ink mt-2 leading-relaxed max-w-2xl">
+          Skipped — below our {formatHa(MONITORING_MIN_HA, 2)} minimum ({pvEv?.thresholds?.min_pixels_hard ?? 15}{' '}
+          Sentinel-2 pixels at 10 m). Larger mismatched plots may still score with a flag.
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4">
+          <Figure
+            label="Monitoring area"
+            value={
+              pvEv?.effective_ha != null ? `${formatNumber(pvEv.effective_ha, 2)} ha` : '—'
+            }
+            hint="Polygon footprint we measure over"
+          />
+          <Figure
+            label="Approx. pixels"
+            value={pvEv?.approx_pixels ?? '—'}
+            hint={
+              pvEv?.thresholds?.min_pixels_hard != null
+                ? `Need at least ${pvEv.thresholds.min_pixels_hard}.`
+                : undefined
+            }
+          />
+          <Figure
+            label="AgriStack area"
+            value={
+              pvEv?.registered_ha != null ? `${formatNumber(pvEv.registered_ha, 2)} ha` : '—'
+            }
+          />
+          <Figure
+            label="Mapped boundary"
+            value={
+              pvEv?.geometry_ha != null ? `${formatNumber(pvEv.geometry_ha, 2)} ha` : '—'
+            }
+            hint={pvEv?.areas_disagree ? 'Differs from land record — flagged separately.' : undefined}
+          />
+        </div>
+      </Shell>
+    );
+  }
+
+  if (areaMismatchOnly && mismatch) {
     return (
       <Shell
         eyebrow="Not scored · area mismatch"
@@ -128,9 +179,9 @@ function Unobserved({ verdict }: { verdict: TerminalVerdict }) {
       >
         <p className="text-sm text-ink-2 mt-3 leading-relaxed max-w-2xl">
           {areaMismatchHeadline(mismatch)}
-          {mismatch.measuredHa < 0.05
-            ? ' The mapped plot is too small to score — a satellite pixel would mostly see the neighbouring field.'
-            : ''}
+        </p>
+        <p className="text-sm font-medium text-ink mt-2 leading-relaxed max-w-2xl">
+          {areaMismatchSkipReason(mismatch)}
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-4">
           <Figure

@@ -31,21 +31,22 @@ export function FarmerFarmsTable({
   compact?: boolean;
 }) {
   const cell = compact ? 'px-3 py-2.5' : 'px-4 py-3';
+  const tight = compact ? ' w-0 whitespace-nowrap' : '';
   return (
-    <div className="overflow-x-auto border border-rule rounded-xl bg-white">
-      <table className="w-full text-sm text-left">
-        <thead className="bg-paper-raised text-stone-500 text-xs uppercase tracking-wider">
+    <div className={`overflow-x-auto bg-white ${compact ? '' : 'border border-rule rounded-xl'}`}>
+      <table className={`w-full text-sm text-left ${compact ? 'table-auto' : ''}`}>
+        <thead className="bg-paper-raised text-stone-500 text-xs uppercase tracking-wider sticky top-0 z-10">
           <tr>
-            <th className={`${cell} font-semibold`}>Name</th>
+            <th className={`${cell} font-semibold${compact ? ' min-w-[9rem]' : ''}`}>Name</th>
             {!compact && <th className={`${cell} font-semibold`}>State</th>}
             {!compact && <th className={`${cell} font-semibold`}>District</th>}
-            <th className={`${cell} font-semibold`}>Village</th>
-            <th className={`${cell} font-semibold`}>Farms</th>
-            <th className={`${cell} font-semibold`}>Area</th>
+            <th className={`${cell} font-semibold${tight}`}>Village</th>
+            <th className={`${cell} font-semibold${tight}`}>Farms</th>
+            <th className={`${cell} font-semibold${tight}`}>Area</th>
             {!compact && <th className={`${cell} font-semibold`}>Crops</th>}
-            <th className={`${cell} font-semibold`}>Assessment</th>
+            <th className={`${cell} font-semibold${tight}`}>Assessment</th>
             {!compact && <th className={`${cell} font-semibold`}>Date</th>}
-            <th className={`${cell} font-semibold`}>Actions</th>
+            <th className={`${cell} font-semibold${tight}${compact ? ' pl-4' : ''} text-right`}>Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-rule">
@@ -76,9 +77,9 @@ export function FarmerFarmsTable({
                 </td>
                 {!compact && <td className={`${cell} text-stone-600`}>{loc.state || '—'}</td>}
                 {!compact && <td className={`${cell} text-stone-600`}>{loc.district || '—'}</td>}
-                <td className={`${cell} text-stone-600`}>{loc.village || '—'}</td>
-                <td className={`${cell} font-mono text-stone-700`}>{f.farms?.length ?? 0}</td>
-                <td className={`${cell} font-mono text-stone-700`}>
+                <td className={`${cell} text-stone-600${tight}`}>{loc.village || '—'}</td>
+                <td className={`${cell} font-mono text-stone-700${tight}`}>{f.farms?.length ?? 0}</td>
+                <td className={`${cell} font-mono text-stone-700${tight}`}>
                   {area != null ? `${area.toFixed(2)} ha` : '—'}
                 </td>
                 {!compact && (
@@ -86,67 +87,109 @@ export function FarmerFarmsTable({
                     {crops.join(', ') || '—'}
                   </td>
                 )}
-                <td className={cell}>
-                  {assessed ? (
-                    <div className="flex flex-col gap-1">
-                      <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded w-fit">
-                        Assessed
-                      </span>
-                      {(kbs != null || f.risk_category) && (
-                        <span
-                          className="text-[11px] font-semibold px-2 py-0.5 rounded border w-fit"
-                          style={bandChipStyle(band)}
-                        >
-                          {kbs != null ? `KBS ${kbs}` : f.risk_category}
-                        </span>
+                {compact ? (
+                  <>
+                    <td className={`${cell}${tight}`}>
+                      {assessed ? (
+                        <div className="inline-flex flex-nowrap items-center gap-1.5">
+                          <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                            Assessed
+                          </span>
+                          {(kbs != null || f.risk_category) && (
+                            <span
+                              className="text-[11px] font-semibold px-2 py-0.5 rounded border"
+                              style={bandChipStyle(band)}
+                            >
+                              {kbs != null ? `KBS ${kbs}` : f.risk_category}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-ink-muted">Not assessed</span>
                       )}
-                    </div>
-                  ) : (
-                    <span className="text-[11px] text-ink-muted">Not assessed</span>
-                  )}
-                </td>
-                {!compact && (
-                  <td className={`${cell} text-stone-500 text-xs whitespace-nowrap`}>
-                    {formatShortDate(f.latest_assessment_date || f.updated_at || f.created_at)}
-                  </td>
-                )}
-                <td className={cell} onClick={(e) => e.stopPropagation()}>
-                  <div className={`flex ${compact ? 'flex-row flex-wrap gap-2' : 'flex-col gap-2'} items-start`}>
-                    {assessed && (
-                      <Link
-                        href={farmerResultsHref(pid)}
-                        className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md hover:bg-emerald-100"
-                      >
-                        Details
-                      </Link>
-                    )}
-                    <Link
-                      href={farmerAssessHref(pid)}
-                      className="text-[11px] font-semibold text-sky-800 bg-sky-50 border border-sky-200 px-2.5 py-1 rounded-md hover:bg-sky-100"
-                    >
-                      {assessed ? 'Assess again' : 'Assess'}
-                    </Link>
-                    {showManageActions && (
-                      <>
-                        <Link
-                          href={`/farmer?edit=${encodeURIComponent(f._id)}`}
-                          className="text-xs font-semibold text-stone-500 hover:text-stone-800"
-                        >
-                          Edit
-                        </Link>
-                        {onDelete && (
-                          <button
-                            type="button"
-                            onClick={() => onDelete(f._id)}
-                            className="text-xs text-red-500 hover:text-red-600"
+                    </td>
+                    <td className={`${cell}${tight} pl-4 text-right`} onClick={(e) => e.stopPropagation()}>
+                      <div className="inline-flex flex-nowrap items-center justify-end gap-1.5">
+                        {assessed && (
+                          <Link
+                            href={farmerResultsHref(pid)}
+                            className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md hover:bg-emerald-100"
                           >
-                            Delete
-                          </button>
+                            Details
+                          </Link>
                         )}
-                      </>
-                    )}
-                  </div>
-                </td>
+                        <Link
+                          href={farmerAssessHref(pid)}
+                          className="text-[11px] font-semibold text-sky-800 bg-sky-50 border border-sky-200 px-2.5 py-1 rounded-md hover:bg-sky-100"
+                        >
+                          {assessed ? 'Assess again' : 'Assess'}
+                        </Link>
+                      </div>
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className={cell}>
+                      {assessed ? (
+                        <div className="flex flex-row flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded whitespace-nowrap">
+                            Assessed
+                          </span>
+                          {(kbs != null || f.risk_category) && (
+                            <span
+                              className="text-[11px] font-semibold px-2 py-0.5 rounded border whitespace-nowrap"
+                              style={bandChipStyle(band)}
+                            >
+                              {kbs != null ? `KBS ${kbs}` : f.risk_category}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-ink-muted whitespace-nowrap">Not assessed</span>
+                      )}
+                    </td>
+                    <td className={`${cell} text-stone-500 text-xs whitespace-nowrap`}>
+                      {formatShortDate(f.latest_assessment_date || f.updated_at || f.created_at)}
+                    </td>
+                    <td className={`${cell} text-right`} onClick={(e) => e.stopPropagation()}>
+                      <div className="inline-flex flex-col gap-2 items-end">
+                        {assessed && (
+                          <Link
+                            href={farmerResultsHref(pid)}
+                            className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-md hover:bg-emerald-100"
+                          >
+                            Details
+                          </Link>
+                        )}
+                        <Link
+                          href={farmerAssessHref(pid)}
+                          className="text-[11px] font-semibold text-sky-800 bg-sky-50 border border-sky-200 px-2.5 py-1 rounded-md hover:bg-sky-100"
+                        >
+                          {assessed ? 'Assess again' : 'Assess'}
+                        </Link>
+                        {showManageActions && (
+                          <>
+                            <Link
+                              href={`/farmer?edit=${encodeURIComponent(f._id)}`}
+                              className="text-xs font-semibold text-stone-500 hover:text-stone-800"
+                            >
+                              Edit
+                            </Link>
+                            {onDelete && (
+                              <button
+                                type="button"
+                                onClick={() => onDelete(f._id)}
+                                className="text-xs text-red-500 hover:text-red-600"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </>
+                )}
               </tr>
             );
           })}

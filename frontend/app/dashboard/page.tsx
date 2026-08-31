@@ -3,7 +3,8 @@
 import { Suspense, useState, useEffect, FormEvent, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import type { AssessmentPayload, FarmAssessment, TriState } from '../types/assessment';
-import { runAssessmentJob, pollJobStatusSafe } from '../lib/assessmentClient';
+import { runAssessmentJob, pollJobStatusSafe, prepareFarmerFarms } from '../lib/assessmentClient';
+import { readJsonBody, apiErrorMessage } from '../lib/httpJson';
 import { FarmerIdentityCard, type FarmInfoSummary } from './components/FarmerIdentityCard';
 import { RiskScoreCard } from './components/RiskScoreCard';
 import { StreamingFarmList } from './components/StreamingFarmList';
@@ -26,37 +27,11 @@ import {
   readSessionCreds,
 } from '../lib/agristackSession';
 import { farmerAssessHref } from '../lib/farmerRoutes';
+import { TriStateSelect } from '../components/TriStateSelect';
+import { asTriState } from '../lib/triState';
 
 function plotKeyOf(f: Record<string, unknown>, i: number) {
   return String(f.plot_key || f.farm_id || `plot_${i}`);
-}
-
-function TriStateSelect({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: TriState;
-  onChange: (v: TriState) => void;
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-semibold text-stone-700 mb-2">{label}</label>
-      <select
-        value={value === null ? 'unknown' : value ? 'yes' : 'no'}
-        onChange={(e) => {
-          const v = e.target.value;
-          onChange(v === 'yes' ? true : v === 'no' ? false : null);
-        }}
-        className="w-full bg-paper border border-rule text-stone-800 rounded-lg p-3 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-      >
-        <option value="unknown">Unknown</option>
-        <option value="yes">Yes</option>
-        <option value="no">No</option>
-      </select>
-    </div>
-  );
 }
 
 export default function DashboardPage() {
@@ -118,7 +93,11 @@ function DashboardPageContent() {
     ) => {
       const farms = assignPlotKeysClient(farmsIn);
       setSeedFarms(farms);
-      if (info) setFarmInfo(info);
+      if (info) {
+        setFarmInfo(info);
+        setPmKisanEnrolled(asTriState(info.farmer_benefits?.pm_kisan_enrolled));
+        setHasCropInsurance(asTriState(info.farmer_benefits?.has_crop_insurance));
+      }
       if (id) setFarmerId(id);
       const keys = new Set(
         farms
@@ -154,13 +133,18 @@ function DashboardPageContent() {
       const res = await fetch(`/api/farm-info/${encodeURIComponent(id)}`, {
         credentials: 'include',
       });
-      const json = await res.json();
-      if (!res.ok) {
+      const parsed = await readJsonBody<{ farm_info?: FarmInfoSummary & { farms?: Record<string, unknown>[] } }>(res);
+      if (!parsed.isJson || !parsed.ok) {
         setFarmInfo(null);
         setSeedFarms([]);
         return null;
       }
-      const fi = json.farm_info;
+      const fi = parsed.data?.farm_info;
+      if (!fi) {
+        setFarmInfo(null);
+        setSeedFarms([]);
+        return null;
+      }
       const summary: FarmInfoSummary = {
         farmer_id: fi.farmer_id,
         name: fi.name,
@@ -171,6 +155,8 @@ function DashboardPageContent() {
         farmer_benefits: fi.farmer_benefits,
       };
       setFarmInfo(summary);
+      setPmKisanEnrolled(asTriState(fi.farmer_benefits?.pm_kisan_enrolled));
+      setHasCropInsurance(asTriState(fi.farmer_benefits?.has_crop_insurance));
       const farms = assignPlotKeysClient(
         Array.isArray(fi.farms) ? fi.farms : []
       );
@@ -220,9 +206,9 @@ function DashboardPageContent() {
             `/api/assessments/latest?farmer_id=${encodeURIComponent(qFarmerId)}`,
             { credentials: 'include' }
           );
-          const json = await res.json();
-          if (res.ok && json.assessment) {
-            const payload = json.assessment as AssessmentPayload;
+          const histParsed = await readJsonBody<{ assessment?: AssessmentPayload }>(res);
+          if (histParsed.isJson && histParsed.ok && histParsed.data?.assessment) {
+            const payload = histParsed.data.assessment;
             setData(payload);
             lastGoodDataRef.current = payload;
             if (payload.farm_assessments) {
@@ -462,21 +448,12 @@ function DashboardPageContent() {
     syncJobToUrl(null, farmerId.trim());
 
     try {
-      const res = await fetch('/api/agristack/prepare-farmer', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          farmer_id: farmerId.trim(),
-          username: agriCreds.username,
-          password: agriCreds.password,
-          client_id: agriCreds.client_id,
-        }),
+      const json = await prepareFarmerFarms({
+        farmerId: farmerId.trim(),
+        username: agriCreds.username,
+        password: agriCreds.password,
+        clientId: agriCreds.client_id,
       });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json?.error || `Prepare failed (HTTP ${res.status})`);
-      }
       const farms = Array.isArray(json.farms) ? json.farms : [];
       if (!farms.length) {
         throw new Error('No farm plots returned after prepare');
@@ -517,12 +494,14 @@ function DashboardPageContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ farm_ids_included: Array.from(keys) }),
       });
-      const patchJson = await patchRes.json();
-      if (!patchRes.ok) {
-        throw new Error(patchJson?.error || 'Failed to save plot selection');
+      const patchParsed = await readJsonBody<{ farms?: Record<string, unknown>[]; error?: string }>(patchRes);
+      if (!patchParsed.isJson || !patchParsed.ok) {
+        throw new Error(
+          apiErrorMessage(patchParsed, 'Failed to save plot selection', 'Plot selection')
+        );
       }
-      if (Array.isArray(patchJson.farms)) {
-        setSeedFarms(assignPlotKeysClient(patchJson.farms));
+      if (Array.isArray(patchParsed.data?.farms)) {
+        setSeedFarms(assignPlotKeysClient(patchParsed.data.farms));
       }
 
       setPartialFarms([]);
@@ -591,7 +570,7 @@ function DashboardPageContent() {
   return (
     <div className="min-h-screen bg-paper text-stone-800 selection:bg-emerald-500/30">
       <header className="bg-white border-b border-rule sticky top-0 z-20 no-print">
-        <div className="flex h-16 items-center px-6 max-w-7xl mx-auto w-full justify-between">
+        <div className="page-shell flex h-16 items-center w-full justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center font-bold text-paper">
               A
@@ -619,7 +598,7 @@ function DashboardPageContent() {
         </div>
       </header>
 
-      <main className="p-6 max-w-7xl mx-auto w-full space-y-6 no-print">
+      <main className="page-shell py-6 w-full space-y-6 no-print">
         {historyLoading && status === 'IDLE' && !data && (
           <p className="text-center text-sm text-stone-500 mt-16">Loading farms…</p>
         )}
@@ -841,7 +820,7 @@ function DashboardPageContent() {
             )}
 
             {/* ── ZONE 3 · HOLDING ─────────────────────────────────────── */}
-            <div className="grid lg:grid-cols-2 gap-5 items-stretch min-h-[520px]">
+            <div className="grid lg:grid-cols-[40%_1fr] gap-4 items-stretch min-h-[520px]">
               <StreamingFarmList
                 rows={streamRows}
                 jobId={jobId}

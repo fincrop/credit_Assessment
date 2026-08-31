@@ -72,3 +72,11 @@ next-env.d.ts
 
 # LGD download / unpack scratch (village CSV is ~66MB)
 frontend/scripts/lgd_tmp/
+
+# Crop classifier training intermediates. 01_scenes_raw.parquet is the
+# expensive artifact (hours of Earth Engine time) but it is regenerable and
+# far too large for git; shards/ holds ~750 partial files.
+Crop_classification_model/data/
+Crop_classification_model/reports/*.png
+Crop_classification_model/reports/*.csv
+Crop_classification_model/models/*.joblib

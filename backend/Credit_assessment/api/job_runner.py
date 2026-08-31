@@ -249,7 +249,10 @@ def process_assessment_job(
                 raw_result = MultiFarmAssessor(
                     pipeline, max_plots=max_plots
                 ).assess_farmer_multi(
-                    farm_copy, save_to_db=True, on_plot_done=_on_plot_done
+                    farm_copy,
+                    save_to_db=True,
+                    on_plot_done=_on_plot_done,
+                    enable_crop_classification=enable_crop_classification,
                 )
             else:
                 raw_result = pipeline.assess_farmer_from_db(

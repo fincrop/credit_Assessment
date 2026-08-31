@@ -33,7 +33,7 @@ import numpy as np
 import joblib
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import logging
 
 
@@ -42,6 +42,193 @@ from config import PipelineConfig
 from utils.india_geo_context import detector_ndvi_threshold, infer_agro_ecoregion
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# SHARED FEATURE EXTRACTOR — train/serve parity
+# =============================================================================
+# The ONLY place ML classification features are constructed. Both this module
+# (serving) and Crop_classification_model/src/features.py (training) import
+# these two functions, so a feature can never be built two different ways.
+#
+# Bumping the semantics of build_feature_dict REQUIRES bumping
+# EXTRACTOR_VERSION and retraining — a model bundle records the version it was
+# trained against and CropDetector refuses to load a mismatch.
+
+EXTRACTOR_VERSION = "tier1_v1"
+
+# Tier-0 feature SEMANTICS are unchanged by the tier-1 addition — the same 45
+# names are computed the same way — so a tier-0 bundle remains valid and is
+# still accepted. Only genuinely incompatible extractors are rejected.
+COMPATIBLE_EXTRACTOR_VERSIONS = frozenset({"tier0_v1", "tier1_v1"})
+
+# Extra index grids (tier 1). Chosen for what they discriminate:
+#   NDRE  chlorophyll / nitrogen  — the Wheat<->Mustard separator
+#   PSRI  senescence timing       — sharp-harvest crops vs gradual
+#   kNDVI saturation-resistant    — dense canopy (Sugarcane, Banana)
+#   LSWI  surface water           — rice flooding signature
+#   GCVI  green chlorophyll       — tracks LAI / biomass
+#   NDVI_std within-parcel spread — orchard rows vs broadcast sowing
+TIER1_EXTRA_INDICES: Tuple[str, ...] = (
+    "NDRE_mean", "PSRI_mean", "kNDVI_mean", "LSWI_mean", "GCVI_mean", "NDVI_std",
+)
+
+# Scalars read off the CropCycle. These are why tier 1 needs the cycle and not
+# just its scenes — and `duration_days` in particular is the feature the
+# normalised-time grid throws away.
+TIER1_SCALAR_NAMES: Tuple[str, ...] = (
+    "duration_days", "log_duration", "n_scenes_real", "observed_fraction",
+    "peak_observed", "peak_ndvi", "baseline_ndvi", "ndvi_rise",
+    "integral_ndvi_days", "peak_evi", "peak_ndmi", "cycle_confidence",
+)
+
+
+def extractor_feature_names(
+    n_feat: Optional[int] = None,
+    indices: Optional[Tuple[str, ...]] = None,
+) -> List[str]:
+    """
+    Ordered feature names this extractor can produce.
+
+    Ground truth for the fail-fast check in CropDetector.__init__: any name a
+    model expects that is absent here would be silently zero-filled at predict
+    time (see build_feature_dict's caller), which degrades the model without
+    raising anything.
+    """
+    n = int(n_feat if n_feat is not None else PipelineConfig.ML_FEATURE_SCENES)
+    idx = tuple(indices if indices is not None else PipelineConfig.ML_FEATURE_INDICES)
+
+    names: List[str] = []
+    for idx_name in tuple(idx) + TIER1_EXTRA_INDICES:
+        short_name = idx_name.replace('_mean', '')
+        names.extend(f"{short_name}_t{t + 1:02d}" for t in range(n))
+    names.extend(TIER1_SCALAR_NAMES)
+    return names
+
+
+def build_feature_dict(
+    scenes: List[Dict],
+    n_feat: Optional[int] = None,
+    indices: Optional[Tuple[str, ...]] = None,
+) -> Dict[str, float]:
+    """
+    Chronological index trajectories resampled onto a fixed normalized grid.
+
+    Scenes are mapped onto a normalized 0-1 time axis and each index is linearly
+    interpolated onto `n_feat` evenly spaced grid positions. NaNs are filled by
+    interpolation over the valid observations first, so a cloud gap does not
+    become a zero (which the model would read as bare soil).
+
+    NOTE ON WHAT THIS DISCARDS: normalizing time to [0, 1] removes cycle
+    duration, so an 85-day Bajra cycle and a 330-day Sugarcane cycle produce
+    identically shaped vectors. That is a known limitation of the tier-0
+    contract, documented in Crop_classification_model/classification_model.md
+    section B.4, and the reason a tier-1 extractor adds duration explicitly.
+
+    Callers MUST pass scenes already sorted by date.
+    """
+    n = int(n_feat if n_feat is not None else PipelineConfig.ML_FEATURE_SCENES)
+    idx = tuple(indices if indices is not None else PipelineConfig.ML_FEATURE_INDICES)
+
+    n_obs = len(scenes)
+    t_obs = np.linspace(0.0, 1.0, max(n_obs, 1))
+    t_grid = np.linspace(0.0, 1.0, n)
+
+    feature_dict: Dict[str, float] = {}
+    for idx_name in idx:
+        obs_vals = np.array(
+            [s.get('indices', {}).get(idx_name, 0.0) for s in scenes],
+            dtype=float,
+        )
+        nan_mask = np.isnan(obs_vals)
+        if nan_mask.any():
+            x_valid = t_obs[~nan_mask]
+            y_valid = obs_vals[~nan_mask]
+            if len(x_valid) >= 2:
+                obs_vals[nan_mask] = np.interp(t_obs[nan_mask], x_valid, y_valid)
+            else:
+                obs_vals = np.where(nan_mask, 0.0, obs_vals)
+
+        if n_obs >= 2:
+            grid_vals = np.interp(t_grid, t_obs, obs_vals)
+        elif n_obs == 1:
+            grid_vals = np.full(n, obs_vals[0])
+        else:
+            grid_vals = np.zeros(n)
+
+        short_name = idx_name.replace('_mean', '')
+        for t, val in enumerate(grid_vals):
+            feature_dict[f"{short_name}_t{t + 1:02d}"] = float(val)
+
+    return feature_dict
+
+
+def _cycle_get(cycle: Any, key: str, default: float = 0.0) -> float:
+    """Read a field from a CropCycle object or its to_dict() form."""
+    if cycle is None:
+        return default
+    v = cycle.get(key) if isinstance(cycle, dict) else getattr(cycle, key, None)
+    if v is None:
+        return default
+    if isinstance(v, bool):
+        return 1.0 if v else 0.0
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return default
+    return f if np.isfinite(f) else default
+
+
+def build_cycle_scalars(cycle: Any, n_scenes_real: int) -> Dict[str, float]:
+    """
+    Tier-1 scalars, matching the training-side columns name for name.
+
+    `cycle_confidence` maps to CropCycle.confidence; everything else keeps its
+    own name. `log_duration` linearises the 65->365 day span for tree splits.
+    """
+    duration = _cycle_get(cycle, "duration_days")
+    return {
+        "duration_days":      duration,
+        "log_duration":       float(np.log1p(max(duration, 0.0))),
+        "n_scenes_real":      float(n_scenes_real),
+        "observed_fraction":  _cycle_get(cycle, "observed_fraction", 1.0),
+        "peak_observed":      _cycle_get(cycle, "peak_observed", 1.0),
+        "peak_ndvi":          _cycle_get(cycle, "peak_ndvi"),
+        "baseline_ndvi":      _cycle_get(cycle, "baseline_ndvi"),
+        "ndvi_rise":          _cycle_get(cycle, "ndvi_rise"),
+        "integral_ndvi_days": _cycle_get(cycle, "integral_ndvi_days"),
+        "peak_evi":           _cycle_get(cycle, "peak_evi"),
+        "peak_ndmi":          _cycle_get(cycle, "peak_ndmi"),
+        "cycle_confidence":   _cycle_get(cycle, "confidence"),
+    }
+
+
+def build_features(
+    scenes: List[Dict],
+    cycle: Any = None,
+    n_feat: Optional[int] = None,
+    indices: Optional[Tuple[str, ...]] = None,
+) -> Dict[str, float]:
+    """
+    THE feature builder — tier-0 grids, tier-1 grids, and tier-1 scalars.
+
+    Imported by the offline trainer as well, so a feature can never be built two
+    different ways. Callers pass scenes already sorted by date.
+    """
+    out = build_feature_dict(scenes, n_feat, indices)
+    out.update(build_feature_dict(scenes, n_feat, TIER1_EXTRA_INDICES))
+    out.update(build_cycle_scalars(cycle, len(scenes)))
+    return out
+
+
+# Abstain defaults. Deliberately STRICTER than the pipeline's own 0.25 gate:
+# with 18 classes chance is 0.056, so 0.25 is only ~4.5x chance — too low to
+# hand a crop name to ICAR curve comparison, where a wrong label swings up to
+# 45% of the risk index. A bundle may override via its "abstain_rule" key.
+DEFAULT_ABSTAIN_RULE = {
+    "p_min": 0.35,        # calibrated top-1 probability floor
+    "gap_min": 0.10,      # top-2 separation floor
+    "n_scenes_min": 8,    # below this an interpolated grid is mostly synthetic
+}
 
 
 class CropDetector:
@@ -72,6 +259,63 @@ class CropDetector:
         self.label_encoder  = model_data['label_encoder']
         self.feature_names  = model_data['feature_names']
         self.crop_names     = model_data['crop_names']
+
+        # ── FAIL-FAST: the silent zero-fill trap ──────────────────────────
+        # Feature assembly is `[feature_dict.get(fn, 0.0) for fn in
+        # self.feature_names]`. Any name this extractor cannot produce becomes
+        # 0.0 with no warning, no log line and no exception — a model trained
+        # with extra features would run in production against zeros while
+        # still reporting healthy confidences. Refuse to load instead.
+        producible = set(extractor_feature_names())
+        missing = [fn for fn in self.feature_names if fn not in producible]
+        if missing:
+            raise ValueError(
+                f"Model at {crop_model_path} expects {len(missing)} feature(s) "
+                f"the live extractor cannot produce: {sorted(missing)[:8]}"
+                f"{' ...' if len(missing) > 8 else ''}. "
+                f"Extractor is '{EXTRACTOR_VERSION}' with "
+                f"ML_FEATURE_SCENES={PipelineConfig.ML_FEATURE_SCENES} and "
+                f"ML_FEATURE_INDICES={list(PipelineConfig.ML_FEATURE_INDICES)}. "
+                "Deploy the matching extractor change or retrain."
+            )
+
+        bundle_version = model_data.get('extractor_version')
+        if bundle_version and bundle_version not in COMPATIBLE_EXTRACTOR_VERSIONS:
+            raise ValueError(
+                f"Model at {crop_model_path} was trained against extractor "
+                f"'{bundle_version}' but this build ships '{EXTRACTOR_VERSION}'. "
+                "Feature semantics may differ; retrain or pin the matching build."
+            )
+
+        # crop_names is zipped with predict_proba columns to build
+        # all_probabilities. If it disagrees with the encoder's class order,
+        # every probability is silently attached to the wrong crop.
+        enc_classes = getattr(self.label_encoder, 'classes_', None)
+        if enc_classes is not None and list(self.crop_names) != list(enc_classes):
+            raise ValueError(
+                "crop_names does not match label_encoder.classes_ ordering; "
+                "all_probabilities would be mislabelled. "
+                f"crop_names={list(self.crop_names)[:5]}... "
+                f"classes_={list(enc_classes)[:5]}..."
+            )
+
+        # A bundle using tier-1 scalars cannot be scored from scenes alone. Note
+        # it now so the classifier can ABSTAIN when no cycle is available,
+        # instead of quietly scoring zeros for duration and phenology.
+        self.requires_cycle = any(
+            fn in TIER1_SCALAR_NAMES for fn in self.feature_names
+        )
+        if self.requires_cycle:
+            logger.info(
+                "  Model uses cycle-level features (tier 1) — classification "
+                "requires a CropCycle and will abstain without one."
+            )
+
+        self.abstain_rule = {
+            **DEFAULT_ABSTAIN_RULE,
+            **(model_data.get('abstain_rule') or {}),
+        }
+        self.model_metrics = model_data.get('metrics') or {}
 
         base_ndvi_thr = PipelineConfig.CROP_DETECTION_NDVI_THRESHOLD
         self.agro_ecoregion, self.agro_geo_profile = infer_agro_ecoregion(
@@ -155,7 +399,7 @@ class CropDetector:
                 units_with_crops += 1
                 try:
                     crop_pred = self._classify_crop_chronological(scenes)
-                    crops_detected[crop_pred['crop']] += 1
+                    crops_detected[crop_pred['crop'] or 'Unclassified'] += 1
 
                     result = {
                         **self._base_result(unit),
@@ -429,12 +673,16 @@ class CropDetector:
                 classification_note = ''
 
                 try:
-                    crop_pred = self._classify_crop_chronological(cycle_scenes)
+                    crop_pred = self._classify_crop_chronological(
+                        cycle_scenes, cycle=cycle,
+                    )
                     predicted_crop  = crop_pred['crop']
                     crop_confidence = crop_pred['confidence']
                     all_probs       = crop_pred['all_probabilities']
                     # Treat low-confidence predictions as Unclassified but keep name
-                    if crop_confidence < 0.25 and predicted_crop not in (None, 'Unknown'):
+                    if crop_pred.get('abstained'):
+                        classification_note = f"abstained: {crop_pred.get('abstain_reason')}"
+                    elif crop_confidence < 0.25 and predicted_crop not in (None, 'Unknown'):
                         classification_note = f'low_confidence ({crop_confidence:.0%})'
                     crops_detected[predicted_crop or 'Unclassified'] += 1
                 except Exception as e:
@@ -669,14 +917,21 @@ class CropDetector:
     # ML CROP CLASSIFICATION — CHRONOLOGICAL FEATURES
     # =========================================================================
 
-    def _classify_crop_chronological(self, scenes: List[Dict]) -> Dict:
+    def _classify_crop_chronological(
+        self, scenes: List[Dict], cycle: Any = None,
+    ) -> Dict:
         """
-        Classify crop type using chronologically ordered scenes.
+        Classify crop type from a cycle's chronologically ordered scenes.
 
-        FIXED v3.1 — Temporal interpolation instead of zero-padding:
-          - Scenes mapped onto normalized 0–1 time axis.
-          - Feature values at fixed grid positions obtained via linear interpolation.
-          - Confidence calibrated using top-2 class probability gap.
+        Features come from the module-level `build_feature_dict` — the same
+        function the offline trainer imports — so train/serve parity is
+        structural rather than a convention someone has to remember.
+
+        Returns `crop=None` when the abstain rule fires. Downstream already
+        handles a null crop: the cycle survives, cultivation_signal carries
+        scoring, and performance_analyzer takes its crop-agnostic path. An
+        abstention is strictly better than a wrong crop name, which would swing
+        up to 45% of the risk index on nothing.
         """
         n_feat   = PipelineConfig.ML_FEATURE_SCENES
         indices  = PipelineConfig.ML_FEATURE_INDICES
@@ -684,34 +939,26 @@ class CropDetector:
         sorted_scenes = sorted(scenes, key=lambda s: s.get('date', ''))
         n = len(sorted_scenes)
 
-        t_obs  = np.linspace(0.0, 1.0, max(n, 1))
-        t_grid = np.linspace(0.0, 1.0, n_feat)
+        if getattr(self, "requires_cycle", False) and cycle is None:
+            # Scoring tier-1 features without a cycle would zero-fill duration
+            # and every phenology scalar, and the model would still return a
+            # confident-looking answer. Refuse instead.
+            return {
+                'crop': None,
+                'confidence': 0.0,
+                'abstained': True,
+                'abstain_reason': 'cycle_metadata_unavailable',
+                'top_crop_unreliable': None,
+                'raw_confidence': 0.0,
+                'top2_gap': 0.0,
+                'all_probabilities': {},
+                'n_scenes_used': n,
+                'feature_scenes': n_feat,
+                'method': 'temporal_interpolation',
+                'extractor_version': EXTRACTOR_VERSION,
+            }
 
-        feature_dict = {}
-        for idx_name in indices:
-            obs_vals = np.array(
-                [s.get('indices', {}).get(idx_name, 0.0) for s in sorted_scenes],
-                dtype=float,
-            )
-            nan_mask = np.isnan(obs_vals)
-            if nan_mask.any():
-                x_valid = t_obs[~nan_mask]
-                y_valid = obs_vals[~nan_mask]
-                if len(x_valid) >= 2:
-                    obs_vals[nan_mask] = np.interp(t_obs[nan_mask], x_valid, y_valid)
-                else:
-                    obs_vals = np.where(nan_mask, 0.0, obs_vals)
-
-            if n >= 2:
-                grid_vals = np.interp(t_grid, t_obs, obs_vals)
-            elif n == 1:
-                grid_vals = np.full(n_feat, obs_vals[0])
-            else:
-                grid_vals = np.zeros(n_feat)
-
-            short_name = idx_name.replace('_mean', '')
-            for t, val in enumerate(grid_vals):
-                feature_dict[f"{short_name}_t{t+1:02d}"] = float(val)
+        feature_dict = build_features(sorted_scenes, cycle, n_feat, indices)
 
         feature_vector = [feature_dict.get(fn, 0.0) for fn in self.feature_names]
         X = np.nan_to_num(np.array([feature_vector]), nan=0.0)
@@ -725,9 +972,25 @@ class CropDetector:
         top2_gap          = float(sorted_probs[0] - sorted_probs[1]) if len(sorted_probs) > 1 else raw_confidence
         calibrated_conf   = min(raw_confidence, raw_confidence * min(1.0, top2_gap / 0.10 + 0.5))
 
+        # ── Abstain rather than mislead ────────────────────────────────────
+        rule = getattr(self, 'abstain_rule', DEFAULT_ABSTAIN_RULE)
+        abstain_reason = None
+        if raw_confidence < float(rule.get('p_min', 0.0)):
+            abstain_reason = f"p_max {raw_confidence:.2f} < {rule['p_min']}"
+        elif top2_gap < float(rule.get('gap_min', 0.0)):
+            abstain_reason = f"top2_gap {top2_gap:.2f} < {rule['gap_min']}"
+        elif n < int(rule.get('n_scenes_min', 0)):
+            abstain_reason = f"n_scenes {n} < {rule['n_scenes_min']}"
+
         return {
-            'crop':              crop_name,
-            'confidence':        round(calibrated_conf, 4),
+            'crop':              None if abstain_reason else crop_name,
+            'confidence':        0.0 if abstain_reason else round(calibrated_conf, 4),
+            'abstained':         abstain_reason is not None,
+            'abstain_reason':    abstain_reason,
+            # The argmax is kept even on abstention: useful for audit and for a
+            # future Bayesian composition with the registry crop hint, but it
+            # must never be read as a prediction.
+            'top_crop_unreliable': crop_name,
             'raw_confidence':    round(raw_confidence, 4),
             'top2_gap':          round(top2_gap, 4),
             'all_probabilities': {
@@ -736,6 +999,7 @@ class CropDetector:
             'n_scenes_used':     n,
             'feature_scenes':    n_feat,
             'method':            'temporal_interpolation',
+            'extractor_version': EXTRACTOR_VERSION,
         }
 
 

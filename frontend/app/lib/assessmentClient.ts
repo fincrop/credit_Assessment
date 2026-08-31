@@ -6,6 +6,7 @@
  */
 
 import type { AssessmentJob } from '../types/assessment';
+import { apiErrorMessage, readJsonBody } from './httpJson';
 
 /** Enqueue a new assessment job via MongoDB job queue. Returns job_id immediately. */
 export async function runAssessmentJob(params: {
@@ -26,20 +27,16 @@ export async function runAssessmentJob(params: {
     }),
   });
 
-  const text = await res.text();
-  let data: unknown;
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch {
-    throw new Error(`Invalid response (${res.status}): ${text.slice(0, 200)}`);
+  const parsed = await readJsonBody<{ job_id: string; status: string }>(res);
+  if (!parsed.isJson || !parsed.ok) {
+    throw new Error(
+      apiErrorMessage(parsed, `Assessment enqueue failed`, 'Assessment enqueue')
+    );
   }
-
-  if (!res.ok) {
-    const d = data as Record<string, unknown>;
-    throw new Error(String(d?.error ?? d?.detail ?? `HTTP ${res.status}`));
+  if (!parsed.data?.job_id) {
+    throw new Error('Assessment enqueue returned no job_id');
   }
-
-  return data as { job_id: string; status: string };
+  return parsed.data;
 }
 
 export type PollJobResult =
@@ -62,30 +59,37 @@ export async function pollJobStatusSafe(jobId: string): Promise<PollJobResult> {
       cache: 'no-store',
     });
 
-    const text = await res.text();
-    let data: Record<string, unknown> = {};
-    try {
-      data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
-    } catch {
+    const parsed = await readJsonBody<AssessmentJob & Record<string, unknown>>(res);
+    if (!parsed.isJson) {
       return {
         ok: false,
         transient: true,
-        message: `Poll response not JSON (${res.status})`,
-        status: res.status,
+        message: apiErrorMessage(parsed, 'Poll failed', 'Job status poll'),
+        status: parsed.status,
       };
     }
 
-    if (!res.ok) {
-      const transient = data.transient === true || res.status === 503;
+    if (!parsed.ok) {
+      const data = parsed.data;
+      const transient = data?.transient === true || parsed.status === 503;
       return {
         ok: false,
         transient,
-        message: String(data.error ?? `HTTP ${res.status}`),
-        status: res.status,
+        message: apiErrorMessage(parsed, `HTTP ${parsed.status}`, 'Job status poll'),
+        status: parsed.status,
       };
     }
 
-    return { ok: true, job: data as unknown as AssessmentJob };
+    if (!parsed.data) {
+      return {
+        ok: false,
+        transient: true,
+        message: 'Job status poll returned empty body',
+        status: parsed.status,
+      };
+    }
+
+    return { ok: true, job: parsed.data as AssessmentJob };
   } catch (err) {
     return {
       ok: false,
@@ -121,7 +125,70 @@ export async function ingestFarmerData(agristackResponse: unknown): Promise<{
     body: JSON.stringify({ agristack_response: agristackResponse }),
   });
 
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
-  return data;
+  const parsed = await readJsonBody<{
+    success: boolean;
+    farmer_ids: string[];
+    message: string;
+    created?: string[];
+    updated?: string[];
+    error?: string;
+  }>(res);
+  if (!parsed.isJson || !parsed.ok) {
+    throw new Error(apiErrorMessage(parsed, 'Ingest failed', 'Farmer ingest'));
+  }
+  if (!parsed.data) {
+    throw new Error('Ingest returned empty body');
+  }
+  return parsed.data;
+}
+
+export type PrepareFarmerResult = {
+  success: boolean;
+  skipped_seek: boolean;
+  stage: string;
+  farmer_id: string;
+  farms: Record<string, unknown>[];
+  farm_info?: {
+    farmer_id: string;
+    name?: string | null;
+    mobile?: string | null;
+    state?: string | null;
+    district?: string | null;
+    village?: string | null;
+    farmer_benefits?: {
+      pm_kisan_enrolled?: boolean | null;
+      has_crop_insurance?: boolean | null;
+    } | null;
+  } | null;
+};
+
+/** AgriStack token → seek → webhook → farm_info (dashboard Prepare farms). */
+export async function prepareFarmerFarms(params: {
+  farmerId: string;
+  username: string;
+  password: string;
+  clientId?: string;
+}): Promise<PrepareFarmerResult> {
+  const res = await fetch('/api/agristack/prepare-farmer', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      farmer_id: params.farmerId.trim(),
+      username: params.username,
+      password: params.password,
+      client_id: params.clientId,
+    }),
+  });
+
+  const parsed = await readJsonBody<PrepareFarmerResult & { error?: string }>(res);
+  if (!parsed.isJson || !parsed.ok) {
+    throw new Error(
+      apiErrorMessage(parsed, 'Prepare farms failed', 'Prepare farms')
+    );
+  }
+  if (!parsed.data) {
+    throw new Error('Prepare farms returned empty body');
+  }
+  return parsed.data;
 }

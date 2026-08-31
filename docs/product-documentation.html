@@ -1,0 +1,1716 @@
+<title>Krishi Bhoomi Score</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --paper:#FFFFFF;
+  --paper-alt:#F5F5F2;
+  --ink:#101210;
+  --body:#2E312C;
+  --muted:#6B6F66;
+  --rule:#DEDFD8;
+  --rule-strong:#BFC1B8;
+  --accent:#1E5540;
+  --accent-soft:#E7EFEA;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#131512;
+    --paper-alt:#1B1E1A;
+    --ink:#F1F2EC;
+    --body:#D3D6CD;
+    --muted:#949990;
+    --rule:#2C302A;
+    --rule-strong:#454A42;
+    --accent:#82BBA0;
+    --accent-soft:#1D2621;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#131512;
+  --paper-alt:#1B1E1A;
+  --ink:#F1F2EC;
+  --body:#D3D6CD;
+  --muted:#949990;
+  --rule:#2C302A;
+  --rule-strong:#454A42;
+  --accent:#82BBA0;
+  --accent-soft:#1D2621;
+}
+
+*{box-sizing:border-box;}
+
+body{
+  background:var(--paper);
+  color:var(--body);
+  font-family:"Source Serif 4",Georgia,"Times New Roman",serif;
+  font-size:17px;
+  line-height:1.68;
+  margin:0;
+  -webkit-font-smoothing:antialiased;
+}
+
+.shell{
+  display:grid;
+  grid-template-columns:1fr;
+  max-width:1240px;
+  margin:0 auto;
+  padding:0 26px 110px;
+}
+@media (min-width:1080px){
+  .shell{grid-template-columns:230px minmax(0,1fr);gap:56px;padding:0 40px 140px;}
+}
+
+.masthead{
+  grid-column:1/-1;
+  border-bottom:2px solid var(--ink);
+  padding:56px 0 22px;
+  margin-bottom:44px;
+}
+.eyebrow{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11.5px;
+  font-weight:500;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin:0 0 18px;
+}
+.masthead h1{
+  font-family:"Archivo",Helvetica,Arial,sans-serif;
+  font-weight:800;
+  font-size:clamp(38px,6vw,58px);
+  line-height:1.04;
+  letter-spacing:-.022em;
+  color:var(--ink);
+  margin:0 0 14px;
+  text-wrap:balance;
+}
+.masthead .standfirst{
+  font-size:19.5px;
+  line-height:1.6;
+  max-width:62ch;
+  margin:0 0 30px;
+}
+.factbar{
+  display:flex;
+  flex-wrap:wrap;
+  gap:16px 34px;
+  border-top:1px solid var(--rule);
+  padding-top:18px;
+  margin:0;
+}
+.fact{min-width:112px;}
+.fact dt{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:10.5px;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin:0 0 4px;
+}
+.fact dd{
+  margin:0;
+  font-family:"Archivo",Helvetica,Arial,sans-serif;
+  font-weight:600;
+  font-size:15px;
+  color:var(--ink);
+  font-variant-numeric:tabular-nums;
+}
+
+.rail{display:none;}
+@media (min-width:1080px){
+  .rail{
+    display:block;
+    align-self:start;
+    position:sticky;
+    top:32px;
+    max-height:calc(100vh - 64px);
+    overflow-y:auto;
+    padding-bottom:40px;
+  }
+}
+.rail h2{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:10.5px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+  font-weight:500;
+  margin:0 0 14px;
+}
+.rail ol{list-style:none;margin:0;padding:0;}
+.rail li{margin:0 0 2px;}
+.rail a{
+  display:flex;
+  gap:9px;
+  font-family:"Archivo",Helvetica,Arial,sans-serif;
+  font-size:13.5px;
+  line-height:1.4;
+  font-weight:500;
+  color:var(--body);
+  text-decoration:none;
+  padding:5px 0;
+}
+.rail a:hover{color:var(--accent);}
+.rail a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;}
+.rail .num{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11px;
+  color:var(--muted);
+  font-variant-numeric:tabular-nums;
+  padding-top:1px;
+}
+
+main{max-width:76ch;min-width:0;}
+
+.part{
+  margin:0 0 12px;
+  padding-top:62px;
+  border-top:1px solid var(--rule);
+}
+.part:first-of-type{padding-top:0;border-top:none;}
+.part-label{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--accent);
+  margin:22px 0 10px;
+}
+.part h2{
+  font-family:"Archivo",Helvetica,Arial,sans-serif;
+  font-weight:800;
+  font-size:clamp(27px,3.6vw,36px);
+  line-height:1.12;
+  letter-spacing:-.018em;
+  color:var(--ink);
+  margin:0 0 12px;
+  text-wrap:balance;
+}
+.part-note{
+  color:var(--muted);
+  font-size:16.5px;
+  max-width:64ch;
+  margin:0 0 8px;
+}
+
+h3{
+  font-family:"Archivo",Helvetica,Arial,sans-serif;
+  font-weight:700;
+  font-size:22px;
+  line-height:1.24;
+  letter-spacing:-.012em;
+  color:var(--ink);
+  margin:46px 0 12px;
+  text-wrap:balance;
+}
+h4{
+  font-family:"Archivo",Helvetica,Arial,sans-serif;
+  font-weight:700;
+  font-size:16px;
+  line-height:1.35;
+  color:var(--ink);
+  margin:30px 0 8px;
+}
+h3 .sec{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-weight:500;
+  font-size:14px;
+  color:var(--muted);
+  margin-right:10px;
+  font-variant-numeric:tabular-nums;
+}
+
+p{margin:0 0 17px;max-width:70ch;}
+strong{font-weight:600;color:var(--ink);}
+a{color:var(--accent);text-underline-offset:2px;}
+
+ul,ol{margin:0 0 18px;padding-left:22px;max-width:70ch;}
+li{margin:0 0 7px;}
+li::marker{color:var(--muted);}
+
+code,.mono{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:.855em;
+  background:var(--paper-alt);
+  border:1px solid var(--rule);
+  border-radius:3px;
+  padding:.08em .34em;
+  color:var(--ink);
+}
+
+pre{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:13px;
+  line-height:1.62;
+  background:var(--paper-alt);
+  border:1px solid var(--rule);
+  border-left:3px solid var(--rule-strong);
+  padding:16px 18px;
+  overflow-x:auto;
+  margin:0 0 22px;
+  color:var(--ink);
+}
+pre code{background:none;border:none;padding:0;font-size:inherit;}
+
+.tablewrap{overflow-x:auto;margin:0 0 24px;border:1px solid var(--rule);}
+table{border-collapse:collapse;width:100%;font-size:14.5px;background:var(--paper);}
+th{
+  font-family:"Archivo",Helvetica,Arial,sans-serif;
+  font-weight:700;
+  font-size:11.5px;
+  letter-spacing:.07em;
+  text-transform:uppercase;
+  text-align:left;
+  color:var(--ink);
+  background:var(--paper-alt);
+  padding:10px 14px;
+  border-bottom:1px solid var(--rule-strong);
+  white-space:nowrap;
+}
+td{
+  padding:11px 14px;
+  border-bottom:1px solid var(--rule);
+  vertical-align:top;
+  line-height:1.5;
+}
+tbody tr:last-child td{border-bottom:none;}
+td.num{font-variant-numeric:tabular-nums;white-space:nowrap;}
+
+.note{
+  border-left:3px solid var(--ink);
+  padding:2px 0 2px 18px;
+  margin:0 0 24px;
+  max-width:68ch;
+}
+.note p:last-child{margin-bottom:0;}
+.note-label{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:10.5px;
+  letter-spacing:.13em;
+  text-transform:uppercase;
+  color:var(--muted);
+  display:block;
+  margin-bottom:6px;
+}
+
+.chip{
+  display:inline-block;
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:10.5px;
+  font-weight:500;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  border:1px solid var(--rule-strong);
+  border-radius:2px;
+  padding:2px 7px;
+  color:var(--ink);
+  background:var(--paper);
+  white-space:nowrap;
+}
+.chip.on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft);}
+.chip.off{color:var(--muted);}
+
+.lead{font-size:19px;line-height:1.6;color:var(--ink);max-width:64ch;}
+
+figure{margin:0 0 26px;}
+figcaption{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11px;
+  letter-spacing:.07em;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin-top:9px;
+}
+
+.colophon{
+  grid-column:1/-1;
+  border-top:2px solid var(--ink);
+  margin-top:72px;
+  padding-top:22px;
+  font-size:14px;
+  color:var(--muted);
+  max-width:70ch;
+}
+
+@media print{
+  body{font-size:10.5pt;background:#fff;color:#000;}
+  .rail{display:none;}
+  .shell{display:block;max-width:none;padding:0;}
+  h3,h4{break-after:avoid;}
+  .part{break-before:page;border-top:none;}
+  .tablewrap,pre,.note{break-inside:avoid;}
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation:none !important;transition:none !important;}
+}
+</style>
+
+<div class="shell">
+
+<header class="masthead">
+  <p class="eyebrow">Product &amp; technical documentation &middot; v6 &middot; August 2026</p>
+  <h1>Krishi Bhoomi Score</h1>
+  <p class="standfirst">A satellite-derived agronomic risk index for Indian smallholder agricultural lending. This document sets out what the product is, what it deliberately is not, how every number in it is produced, what is verified today, and what remains to be built.</p>
+  <dl class="factbar">
+    <div class="fact"><dt>Pipeline</dt><dd>v5.0 / index_v5</dd></div>
+    <div class="fact"><dt>Score scale</dt><dd>300&ndash;900</dd></div>
+    <div class="fact"><dt>Backend tests</dt><dd>313</dd></div>
+    <div class="fact"><dt>Build status</dt><dd>Code complete</dd></div>
+    <div class="fact"><dt>Pilot blocker</dt><dd>Ingest data quality</dd></div>
+  </dl>
+</header>
+
+<nav class="rail" aria-label="Contents">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#part-0"><span class="num">0</span><span>How to read this</span></a></li>
+    <li><a href="#part-1"><span class="num">1</span><span>The product</span></a></li>
+    <li><a href="#part-2"><span class="num">2</span><span>Architecture</span></a></li>
+    <li><a href="#part-3"><span class="num">3</span><span>How the score is built</span></a></li>
+    <li><a href="#part-4"><span class="num">4</span><span>The application</span></a></li>
+    <li><a href="#part-5"><span class="num">5</span><span>Engineering practice</span></a></li>
+    <li><a href="#part-6"><span class="num">6</span><span>Where we stand</span></a></li>
+    <li><a href="#part-7"><span class="num">7</span><span>Roadmap</span></a></li>
+    <li><a href="#part-8"><span class="num">8</span><span>Decisions &amp; operations</span></a></li>
+    <li><a href="#part-9"><span class="num">9</span><span>Appendices</span></a></li>
+  </ol>
+</nav>
+
+<main>
+<section class="part" id="part-0">
+  <p class="part-label">Part 0</p>
+  <h2>How to read this document</h2>
+  <p class="part-note">Who each part is for, and the one rule that governs everything in it.</p>
+</section>
+
+<p class="lead">This is the single reference for the product. It is written so a co-founder can read Parts 1, 6 and 7 and understand the business position, and an engineer can read Parts 2 to 5 and understand the machine.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Part</th><th>Contents</th><th>Written for</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td>What the product is, who uses it, what it refuses to do</td><td>Everyone. Start here.</td></tr>
+    <tr><td class="num">2</td><td>System architecture, data model, external dependencies</td><td>Engineering, technical co-founder</td></tr>
+    <tr><td class="num">3</td><td>The methodology &mdash; every stage from satellite pixel to score</td><td>Engineering, data science, any lender due-diligence conversation</td></tr>
+    <tr><td class="num">4</td><td>The application: screens, flows, design system</td><td>Product, design, sales demos</td></tr>
+    <tr><td class="num">5</td><td>Testing, tooling, deployment, security</td><td>Engineering</td></tr>
+    <tr><td class="num">6</td><td>Honest status: verified vs. defensible vs. unknown</td><td>Everyone. Read before any external claim.</td></tr>
+    <tr><td class="num">7</td><td>Roadmap, in priority order, with what blocks each item</td><td>Founders, planning</td></tr>
+    <tr><td class="num">8</td><td>Open decisions that need an owner, and the operational runbook</td><td>Founders, operations</td></tr>
+    <tr><td class="num">9</td><td>Configuration, API, environment and glossary reference</td><td>Engineering</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">0.1</span>The rule that governs the whole product</h3>
+
+<p><strong>No invented numbers.</strong> Every value the system emits traces to a named source &mdash; a satellite measurement, a published threshold with a citation, or a farmer-declared field marked as declared. Where we cannot know something, the product says so rather than filling the gap with a plausible-looking default.</p>
+
+<p>This is not a stylistic preference. In a lending product a number gets used: it goes into a credit file, it justifies a decision, and someone is later asked to defend it. A confident wrong number is worse than a stated absence, because an absence invites a question and a wrong number does not. Nearly every design decision in Parts 3 and 4 &mdash; the refusal states, the confidence gate, the omitted report panels, the cold peer cohort &mdash; follows from this one rule.</p>
+
+<h3><span class="sec">0.2</span>Status vocabulary used throughout</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Label</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><span class="chip on">Shipped</span></td><td>Code complete, tested, on the main path.</td></tr>
+    <tr><td><span class="chip">Built, cold</span></td><td>Code complete and correct, but inactive because it needs data volume we do not yet have.</td></tr>
+    <tr><td><span class="chip">Partial</span></td><td>Works, with a named gap.</td></tr>
+    <tr><td><span class="chip off">Deferred</span></td><td>Blocked on ground truth or a business decision, not on engineering effort.</td></tr>
+    <tr><td><span class="chip off">Not built</span></td><td>Deliberately not built, with the reason recorded.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<section class="part" id="part-1">
+  <p class="part-label">Part 1</p>
+  <h2>The product</h2>
+  <p class="part-note">The problem, the thing we built, and the boundary we will not cross.</p>
+</section>
+
+<h3><span class="sec">1.1</span>The problem</h3>
+
+<p>An Indian smallholder farmer applying for a crop loan &mdash; a Kisan Credit Card or a comparable agri facility &mdash; is usually invisible to conventional credit assessment. There is often no bureau history, no bank statement that reflects farm income, no audited accounts, and no reliable third-party record of what was grown or how it performed. The lender is left with a land record, a declared crop, and a field visit that may or may not happen.</p>
+
+<p>Meanwhile the land itself has been continuously observed from orbit for a decade. Sentinel-2 passes every five days at ten-metre resolution and the archive is free. If a parcel was cropped twice a year for three years, that is visible. If it went fallow, that is visible. If a drought hit at flowering and the canopy never recovered, that is visible. None of it depends on the farmer's paperwork.</p>
+
+<p>The gap is not data availability. It is that raw satellite imagery is not a credit input. Turning it into one requires the parcel boundary to be trustworthy, the vegetation signal to be physically meaningful and comparable between farms, non-farmland to be excluded, cloud gaps to be honestly accounted for, and the resulting number to be explainable line by line to a credit officer and a regulator. That is what this product does.</p>
+
+<h3><span class="sec">1.2</span>What we built</h3>
+
+<p class="lead">A pipeline that takes a farmer identifier and a parcel boundary, reads three years of Sentinel-2 and Sentinel-1 history for that parcel, and returns an explainable agronomic risk index between 300 and 900 &mdash; the Krishi Bhoomi Score &mdash; together with the evidence behind it.</p>
+
+<p>Around that pipeline sits a working operator application: farmer onboarding with map-drawn or file-uploaded boundaries, an AgriStack integration that pulls government farmer and land records, an assessment dashboard, and a print-ready credit dossier.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Capability</th><th>What it does</th><th>State</th></tr></thead>
+  <tbody>
+    <tr><td>Continuous satellite history</td><td>Three years of Sentinel-2 optical plus Sentinel-1 radar, binned to fixed 10-day intervals with explicit gaps</td><td><span class="chip on">Shipped</span></td></tr>
+    <tr><td>Land-cover gate</td><td>Refuses to score water, built-up land, barren ground and forest; recognises plantations as fundable</td><td><span class="chip on">Shipped</span></td></tr>
+    <tr><td>Parcel viability gate</td><td>Refuses parcels too small to measure at 10&nbsp;m, or whose boundary cannot be trusted</td><td><span class="chip on">Shipped</span></td></tr>
+    <tr><td>Crop cycle detection</td><td>Sowing, peak and harvest per cycle; annual and perennial branches; Kharif / Rabi / Zaid assignment</td><td><span class="chip on">Shipped</span></td></tr>
+    <tr><td>Weather engine</td><td>Cycle-aligned rainfall, heat, dry spells, GDD, SPI/SPEI-style anomalies; backward resilience and forward exposure</td><td><span class="chip on">Shipped</span></td></tr>
+    <tr><td>Declared-crop verification</td><td>Checks the registry crop name against observed phenology before trusting it</td><td><span class="chip on">Shipped</span></td></tr>
+    <tr><td>Risk index</td><td>Four weighted sub-indices, a multiplicative data-confidence gate, deterministic reason codes</td><td><span class="chip on">Shipped</span></td></tr>
+    <tr><td>Farmer-level aggregation</td><td>Multiple parcels combined with tenure and area weighting, plus a diversification bonus</td><td><span class="chip on">Shipped</span></td></tr>
+    <tr><td>Evidence persistence</td><td>Full per-bin index series, phenology, weather detail and score history stored per assessment</td><td><span class="chip on">Shipped</span></td></tr>
+    <tr><td>Explainability</td><td>Reason codes, per-sub-index driver captions, counterfactuals; optional LLM narrative and Indian-language translation</td><td><span class="chip on">Shipped</span></td></tr>
+    <tr><td>Operator application</td><td>Onboarding, AgriStack ingest, dashboard, print dossier</td><td><span class="chip on">Shipped</span></td></tr>
+    <tr><td>Peer benchmarking</td><td>Percentile of a parcel against others assessed in the same agro-climatic zone</td><td><span class="chip">Built, cold</span></td></tr>
+    <tr><td>ML crop classification</td><td>Trained classifier for crop identity from the satellite signal</td><td><span class="chip off">Quarantined</span></td></tr>
+    <tr><td>Loan amount / probability of default</td><td>&mdash;</td><td><span class="chip off">Not built, by design</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">1.3</span>What this product is not</h3>
+
+<p>This boundary is the most important thing in the document, and it is enforced in code. Every assessment carries <code>positioning: "agronomic_risk_index"</code> and <code>no_repayment_calibration: true</code>, and a test asserts it.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>It is not</th><th>Why not</th></tr></thead>
+  <tbody>
+    <tr><td>A loan amount or credit limit</td><td>Converting an index into rupees requires a coefficient we can only derive from repayment outcomes. We have none. Any figure would be invented.</td></tr>
+    <tr><td>A probability of default</td><td>Same reason. The calibration hooks exist in the data model and are deliberately left null.</td></tr>
+    <tr><td>An approve / reject decision</td><td>No policy layer exists. The lender's own policy sits on top of the index; we do not simulate it.</td></tr>
+    <tr><td>A crop identification service</td><td>The classifier is unvalidated and switched off. Crop names come from the registry, are checked against observed phenology, and are always labelled as declared.</td></tr>
+    <tr><td>A yield forecast in tonnes</td><td>Relative yield potential from the satellite signal is published science. Converting it to tonnes per hectare for a specific crop and district needs local harvest records we do not have.</td></tr>
+    <tr><td>Accurate to any published figure</td><td>We quote no accuracy number. None has been measured against field truth. See <a href="#part-6">Part 6</a>.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note">
+  <span class="note-label">Positioning</span>
+  <p>The honest sales line is: <strong>we tell a lender what the land has actually been doing for three years, with the evidence attached, and we tell them plainly when we cannot see it well enough to say.</strong> Everything downstream of that &mdash; limit, pricing, approval &mdash; stays with the lender until we have repayment data of our own.</p>
+</div>
+
+<h3><span class="sec">1.4</span>Who uses it</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>User</th><th>What they need</th><th>Where they get it</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Loan officer</strong><br>Primary reader</td><td>A verdict in a few seconds, then the single weakest driver, then enough evidence to defend the call. Roughly twenty files a day, on a desktop.</td><td>Dashboard</td></tr>
+    <tr><td><strong>Credit committee</strong></td><td>A stable, printable document with provenance and an integrity hash, that reads as a credit file rather than a screenshot.</td><td>Report dossier at <code>/report/[farmer_id]</code></td></tr>
+    <tr><td><strong>Field agent / operations</strong></td><td>Onboard a farmer, draw or upload parcel boundaries, pull AgriStack records, queue an assessment.</td><td>Farmer journey and AgriStack pages</td></tr>
+    <tr><td><strong>Risk / model governance</strong></td><td>Weights, versions, thresholds, sources, and what changed between pipeline versions.</td><td>Provenance footer, evidence store, drift report</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">1.5</span>The three answers, kept distinct</h3>
+
+<p>Most systems collapse everything that is not a score into one failure state. That destroys exactly the information a loan officer needs, because the three cases have three different next actions. The pipeline keeps them apart end to end, from the Python status field to a dedicated screen for each.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Terminal state</th><th>What it means</th><th>What the officer does next</th></tr></thead>
+  <tbody>
+    <tr><td><span class="mono">SUCCESS</span></td><td>We looked. Here is the score and the evidence.</td><td>Assess the file.</td></tr>
+    <tr><td><span class="mono">REJECTED_NOT_AGRICULTURAL</span></td><td>We looked. This is not farmland &mdash; it is water, built-up, barren or forest, with the spectral evidence attached.</td><td>Question the land record. Nothing about the farmer is implied.</td></tr>
+    <tr><td><span class="mono">INSUFFICIENT_DATA</span></td><td>We could not see it well enough to say &mdash; the parcel is below the measurable floor, the boundary is untrustworthy, or the window is too cloud-gapped.</td><td>Re-draw the boundary, or wait for a later observation. <strong>This is not a low score.</strong></td></tr>
+    <tr><td><span class="mono">FAILED</span></td><td>Our system broke.</td><td>Re-run. Engineering issue, not a finding.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The user interface renders each of these as its own screen with its own evidence, and never shows a greyed-out gauge beside a refusal &mdash; an empty dial eventually gets read as a zero.</p>
+
+<h3><span class="sec">1.6</span>Where the durable advantage sits</h3>
+
+<p>The scoring logic is defensible but reproducible. Three things are not:</p>
+
+<ol>
+  <li><strong>The evidence store.</strong> Every assessment persists its full per-bin index series, phenology, weather detail, sub-index inputs, weights and version. When field data eventually arrives &mdash; verified crops, sowing dates, repayment outcomes &mdash; it can be attached retrospectively to assessments already run. Every month spent running without persisting this is a month of ground-truthing opportunity permanently lost.</li>
+  <li><strong>The peer cohort.</strong> A percentile among parcels we have ourselves assessed is a real, self-referential fact that needs volume rather than field work. It compounds: each new assessed parcel improves the comparison for every other parcel in its zone.</li>
+  <li><strong>The refusal record.</strong> Every parcel we reject or flag is a candidate ground-truth sample. Reviewing them is the cheapest available route to a measured false-rejection rate, which is the number a lender will eventually ask for.</li>
+</ol>
+<section class="part" id="part-2">
+  <p class="part-label">Part 2</p>
+  <h2>Architecture</h2>
+  <p class="part-note">Four deployable pieces, one database, and the reasons each is where it is.</p>
+</section>
+
+<h3><span class="sec">2.1</span>The pieces</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Piece</th><th>Technology</th><th>Runs where</th><th>Responsibility</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Operator application</strong><br><code>frontend/</code></td><td>Next.js 16 App Router, React 19, Redux Toolkit, Tailwind v4</td><td>Render (Node service)</td><td>All screens, plus a backend-for-frontend API layer that keeps every credential off the browser</td></tr>
+    <tr><td><strong>Assessment API</strong><br><code>backend/Credit_assessment/api/</code></td><td>FastAPI, Python 3.11, uvicorn</td><td>Render (Docker)</td><td>Job queue endpoints, synchronous assessment, report payload assembly, health</td></tr>
+    <tr><td><strong>Pipeline</strong><br><code>backend/Credit_assessment/</code></td><td>Python; GDAL / rasterio / geopandas / shapely, numpy, scikit-learn, Earth Engine client</td><td>In-process with the API, or as a standalone <code>worker.py</code></td><td>The whole satellite-to-score computation</td></tr>
+    <tr><td><strong>AgriStack edge</strong><br><code>infra/agristack-lambda/</code></td><td>Node ESM on AWS Lambda, Function URL</td><td>AWS <code>ap-south-1</code> (Mumbai)</td><td>Outbound AgriStack Token / Seek calls and inbound webhook receipt, from an Indian IP</td></tr>
+    <tr><td><strong>Database</strong></td><td>MongoDB Atlas, database <code>agristack</code></td><td>Managed</td><td>Single shared store for farms, jobs, assessments, evidence, caches and webhooks</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">2.2</span>How a request flows</h3>
+
+<pre><code>Operator                Next.js BFF              FastAPI                  Pipeline
+────────                ───────────              ───────                  ────────
+Enter farmer_id  ─────&gt;  /api/assess/enqueue
+                         (ownership check)
+                              │
+                              ├── PIPELINE_API_URL set ──&gt;  POST /v1/jobs/assess
+                              │                              insert job QUEUED
+                              │                              BackgroundTasks ────&gt; run
+                              │
+                              └── otherwise ──&gt; insert QUEUED into Mongo
+                                                (standalone worker.py claims it)
+
+Poll status      ─────&gt;  /api/assess/status/[id] ──&gt; reads Mongo jobs directly
+                                                     (Mongo is the single source
+                                                      of truth for job state)
+
+Open report      ─────&gt;  /api/report/[farmer_id] ──&gt;  GET /v1/report/{farmer_id}
+                         (ownership check,                reads stored assessment
+                          service key server-side)        + evidence + history
+</code></pre>
+
+<p>Two properties of this flow are deliberate. First, <strong>job status is always read from MongoDB, never from the API</strong>, so the dashboard behaves identically whether jobs run inside the API process or in a separate worker. Second, <strong>the report endpoint never triggers a run</strong> &mdash; it reads only. A report therefore cannot show a different number from the assessment it claims to describe.</p>
+
+<h3><span class="sec">2.3</span>Why the AgriStack edge is a separate Lambda in Mumbai</h3>
+
+<p>AgriStack's sandbox rejects or degrades traffic from server IPs outside India in both directions: outbound Token and Seek calls return HTML block pages rather than JSON, and inbound webhooks to a foreign <code>sender_uri</code> may be refused. Since the Seek call is made server-side, the IP AgriStack sees is whichever machine runs the Next.js API route &mdash; not the operator's browser.</p>
+
+<p>Rather than move the whole application to an Indian host, we moved only the AgriStack surface: a small Lambda in <code>ap-south-1</code> behind a public Function URL, which proxies Token and Seek outbound and receives the three webhook callbacks inbound, writing them into the same MongoDB collections the application already reads. This was validated end to end &mdash; real Seek returns an ACK with a correlation id, and the matching AgriStack callback appears in Mongo tagged <code>via: "lambda-ap-south-1"</code>.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Lambda path</th><th>Mongo collection</th><th>Source tag</th></tr></thead>
+  <tbody>
+    <tr><td><code>/webhook/farmers/on-seek</code></td><td><code>webhook_farmers_responses</code></td><td><code>agristack-farmers</code></td></tr>
+    <tr><td><code>/webhook/on-seek</code></td><td><code>webhook_responses</code></td><td><code>agristack</code></td></tr>
+    <tr><td><code>/webhook/kdss/on-seek</code></td><td><code>webhook_kdss_responses</code></td><td><code>agristack-kdss</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The same three webhook routes also exist inside the Next.js app for local development behind a tunnel. The Lambda path is the India-stable one and is what production uses.</p>
+
+<h3><span class="sec">2.4</span>Repository layout</h3>
+
+<pre><code>agri_credit_pipeline/
+├── backend/Credit_assessment/       Python package root — run uvicorn and worker.py from here
+│   ├── main.py                      SatelliteBasedCreditPipeline — the orchestrator
+│   ├── config.py                    PipelineConfig — every threshold, weight and version
+│   ├── mongodb_helper.py            persistence, schema build, caches, indexes
+│   ├── worker.py                    standalone queue consumer
+│   ├── api/                         FastAPI app, job runner, report payload, serialization
+│   ├── data_acquisition/            satellite_collector.py, weather_analyzer.py
+│   ├── crop_analysis/               land_cover_gate, crop_cycle_detector, performance_analyzer,
+│   │                                crop_verification, land_utilization_analyzer, crop_detector
+│   ├── assessment/                  risk_index_engine, farmer_aggregator, multi_farm_assessor,
+│   │                                parcel_viability, data_sufficiency, evidence_snapshot,
+│   │                                driver_captions, cohort_builder, drift_analysis
+│   ├── ai_integration/              enrichment, groq_report_generator, sarvam_translator,
+│   │                                shap_explainer, counterfactual_engine
+│   ├── utils/                       geometry, india_geo_context, peer_benchmark, encoding
+│   ├── tests/                       313 pytest tests across 24 files
+│   └── scripts/devtools/            drift, geometry audit, cohort build, inspectors
+├── frontend/                        Next.js application and BFF
+│   └── app/
+│       ├── (routes)                 login, farmer journey, agristack, dashboard, report
+│       ├── api/                     server-side routes (auth, ingest, enqueue, report proxy)
+│       ├── dashboard/components/    ~30 assessment and evidence components
+│       ├── lib/                     score mapping, terminal state, chart primitives, clients
+│       └── webhook/                 local-development AgriStack callbacks
+├── infra/agristack-lambda/          Mumbai Lambda source and deploy zip
+├── docs/codebase/                   per-stage engineering reference
+├── BACKEND-ENHANCEMENTS.md          v6 defect register and phased build plan
+├── FRONTEND-ENHANCEMENTS.md         v6 design system and interface plan
+└── render.yaml                      Render blueprint for both services
+</code></pre>
+
+<h3><span class="sec">2.5</span>Data model</h3>
+
+<p>One MongoDB database, <code>agristack</code>. The collections divide into four groups: what we were told, what we are doing, what we concluded, and what we cached.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Collection</th><th>Holds</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><code>farm_info</code></td><td>One document per farmer: identity, location, benefits flags, and a <code>farms[]</code> array of parcels with geometry, survey numbers, area and tenure</td><td>The join key is <code>farmer_id</code>. This is the pipeline's input contract.</td></tr>
+    <tr><td><code>farmer_farms</code></td><td>Parcel records from the farmer onboarding journey</td><td>Application-drawn boundaries</td></tr>
+    <tr><td><code>users</code></td><td>Operator accounts, bcrypt password hashes</td><td>Scopes ownership of farmer records</td></tr>
+    <tr><td><code>jobs</code></td><td>Assessment queue: status, progress, partial results, errors</td><td>Indexed on status and timestamps, with a TTL. Also carries the full result payload today.</td></tr>
+    <tr><td><code>credit_assessments</code></td><td>One document per completed run: score, sub-indices with inputs and drivers, weights, reason codes, seasonal series, weather summary, benefits, AI enrichment</td><td>Single-farm and multi-farm runs still write two shapes; unification is open work.</td></tr>
+    <tr><td><code>assessment_evidence</code></td><td>The full per-bin index series with <code>signal_source</code> and <code>bin_quality</code>, phenology, anomaly events, weather indicators</td><td>What makes retrospective validation possible.</td></tr>
+    <tr><td><code>score_history</code></td><td>One append per run: score, band, version, weights, date</td><td>Powers the trend tile. Nothing else stores a prior score.</td></tr>
+    <tr><td><code>feature_store</code></td><td>Per-run feature snapshots including <code>nirv_auc_mean_by_cycle</code> and <code>cohort_key</code></td><td>Raw material for the peer cohort</td></tr>
+    <tr><td><code>cohort_stats</code></td><td>Peer distributions per agro-climatic zone</td><td>Written by the cohort builder; activates at n&nbsp;&ge;&nbsp;20</td></tr>
+    <tr><td><code>index_versions</code></td><td>Registered index versions and their weight vectors</td><td>Model-governance trail</td></tr>
+    <tr><td><code>satellite_stats_cache</code></td><td>TTL'd slim satellite index series, keyed by a geometry-and-window hash</td><td>Default 30 days</td></tr>
+    <tr><td><code>weather_power_cache</code></td><td>TTL'd NASA POWER daily series keyed by rounded coordinates and window</td><td>Cuts repeat latency</td></tr>
+    <tr><td><code>webhook_farmers_responses</code><br><code>webhook_responses</code><br><code>webhook_kdss_responses</code></td><td>Raw AgriStack callbacks with headers and correlation ids</td><td>Written by the Lambda and by the local webhook routes</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note">
+  <span class="note-label">Known structural debt</span>
+  <p>The queue collection is still the richest artefact in the database: <code>jobs.result</code> carries the complete payload. The intended end state is that <code>credit_assessments</code> plus <code>assessment_evidence</code> are authoritative and <code>jobs.result</code> shrinks to a status pointer. Evidence and score history are already split out; the final collapse is open work.</p>
+</div>
+
+<h3><span class="sec">2.6</span>External dependencies</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Dependency</th><th>Used for</th><th>Failure behaviour</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Google Earth Engine</strong><br>Sentinel-2 L2A, Sentinel-1 GRD, Cloud Score+</td><td>Primary imagery and cloud masking</td><td>Falls back to the Planetary Computer STAC path; the assessment records which provider was used</td></tr>
+    <tr><td><strong>Planetary Computer STAC</strong></td><td>Backup Sentinel-2 access</td><td>No per-pixel cloud mask on this path; confidence is discounted accordingly</td></tr>
+    <tr><td><strong>NASA POWER</strong></td><td>Daily temperature, rainfall, humidity, wind at the parcel centroid</td><td>Cached; on failure the assessment is flagged <code>weather_degraded</code> rather than silently scoring weather as benign</td></tr>
+    <tr><td><strong>AgriStack sandbox</strong></td><td>Farmer and land-parcel records, Krishi DSS</td><td>Asynchronous: Seek returns an ACK, data arrives later by webhook</td></tr>
+    <tr><td><strong>Groq</strong> (optional)</td><td>Narrative generation from the computed assessment</td><td>Off unless a key and <code>GROQ_ENABLE</code> are set; falls back to a deterministic rule-based narrative</td></tr>
+    <tr><td><strong>Sarvam</strong> (optional)</td><td>Translation of the narrative into Indian languages</td><td>Off unless a key is set; failure is flagged, not hidden</td></tr>
+    <tr><td><strong>IMD / ERA5-Land / CHIRPS</strong></td><td>Higher-quality weather blend</td><td>Implemented in the weather module, disabled in configuration pending data access</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>No dependency is on the critical path in a way that produces a silent wrong answer. Each degradation is stamped onto the assessment and surfaces in the interface.</p>
+<section class="part" id="part-3">
+  <p class="part-label">Part 3</p>
+  <h2>How the score is built</h2>
+  <p class="part-note">Every stage from parcel boundary to Krishi Bhoomi Score, in execution order, with the reasoning behind each decision.</p>
+</section>
+
+<p class="lead">The pipeline runs eleven stamped stages. Each writes its own provenance onto the assessment, so a stored score can always be traced to the exact logic that produced it.</p>
+
+<pre><code>1_shell        farmer + parcel loaded, geometry QA, viability gate
+2_satellite    Sentinel-2 + Sentinel-1 pulled, 10-day bins, signal built
+2b_land_cover  is this farmland at all?
+3_analysers    analyser construction
+4_cycles       phenology → sowing / peak / harvest → seasons
+5_crops        crop context (declared, verified) — classifier off
+6_weather      cycle-aligned weather, resilience and exposure
+7_performance  vigour, yield potential, stress anomalies
+8_risk_index   four sub-indices → weights → confidence gate → 0–100
+9_payload      assemble, shim to the dashboard contract
+10_ai          driver attribution, counterfactuals, optional narrative
+11_persist     assessment + evidence + score history written
+</code></pre>
+
+<h3><span class="sec">3.1</span>Stage 1 &mdash; Parcel intake, geometry QA and viability</h3>
+
+<p>Everything downstream inherits its spatial footprint and its time window from this stage, which makes it the contract stage of the whole pipeline.</p>
+
+<h4>Spatial resolution</h4>
+<p>The pipeline loads the farmer document from <code>farm_info</code> and, for each parcel, resolves a footprint:</p>
+<ul>
+  <li><strong>Polygon present</strong> &rarr; validity check plus a comparison of polygon area against the registered hectares. On pass, the bounding box comes from the geometry.</li>
+  <li><strong>Polygon fails QA, or no polygon</strong> &rarr; fall back to the centroid with an adaptive circular buffer, floored at about 0.15&nbsp;km.</li>
+</ul>
+
+<p>The fallback is deliberately non-fatal &mdash; refusing to score a farmer over a data-entry error would be the wrong trade &mdash; but it is <strong>not silent</strong>. When it happens, the assessment records <code>geometry_source</code>, the risk engine multiplies the confidence gate by 0.85, and the interface draws a full-width banner: the declared boundary greyed and dashed, the measured footprint solid, and the sentence <em>"the score describes the measured area, not the declared one."</em> This was added after a real case where a 0.45&nbsp;ha holding was scored over roughly 7&nbsp;ha of surrounding fields.</p>
+
+<h4>The viability gate</h4>
+<p>A Sentinel-2 pixel is 100&nbsp;m&sup2;, or 0.01&nbsp;ha. Two thresholds apply, and they mean different things:</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Threshold</th><th>Value</th><th>Kind</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><code>PARCEL_MIN_PIXELS_HARD</code></td><td class="num">15 px = 0.15 ha</td><td>Business</td><td>Below this, return <span class="mono">INSUFFICIENT_DATA</span> before spending imagery quota. Set by lending policy &mdash; nobody lends against a plot this small.</td></tr>
+    <tr><td><code>PARCEL_MIN_PIXELS_RELIABLE</code></td><td class="num">50 px = 0.50 ha</td><td>Physical</td><td>Between the two, score but flag and discount the gate by 0.85.</td></tr>
+    <tr><td><code>PARCEL_AREA_RATIO</code></td><td class="num">0.8 &ndash; 1.25</td><td>Trust</td><td>Polygon area versus registered area. Outside this range, record that they disagree.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The physical threshold has a derivation, not a guess behind it. For a roughly square parcel of N pixels the boundary ring is about 4&radic;N&nbsp;&minus;&nbsp;4 pixels, and Sentinel-2 geolocation error is itself around ten metres, so boundary pixels are contaminated by whatever is next door: at 15 pixels roughly 73% of the parcel is boundary, at 50 pixels roughly 48%, at 150 pixels roughly 30%. There is no size at which this vanishes for smallholder plots at 10&nbsp;m resolution. Fifty pixels is where it stops dominating.</p>
+
+<p>On the area ratio the gate deliberately does <strong>not</strong> decide which number is right. It cannot know from here, and guessing would move the error rather than remove it. It records the disagreement.</p>
+
+<h4>Temporal resolution</h4>
+<p>The lookback is three years, extended backwards to the nearest sowing anchor (15 June, 15 October, 15 February) so a season is never ingested half-clipped. The snap, the anchor used, the window dates, the geometry source and the buffer are all stamped onto <code>assessment.geospatial_prep</code>. A coarse agro-ecoregion is inferred from latitude, longitude and state LGD hints and passed downstream as a <em>soft</em> prior only.</p>
+
+<h3><span class="sec">3.2</span>Stage 2 &mdash; Satellite acquisition and signal construction</h3>
+
+<p>This is the most expensive stage and the one everything else depends on.</p>
+
+<h4>Acquisition</h4>
+<ul>
+  <li><strong>Optical:</strong> Sentinel-2 L2A via Earth Engine by default, with the Planetary Computer STAC as fallback. Up to 120 scenes per calendar year are fetched and sorted before binning.</li>
+  <li><strong>Radar:</strong> Sentinel-1 GRD, VV and VH, ascending preference, used to fill monsoon cloud gaps.</li>
+  <li><strong>Cloud masking:</strong> Cloud Score+ (<code>cs_cdf</code>, threshold 0.60) combined with SCL and QA60. Version stamp <code>csplus_scl_v2</code>.</li>
+  <li><strong>Binning:</strong> fixed 10-day bins across the window. The lowest-cloud scene wins each bin. Empty bins are marked <code>missing</code> rather than interpolated away.</li>
+</ul>
+
+<div class="note">
+  <span class="note-label">A defect worth remembering</span>
+  <p>The scene cap was previously a hardcoded 50 per year applied <em>without sorting</em>, so the pipeline took the chronologically first 50 scenes and discarded the rest of the year. That produced apparent 240-day cloud gaps and pushed genuine farms into <span class="mono">INSUFFICIENT_DATA</span>. The gaps were ours, not the weather's. This is why every provider-level parameter is now named, defaulted deliberately and documented in configuration.</p>
+</div>
+
+<h4>The index set</h4>
+<p>Thirteen indices are computed from bands already downloaded, so the marginal cost is near zero. Each earns its place:</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Index</th><th>What it is for</th></tr></thead>
+  <tbody>
+    <tr><td>NDVI, EVI, NDMI</td><td>The vegetation signal backbone and canopy moisture</td></tr>
+    <tr><td>NIRv</td><td>Yield-potential backbone &mdash; a biomass and productivity proxy, decoupled from the detection signal</td></tr>
+    <tr><td>MSAVI2</td><td>Robust early-season signal on bare or sparse soil, where NDVI is noisy</td></tr>
+    <tr><td>LSWI</td><td>Water stress and paddy flood signature, complementing NDMI</td></tr>
+    <tr><td>kNDVI, GCVI, NDRE</td><td>Saturation-resistant and high-LAI vigour measures</td></tr>
+    <tr><td>PSRI</td><td>Senescence</td></tr>
+    <tr><td>NDWI, MNDWI</td><td>Open water discrimination</td></tr>
+    <tr><td>NDBI, BSI</td><td>Built-up and bare-soil discrimination &mdash; the land-cover gate's spectral evidence</td></tr>
+    <tr><td>VV, VH, RVI (radar)</td><td>Cloud-proof biomass proxy and transplanting signature</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h4>Signal construction &mdash; the highest-leverage fix in the backend</h4>
+
+<p>The composite vegetation signal is version-stamped <code>signal_v2_fixed_range</code>. Version 2 changed two things, and both were correctness fixes rather than tuning:</p>
+
+<p><strong>Normalisation: per-parcel min&ndash;max became fixed physical ranges.</strong> Version 1 rescaled each index over that parcel's own three-year extremes. Every parcel &mdash; fertile, barren or paved &mdash; therefore produced a series spanning roughly 0 to 1, so absolute thresholds applied to it were meaningless, <code>peak_cvi</code> was not comparable between two farms, and noise on dead ground was stretched into apparent crop cycles. Version 2 normalises against published physical ranges per index (NDVI &minus;0.20 to 0.90, NDMI &minus;0.50 to 0.60, and so on). Clipping is now meaningful: NDVI of &minus;0.4 over water clamps to zero, which is to say <em>no vegetation</em>.</p>
+
+<p><strong>Backbone: kNDVI became NDVI.</strong> kNDVI is tanh(NDVI&sup2;), which discards the sign of NDVI &mdash; open water at &minus;0.30 and sparse crop at &plus;0.30 both map to 0.0876. Carrying that at weight 0.50 made the detection signal structurally unable to tell water from vegetation. kNDVI is still computed and stored, because it is a good vigour index; it is simply not the discrimination backbone. The blend is now NDVI 0.50, EVI 0.30, NDMI 0.20.</p>
+
+<h4>Optical&ndash;radar fusion and quality</h4>
+<pre><code>quality = f(valid_pixel_fraction, cloud_probability, parcel_size)   ∈ [0,1]
+VS      = quality · VS_optical  +  (1 − quality) · VS_radar
+
+every bin carries  signal_source ∈ {optical, fused, sar, imputed}
+                   bin_quality   ∈ [0,1]
+</code></pre>
+<p>Smoothing is a Whittaker second-difference smoother. Imputed bins are flagged so that a reconstructed value can never be mistaken for an observed one &mdash; a rule the interface enforces visually as well, by drawing markers only on directly observed bins.</p>
+
+<p>Hard limits: fewer than 12 valid bins aborts the run; under 20 raises a warning.</p>
+
+<h3><span class="sec">3.3</span>Stage 2b &mdash; The land-cover gate</h3>
+
+<p>Before this module existed the pipeline had no land-cover logic whatsoever. It accepted any valid polygon anywhere on Earth and emitted a risk index for it. Traced end to end, a parking lot produced index 41, category HIGH, status SUCCESS &mdash; and dense forest scored <em>better</em> than a genuine fallow farm, because the stability sub-index rewards the absence of stress anomalies and nothing stressful happens to a forest.</p>
+
+<p>A lender cannot use a score that might have been computed over a lake. This gate is the single most important correctness feature in the product.</p>
+
+<h4>Three independent evidence streams</h4>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Stream</th><th>Evidence</th><th>Why it is trustworthy</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Spectral</strong></td><td>Published thresholds on <em>raw, un-normalised</em> indices: NDWI and MNDWI for water, NDBI for built-up, BSI and MSAVI2 for bare soil, NDVI levels for canopy</td><td>Every threshold is an established, citable value documented with the surface it corresponds to. None was tuned against our own data, because we have no ground truth to tune against.</td></tr>
+    <tr><td><strong>Temporal</strong></td><td>Does this parcel green up and senesce seasonally at all? Requires an NDVI p90&ndash;p10 swing above 0.18.</td><td>Needs no external validation, because it is a statement about the parcel's own signal. It is also the only stream that separates <em>fallow farmland</em> (greens up in some years) from <em>permanently barren</em> (never does).</td></tr>
+    <tr><td><strong>Third-party LULC</strong></td><td>ESA WorldCover or Google Dynamic World, both reachable from the existing Earth Engine session</td><td>The only stream carrying someone else's published validation. <span class="chip off">Currently disabled</span> &mdash; see the note below.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h4>Confidence bands, not a boolean</h4>
+<p>The gate emits a calibrated confidence, and three outcomes follow:</p>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Confidence</th><th>Outcome</th></tr></thead>
+  <tbody>
+    <tr><td>&ge; 0.75 and non-agricultural</td><td><span class="mono">REJECTED_NOT_AGRICULTURAL</span>, no score, evidence attached</td></tr>
+    <tr><td>&ge; 0.45</td><td>Scored, flagged prominently, confidence gate discounted by 0.85</td></tr>
+    <tr><td>Below 0.45, or fewer than 8 usable observations</td><td>Flagged <span class="mono">UNKNOWN</span> &mdash; never rejected. We cannot reject a parcel we were unable to look at.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Classes are <span class="mono">CROPLAND / WATER / BUILTUP / BARREN / FOREST / PLANTATION / UNKNOWN</span>. <strong><span class="mono">PLANTATION</span> is a distinct non-rejecting verdict</strong> and must never be collapsed into forest or barren &mdash; orchards, banana and ratooned sugarcane are products we want to score. The verdict is stamped on every assessment, including passes, so a lender can see the evidence either way.</p>
+
+<div class="note">
+  <span class="note-label">Open item &mdash; and it is on the critical path</span>
+  <p>Third-party LULC is implemented but <code>LANDCOVER_USE_EXTERNAL_LULC</code> is <code>False</code>. The gate is deliberately held closed until someone reads and records the <em>published per-class accuracy for the cropland class over South Asia</em> in configuration. Ten-metre global products are weakest on sub-hectare fields, which is exactly our population, so the headline global accuracy figure must not be assumed to apply. This is a half-day of reading that unblocks the strongest evidence stream we have.</p>
+</div>
+
+<h3><span class="sec">3.4</span>Stage 4 &mdash; Phenology, cycles and seasons</h3>
+
+<p>With crop classification off, cycle detection is the crop-agnostic backbone that feeds weather, performance and most of the score.</p>
+
+<h4>Annual detection</h4>
+<p>The smoothed composite signal is walked for peaks, then backwards to a sowing point and forwards to a harvest point, with amplitude and base gates rather than brittle absolute thresholds. Soft priors are applied where available: the agro-ecoregion nudges the peak gate within bounds <em>relative to the configured threshold</em>, and a declared sowing date biases candidate selection within about &plusmn;21 days. Neither is a hard override, and both are recorded in <code>hints_applied</code> and <code>applied_knobs</code>.</p>
+
+<div class="note">
+  <span class="note-label">What the drift harness caught here</span>
+  <p>The agro prior originally clamped the peak gate to an absolute range of 0.20&ndash;0.35, written for the old per-parcel signal scale. On the new physical scale, 0.35 <em>is bare soil</em> &mdash; so the prior was silently re-creating the threshold inversion the signal rewrite had just removed. The bounds are now relative to the configured threshold. Unit tests passed throughout; only a run against real data exposed it.</p>
+</div>
+
+<h4>The perennial branch</h4>
+<p>Orchards, banana and ratooned sugarcane never return to bare ground. With no trough, the annual sow&ndash;peak&ndash;harvest walk always exceeds the duration cap and every candidate is rejected &mdash; which produced zero cycles, which downstream read as cropping intensity zero and fallow 1.0. A mango grove was being scored as abandoned land.</p>
+
+<p>The fix treats <em>"no trough"</em> as a signal rather than a failure. When a canopy is present year-round (p10 of the signal above 0.50, bare fraction under 0.05, limited seasonal amplitude), the parcel routes to a perennial cycle model, and the land-use sub-index uses a perennial branch where canopy persistence and inter-annual vigour stability are the credit signal rather than cycle count. A real orchard now returns three production years, 90.7% land utilisation and an index of 75.5.</p>
+
+<h4>Seasons</h4>
+<p>A cycle is assigned to the season it spent the <em>most days</em> in, not the one it happened to be sown in; below a 55% dominant share it is labelled <code>cross_season</code>. Kharif, Rabi and Zaid are all first-class. South Indian calendars are shifted 30 days where latitude is below 16&deg;N, which is the coarsest defensible regionalisation and an obvious improvement target once a state-level calendar is available.</p>
+
+<p>Land utilisation is reported per season with the invariant that utilisation plus fallow equals one.</p>
+
+<h3><span class="sec">3.5</span>Stage 5 &mdash; Crop context, handled carefully</h3>
+
+<p>There were two bad options here and one good one.</p>
+
+<p><strong>Trusting the registry crop</strong> routes the parcel down the crop-specific scoring path, where it is benchmarked against ICAR reference curves. A wrong self-declaration then swings up to 45% of the index on nothing. <strong>Ignoring it</strong> is what the pipeline did: crop confidence was hardcoded to 0.0 against a 0.25 gate, so a declared crop set a label and nothing else &mdash; leaving roughly 1,150 lines of ICAR reference data dead and the per-stage weather analysis permanently inert, because it needs a crop name.</p>
+
+<p>The third option needs no ground truth: <strong>check the declaration against what we saw.</strong> Cotton is documented at 165&ndash;180 days with a characteristic trajectory. If the observed cycle ran 90 days and peaked low, the declaration is inconsistent with the observation, and we can establish that from data we already have.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Verification outcome</th><th>Effect</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Consistent</strong></td><td>Unlock crop-specific scoring at a <em>bounded</em> confidence &mdash; a self-report that survives a check is still a self-report</td></tr>
+    <tr><td><strong>Inconsistent</strong></td><td>Crop-agnostic scoring, and <code>declared_crop_mismatch</code> recorded with the evidence</td></tr>
+    <tr><td><strong>Indeterminate</strong></td><td>Crop-agnostic scoring, no claim either way</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Two consequences follow. The crop name is always rendered as <em>"Cotton (farmer-declared, unverified)"</em>, never as <em>"Cotton"</em>. And the mismatch flag is the first crop-label signal we will ever have collected &mdash; it is training data for the classifier we cannot yet retrain.</p>
+
+<p><strong>The ML classifier is quarantined.</strong> It is off by default, its flag is named experimental, it logs loudly when enabled, it stamps <code>crop_label_source: ml_experimental_unvalidated</code>, and it now refuses to load if its feature count disagrees with the model artefact. Its embedded 95.8% accuracy figure is never surfaced: it was almost certainly inflated by a train/test split that was not grouped by farm, and a leakage-inflated figure shown to a lender is worse than no figure.</p>
+
+<h3><span class="sec">3.6</span>Stage 6 &mdash; The weather engine</h3>
+
+<p>Weather is a full pillar at 25% of the index, not a footnote. It runs in two directions.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Direction</th><th>Question</th><th>Why it matters for credit</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Backward &mdash; resilience</strong></td><td>Did this parcel's vegetation hold up through past adverse weather?</td><td>This is the high-value signal: it is observed behaviour under stress, not a forecast.</td></tr>
+    <tr><td><strong>Forward &mdash; exposure</strong></td><td>How drought, flood and heat prone is this zone?</td><td>Contextualises the risk the next season carries.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Indicators are computed per detected cycle and aligned to growth stages, so <em>"heat stress at flowering"</em> is a first-class reason code rather than a seasonal average: SPI and SPEI-style standardised anomalies, dry-spell and wet-spell run lengths, growing degree days with heat and cold stress days, and monsoon onset timing anomaly.</p>
+
+<p>Source priority is configurable. IMD gridded, ERA5-Land and CHIRPS fetchers are implemented; only NASA POWER is enabled today. Responses are cached in Mongo and in memory, and the result carries <code>weather_data_status</code> of <span class="mono">ok</span>, <span class="mono">degraded</span> or <span class="mono">unavailable</span> so a consumer can distinguish missing data from low risk.</p>
+
+<h3><span class="sec">3.7</span>Stage 7 &mdash; Vigour, yield potential and stress</h3>
+
+<p>Yield potential is the integral of NIRv over the cycle &mdash; a published biomass and productivity proxy &mdash; expressed as a <code>potential_index</code> from 0 to 100, with an empty <code>quantified_yield</code> slot reserved for the day a crop coefficient can fill it. The distinction is deliberate: <strong>NIRv-AUC as a relative yield-potential proxy is published science; converting it to tonnes per hectare for a specific crop and district needs a local coefficient we cannot derive.</strong> The relationship is real; the calibration constant is not.</p>
+
+<p>Stress is measured against the parcel's <em>own</em> three-year, per-growth-stage distribution rather than a within-cycle spread, with departures flagged by percentile fence. Impact is stage-weighted: flowering and grain-fill count far more than vegetative or senescence. Water stress comes from LSWI and NDMI drops. Anomaly events are persisted individually, so the narrative can say <em>"water-stressed on 14 August 2023 during flowering"</em> rather than collapsing to a count.</p>
+
+<h3><span class="sec">3.8</span>Stage 8 &mdash; The risk index</h3>
+
+<p>This is where the signals become a number. The engine is deterministic, rule-based and fully attributable; there is no learned model in the critical path.</p>
+
+<h4>Four additive sub-indices, one multiplicative gate</h4>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Sub-index</th><th>Weight</th><th>Built from</th><th>Banker's C</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Land-use &amp; activity</strong></td><td class="num">30</td><td>Cycles per year, land-utilisation index, fallow frequency, trend; perennial branch where applicable</td><td>Capacity</td></tr>
+    <tr><td><strong>Vigour &amp; yield potential</strong></td><td class="num">25</td><td>NIRv-AUC potential, peak quality</td><td>Capacity / Character</td></tr>
+    <tr><td><strong>Stability &amp; stress</strong></td><td class="num">20</td><td>Stage-weighted anomaly load, inter-year variability</td><td>Character</td></tr>
+    <tr><td><strong>Weather</strong></td><td class="num">25</td><td>Backward resilience plus forward exposure</td><td>Conditions</td></tr>
+    <tr><td><strong>Data confidence</strong></td><td>gate</td><td>Valid-bin fraction, radar-fallback share, parcel size, series length</td><td>meta</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The five-way decoupling matters. In the previous scorer, peak greenness drove roughly 75 points across three separate pillars, so one signal family was silently triple-counted. Each sub-index is now computed from distinct signals so it can be validated and recalibrated alone.</p>
+
+<h4>The arithmetic, in full</h4>
+<pre><code>additive   = Σ ( sub_index_score_i × weight_i / 100 )     over the four substantive pillars
+raw_index  = clip( additive + benefits_bonus , 0 , 100 )
+gate       = data_confidence_gate  ∈ [0.60, 1.0]
+             × 0.85 if the land-cover verdict was flagged
+             × 0.85 if the footprint was substituted
+             × 0.85 if the parcel is between the fundable and reliable size floors
+index      = clip( raw_index × gate , 0 , 100 )
+KBS        = 300 + 600 × index / 100                      →  300–900
+</code></pre>
+
+<p>Note the gate floor. Even a parcel with very poor observation quality retains 60% of its raw index; the gate annotates and discounts, it does not zero out.</p>
+
+<h4>Government benefits are tri-state</h4>
+<p>PM-KISAN enrolment and crop insurance are a <strong>positive-only bonus</strong>, +2 points each to a maximum of +4. Critically, the flag has three states and unknown is not scored like no:</p>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Value</th><th>Meaning</th><th>Effect on score</th></tr></thead>
+  <tbody>
+    <tr><td><code>null</code></td><td>Unknown &mdash; we were never told</td><td>Neutral. No penalty.</td></tr>
+    <tr><td><code>false</code></td><td>Confirmed absent</td><td>No bonus</td></tr>
+    <tr><td><code>true</code></td><td>Enrolled</td><td>Bonus</td></tr>
+  </tbody>
+</table>
+</div>
+<p>This is preserved through the queue, the engine and the persistence layer, where the field cleaner explicitly exempts these keys from null-stripping. It is a small thing that is easy to get wrong and materially unfair when wrong.</p>
+
+<h4>No-evidence floors</h4>
+<p>When zero cycles are detected the vigour and stability sub-indices fall to 25, not to a neutral 50. Previously they defaulted to 50 and 84 respectively &mdash; stability rewards the absence of stress events, and nothing stressful happens to a parking lot &mdash; so barren land scored well on its two strongest pillars. <em>"We observed nothing growing here"</em> is a negative finding, not a missing one. It is paired with the data-sufficiency check below so that ignorance is never reported as a finding.</p>
+
+<h4>Bands and reason codes</h4>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Index</th><th>KBS</th><th>Band</th><th>Risk category</th></tr></thead>
+  <tbody>
+    <tr><td class="num">75 &ndash; 100</td><td class="num">750 &ndash; 900</td><td>Excellent</td><td><span class="mono">LOW</span></td></tr>
+    <tr><td class="num">50 &ndash; 75</td><td class="num">600 &ndash; 750</td><td>Good</td><td><span class="mono">MEDIUM</span></td></tr>
+    <tr><td class="num">25 &ndash; 50</td><td class="num">450 &ndash; 600</td><td>Fair</td><td><span class="mono">HIGH</span></td></tr>
+    <tr><td class="num">0 &ndash; 25</td><td class="num">300 &ndash; 450</td><td>Poor</td><td><span class="mono">VERY_HIGH</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Four equal bands of 150 KBS points, 25 index points, and 45&deg; on the gauge. Reason codes are deterministic <code>{code, message, polarity}</code> triples, and each is conditional on the input that justifies it &mdash; <code>VIGOR_STRONG</code> only claims a peer comparison when a peer comparison actually ran.</p>
+
+<div class="note">
+  <span class="note-label">Weights are provisional and must be disclosed as such</span>
+  <p>The 30 / 25 / 20 / 25 split is AHP-style but has <strong>not</strong> been signed off by an expert panel, and no outcome data exists to calibrate it. Every surface that shows the weights labels them provisional. Getting agricultural and banking experts to run a formal AHP elicitation is a cheap, high-credibility win that needs no engineering.</p>
+</div>
+
+<h3><span class="sec">3.9</span>Data sufficiency &mdash; refusing to conclude from a blind window</h3>
+
+<p>This check exists because of a real result. The first drift run split cleanly into two groups: parcels where cycles were detected moved by a mean of &minus;8.6 points (a healthy correction), while parcels with zero cycles moved by &minus;50.5, all landing near 26 and <span class="mono">VERY_HIGH</span>. One of those parcels had <em>two 240-day stretches with no usable optical observation at all</em> &mdash; 41% of the window blind.</p>
+
+<p>Both the old and new numbers were wrong. The old pipeline manufactured cycles from noise. The new one correctly found none &mdash; then reported a confident <span class="mono">VERY_HIGH</span> for a parcel it could barely see. You cannot conclude "nothing grew here" from a period you did not observe, and a 240-day gap is longer than any annual crop cycle: an entire season could have been sown, grown and harvested inside it.</p>
+
+<p>The rule is physical, so it needs no ground truth to justify: <strong>if no cycles were detected and the record contains a contiguous unobserved gap longer than the shortest crop cycle we would recognise, the outcome is <span class="mono">INSUFFICIENT_DATA</span>, not a low score.</strong></p>
+
+<h3><span class="sec">3.10</span>Farmer-level aggregation</h3>
+
+<p>Satellites see land; credit goes to a person. A farmer with five parcels gets one score, and it is not an average.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Aggregation rule</th><th>Detail</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Per sub-index, not per score</strong></td><td>Vigour, stability, weather and data confidence combine as a tenure-and-area-weighted mean. Land-use additionally receives a bounded portfolio bonus, because total worked holdings genuinely are more productive capacity.</td></tr>
+    <tr><td><strong>Tenure weighting</strong></td><td>weight = area &times; tenure factor. An explicit ownership share is used directly; joint owners with no stated share give 1/(1+n); a cultivator who is not the record-of-rights owner is multiplied by a lease factor; a parcel excluded from assessment weighs zero.</td></tr>
+    <tr><td><strong>Diversification bonus</strong></td><td>A small positive that only exists at the farmer level: multiple crops, seasons and locations genuinely spread risk.</td></tr>
+    <tr><td><strong>Confidence gate re-derived</strong></td><td>The gate is recomputed at the farmer level and still gates the result.</td></tr>
+    <tr><td><strong>Stable parcel identity</strong></td><td><code>plot_key</code> is a fingerprint over survey number, village LGD code, area and centroid &mdash; not array position &mdash; so a re-ingest that reorders parcels does not break score history.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note">
+  <span class="note-label">Two credit-policy stances that should be conscious, not inherited</span>
+  <p><strong>The lease factor</strong> (0.35) decides how much a cultivated-but-not-owned parcel counts toward this borrower. A lending partner may want it lower, or may want non-owned parcels excluded entirely. <strong>The headline aggregation</strong> is a tenure-and-area-weighted mean; some lenders prefer a deliberately conservative weakest-parcel-aware number instead. Both are one-line changes in the aggregator. They should be a decision, not a default that ships silently into a lending product.</p>
+</div>
+
+<h3><span class="sec">3.11</span>Stage 10 &mdash; Explainability</h3>
+
+<p>Four layers, in descending order of how much we trust them:</p>
+
+<ol>
+  <li><strong>Reason codes.</strong> Deterministic, structured, conditional on the input that justifies them. This is the adverse-action layer.</li>
+  <li><strong>Driver captions.</strong> One grounded sentence per sub-index, built from that sub-index's own inputs by deterministic template. Deliberately not generated: an LLM asked to write these produces fluent sentences containing invented figures.</li>
+  <li><strong>Counterfactuals.</strong> Score-improvement scenarios computed as index deltas that are dimensionally correct against the scoring formula. No external API.</li>
+  <li><strong>Narrative.</strong> Optional Groq generation, optional Sarvam translation into Indian languages, with the model id and a prompt hash persisted alongside the text so a narrative shown to a loan officer is reproducible after the response ends. Both are off unless keys are set; a deterministic rule-based narrative is the fallback.</li>
+</ol>
+
+<p>Two honesty repairs sit here. The narrative surface previously described vigour as "peer-relative" and reason codes claimed "above peers" while no peer comparison had ever occurred &mdash; the cohort writer had no caller, so the benchmark permanently cold-started. That language is gone until the cohort is warm. And the SHAP-style attribution now reports <code>shap_available: false</code> on the heuristic path rather than claiming a computation it does not perform.</p>
+
+<h3><span class="sec">3.12</span>Peer benchmarking</h3>
+
+<p><span class="chip">Built, cold.</span> A percentile among parcels <em>we have assessed</em> in the same agro-climatic zone is a real, self-referential fact &mdash; it needs volume, not field data. The feature store has been accumulating the raw material on every run; the aggregation job that populates cohort statistics now exists and runs.</p>
+
+<p>It stays inactive until a zone reaches <strong>20 assessed parcels</strong>, because below that a percentile is an artefact of who happened to be onboarded first. Two honesty constraints are permanent: state the cohort size wherever a percentile appears, and describe it as <em>"compared to N parcels assessed in this zone"</em> &mdash; never as a population statistic, because our assessed set is not a random sample of Indian farms.</p>
+
+<h3><span class="sec">3.13</span>Stage 11 &mdash; Persistence</h3>
+
+<p>Three writes per run: the assessment, the evidence, and a score-history append. Together they mean a six-month-old assessment is retrievable and comparable, a parcel has a queryable score history, and the full index series behind any stored score can be recovered.</p>
+
+<p>The reasoning is not only about the report. <strong>You cannot retrospectively validate what you did not store.</strong> When field data arrives, this is what makes it usable against assessments already run &mdash; which is the single highest-leverage thing the current architecture does for the next twelve months.</p>
+<section class="part" id="part-4">
+  <p class="part-label">Part 4</p>
+  <h2>The application</h2>
+  <p class="part-note">The screens, the flows, and the design rules that keep the interface as honest as the pipeline.</p>
+</section>
+
+<h3><span class="sec">4.1</span>Routes</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Route</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>/login</code></td><td>Operator sign-in. bcrypt against the <code>users</code> collection; a seven-day httpOnly JWT cookie.</td></tr>
+    <tr><td><code>/</code></td><td>Home: the operator's farmer portfolio, grouped by location, with entry points into assessment.</td></tr>
+    <tr><td><code>/farmer</code></td><td>Farmer onboarding journey &mdash; identity, LGD location, parcel boundaries.</td></tr>
+    <tr><td><code>/farmer/farms</code></td><td>Parcel management for an existing farmer.</td></tr>
+    <tr><td><code>/agristack</code></td><td>AgriStack sandbox: endpoint explorer, request editor, webhook inbox, and "Save to Platform" ingest.</td></tr>
+    <tr><td><code>/agristack/connect</code></td><td>AgriStack credential session.</td></tr>
+    <tr><td><code>/dashboard</code></td><td>The assessment surface. Enqueue, watch progress, read the verdict and its evidence.</td></tr>
+    <tr><td><code>/dashboard/farm/[farm_id]</code></td><td>Single-parcel detail within a holding.</td></tr>
+    <tr><td><code>/report/[farmer_id]</code></td><td>The print-first credit dossier, driven entirely by the report contract.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>A single proxy gate protects everything except <code>/login</code>, the auth routes, and the public webhook paths. Every server route that touches a farmer record checks ownership through one shared helper &mdash; and returns <strong>404 rather than 403</strong> on a farmer the caller does not own, because a 403 confirms the farmer exists, which is itself a disclosure.</p>
+
+<h3><span class="sec">4.2</span>Flow one &mdash; onboarding a farmer directly</h3>
+
+<ol>
+  <li><strong>Identity.</strong> Name, phone, optional government identifiers.</li>
+  <li><strong>Location.</strong> Cascading state / district / taluka / village selectors backed by the LGD dataset, with reverse lookup from coordinates so drawing a boundary can auto-fill the administrative hierarchy.</li>
+  <li><strong>Parcels.</strong> Draw on a satellite basemap with Leaflet and Geoman, or upload GeoJSON, KML or a zipped shapefile. Each parcel captures area, survey number, tenure and an optional declared crop and sowing date.</li>
+  <li><strong>Save.</strong> Written to <code>farm_info</code> in the shape the pipeline consumes.</li>
+</ol>
+
+<p>This path produces the good data. In the live geometry audit, <strong>all seven application-drawn parcels fell inside the area tolerance and six were fully viable</strong>. It is worth knowing which path a parcel came from before judging an assessment.</p>
+
+<h3><span class="sec">4.3</span>Flow two &mdash; ingesting from AgriStack</h3>
+
+<p>AgriStack's Seek pattern is asynchronous, which shapes the whole screen:</p>
+
+<pre><code>Operator enters farmer_id
+   → Token   (via Mumbai Lambda)          → access_token
+   → Seek    (via Mumbai Lambda)          → ACK + correlation_id
+   … AgriStack calls back, minutes later …
+   → Lambda /webhook/farmers/on-seek      → webhook_farmers_responses
+   → Webhook inbox in the UI, matched by correlation_id
+   → "Save to Platform" → parcels clustered → farm_info upsert
+</code></pre>
+
+<p>The sandbox page doubles as an integration console: five endpoints (Token, farmer-and-land by id, land parcel by LGD and survey, general Seek, Krishi DSS Seek) with editable headers and bodies, response timing, and a webhook inbox. It has been genuinely useful for debugging a government API whose failure modes are not documented.</p>
+
+<h3><span class="sec">4.4</span>Flow three &mdash; running an assessment</h3>
+
+<p>Submit a farmer, and the dashboard enqueues a job and polls Mongo for status. Because the pipeline can legitimately take minutes, progress is surfaced as pipeline stage text rather than an opaque spinner, and for multi-parcel holdings partial results stream in per parcel as each finishes.</p>
+
+<p>The result page has four zones in a deliberate reading order:</p>
+
+<pre><code>┌─ VERDICT ─────────────────────────────────── above the fold ─┐
+│  gauge + band + KBS        │  verdict sentence               │
+│                            │  weakest driver · trend · flags │
+├─ EVIDENCE ───────────────────────────────────────────────────┤
+│  score build-up waterfall  │  NDVI trajectory                │
+│  observation calendar      │  land cover · crop verification │
+├─ HOLDING ────────────────────────────────────────────────────┤
+│  parcel table + boundary map, hover-linked                   │
+├─ PROVENANCE ───────────────────── collapsed by default ──────┤
+│  versions · window · weights · sources · integrity hash      │
+└──────────────────────────────────────────────────────────────┘
+</code></pre>
+
+<p>A loan officer who trusts the system stops after zone one. A credit committee reads all four. That is the design target: four seconds to a verdict, with the full defence one scroll away.</p>
+
+<h3><span class="sec">4.5</span>The two panels that carry the most weight</h3>
+
+<h4>The score waterfall &mdash; why this number</h4>
+<p>Four sub-index bars used to sit beside an orphaned <code>0.92</code>. They now show the arithmetic:</p>
+<ul>
+  <li><strong>Bars encode contribution, not score.</strong> Each track is sized to its <em>weight</em>, so the four together span the full 100 points a raw index can reach, and each is filled to its contribution. A sub-index of 42 matters differently at weight 30 than at weight 20, and four equal-length bars could never show that.</li>
+  <li><strong>The unfilled part of a track is the recoverable loss</strong> &mdash; which is the number a loan officer actually acts on.</li>
+  <li><strong>The gate is a step in points, not a multiplier in a box.</strong> And where the footprint was substituted, the engine folds that discount into the gate in place, so it is named inside the gate row rather than drawn as a separate step, which would misstate the formula.</li>
+  <li><strong>The clip is named.</strong> When the raw index clips to range, a row says so. Silently showing parts that add to a different total looks like an arithmetic error.</li>
+</ul>
+<p>Nine assertions in the smoke suite pin this arithmetic against the Python engine's, including that four all-100 drivers reach exactly 100 &mdash; otherwise the tracks would imply unreachable headroom.</p>
+
+<h4>The NDVI trajectory &mdash; what we actually saw</h4>
+<p>Three rules, each load-bearing:</p>
+<ul>
+  <li><strong>Gaps stay gaps.</strong> No line is drawn across a bin with no observation; the blind span gets a hatched band and a count. A line through a cloudy fortnight asserts a measurement that was never taken.</li>
+  <li><strong>Provenance is texture, not colour.</strong> Optical solid, fused dashed, radar dash-dot, reconstructed dotted. It is the same quantity at different confidence; a colour change would imply a different measurement, and colour is reserved for magnitude.</li>
+  <li><strong>Markers only on directly observed bins.</strong> A dot asserts "we saw this", so reconstructed values do not get one.</li>
+</ul>
+<p>The y-axis is floored at zero rather than at the series minimum, which would exaggerate small variation into a dramatic curve. And there is no synthesised district median &mdash; until a cohort is warm, the parcel's own line is drawn alone with the reason stated.</p>
+
+<h3><span class="sec">4.6</span>The honesty layer</h3>
+
+<p>This is the part with no equivalent in a conventional dashboard, and the part most worth having built.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Component</th><th>What it guarantees</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Terminal-state resolver</strong></td><td>One function maps every backend outcome to <span class="mono">SCORED / NOT_FARMLAND / UNOBSERVED / FAILED / PENDING</span>. It is the only place in the app that knows the skip-reason prefixes, so an exclusion can never be mistaken for a crash.</td></tr>
+    <tr><td><strong>Refusal panels</strong></td><td>A distinct screen per refusal, each carrying its own evidence: the observed land-cover class and confidence, or the weeks observed, clear coverage, longest blind gap and radar-only counts. No gauge, no band arc, no greyed placeholder.</td></tr>
+    <tr><td><strong>Two insufficiency causes, kept apart</strong></td><td>A parcel below the measurable floor needs the <em>boundary</em> re-drawn; a cloud-gapped window just needs a later observation. Different fixes, so different screens. The panel says outright: <em>"This is a statement about our view of the field, not about the field."</em></td></tr>
+    <tr><td><strong>Confidence strip and gate badge</strong></td><td>States what the gate <em>did</em> &mdash; "score reduced 8%, limited observation" &mdash; rather than a bare 0.92 nobody can interpret.</td></tr>
+    <tr><td><strong>Footprint banner</strong></td><td>Full-width, not a footnote. When the geometry was substituted, every number on the page describes different ground than the polygon on screen.</td></tr>
+    <tr><td><strong>Omitted panels</strong></td><td>Where the backend declares a panel omitted, the slot renders with the backend's own reason. A blank space invites someone to fill it later.</td></tr>
+    <tr><td><strong>Cold-start panel</strong></td><td>The peer panel renders "6 of 20 parcels in this zone" rather than hiding, which would make a pending feature look absent, or faking a percentile, which would be worse.</td></tr>
+    <tr><td><strong>No fabricated zeros</strong></td><td>On a first assessment the trend tile shows nothing &mdash; not a delta of zero. A helper enforces this at the call site, and a contract test pins it.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">4.7</span>The report dossier</h3>
+
+<p><code>/report/[farmer_id]</code> renders the <code>report_payload_v1</code> contract in a single print-first column: A4, 14&nbsp;mm margins, charts as SVG so they print at full resolution, section-level page-break control, and a provenance footer with a deterministic content hash on every page. It replaced a set of print-media overrides on the dashboard, which reformatted a web page rather than rendering a credit document.</p>
+
+<p>What the dossier deliberately does <em>not</em> contain is as important as what it does. The supplied design reference had panels the pipeline cannot honestly fill:</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Design panel</th><th>Verdict</th></tr></thead>
+  <tbody>
+    <tr><td>"Suggested action &middot; defer 30 days &middot; committee threshold 55 &middot; re-assess 11 Oct &middot; projected band on recovery"</td><td><span class="chip off">Not built.</span> No policy engine and no validated forecast. Fabricating a lending recommendation is the single worst thing this interface could do.</td></tr>
+    <tr><td>District-median NDVI comparison line</td><td><span class="chip off">Not built until cohorts warm.</span> A synthesised median in the most visually persuasive part of the report is the worst possible place to guess.</td></tr>
+    <tr><td>"Reviewed by / review status"</td><td><span class="chip off">Not built.</span> No review workflow exists.</td></tr>
+    <tr><td>Aadhaar, date of birth, mobile in the header</td><td><span class="chip off">Not built.</span> Masking policy unsettled. The payload deliberately never reaches into <code>farm_info</code> for it; the caller supplies what it is already authorised to show.</td></tr>
+    <tr><td>Scale 300&ndash;950 with five credit-policy bands</td><td><span class="chip off">Not adopted.</span> Four agronomic bands over 300&ndash;900. Five <em>credit-policy</em> bands imply a policy engine we do not have.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The resulting document is materially thinner than the mockup, and that is the correct outcome. Every dropped panel is one the design filled with invented specifics.</p>
+
+<h3><span class="sec">4.8</span>Design system</h3>
+
+<p>The visual direction is an <strong>editorial dossier</strong>: cream paper, hairline rules, warm shadows, generous type, near-zero imagery. It should read as a credit document and print as one.</p>
+
+<p>Imagery earns its place only when it <em>is</em> evidence &mdash; the Sentinel-2 basemap under a parcel boundary. A photograph of a wheat field behind a login form is the visual equivalent of a fabricated data point: it implies a richness the screen is not delivering. The texture comes from paper, rule weight and typography.</p>
+
+<h4>One colour, one meaning</h4>
+<p>There were <em>five</em> competing score-to-colour ramps in the app, so an index of 68 could render amber, green and "Good" simultaneously depending on which component drew it. All five are now one function. The band definitions carry a mark colour, a text-safe ink step, a tinted surface and a border, and the backend risk category maps onto the same four bands so a risk pill and the gauge cannot disagree.</p>
+
+<p>The four band hexes were validated rather than chosen &mdash; run through a palette validator against the cream surface for lightness banding, chroma floor, colour-vision-deficiency separation and contrast. The previous set failed: the two bands that decide fundability measured &Delta;E 8.8 for <em>normal</em> colour vision, meaning they were not reliably distinguishable.</p>
+
+<h4>Colour is never the only channel</h4>
+<p>A red&ndash;amber&ndash;green scale is structurally unsafe under protanopia; no re-stepping fixes it, because the amber-green pair collapses. So every band renders with its <strong>name</strong>, and on the gauge with its <strong>position on the arc</strong>. A bare coloured chip with no adjacent word is forbidden.</p>
+
+<h4>What the design pass measured and fixed</h4>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Finding</th><th>Resolution</th></tr></thead>
+  <tbody>
+    <tr><td>242 raw hex literals across components</td><td>All replaced with theme tokens generating real utilities</td></tr>
+    <tr><td>107 uses of a grey measuring 2.3:1, carrying 10&nbsp;px labels</td><td>Retired for a token at 4.5:1 &mdash; it was a straight accessibility failure on the smallest text in the product</td></tr>
+    <tr><td>Nine places painting text in a mark colour measuring 1.92:1</td><td>Switched to the band's ink step</td></tr>
+    <tr><td>35 map-style literals across four components</td><td>One style module covering assessed, warned, focused, declared and drawing states</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h4>No charting library, deliberately</h4>
+<p>Charts are hand-built SVG over a small shared primitive module. The reason is the gap rule: a general-purpose charting library bridges nulls by default, and a line drawn through an unobserved fortnight is a false claim. Owning the path generation means the honest behaviour is the default rather than a configuration flag someone can forget. The primitives are also print-safe and server-renderable, and every chart carries an accessible name and a table view.</p>
+
+<h4>Accessibility and print</h4>
+<p>Full keyboard path through tabs, filters and the parcel list; visible focus rings; live-region announcements for job progress; a table fallback for every chart; reduced-motion honoured throughout. Dark mode is explicitly out of scope until after pilot &mdash; every hex is validated against the cream surface only, and a dark theme is a second validated palette rather than an inversion.</p>
+<section class="part" id="part-5">
+  <p class="part-label">Part 5</p>
+  <h2>Engineering practice</h2>
+  <p class="part-note">How we know the thing works, how it runs, and how it is deployed.</p>
+</section>
+
+<h3><span class="sec">5.1</span>Testing</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Suite</th><th>Scope</th><th>Size</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Backend pytest</strong></td><td>Land-cover gate, parcel viability, data sufficiency, signal scale, cycle detection, perennials, season assignment, phenology metrics, crop verification, scoring golden tests, no-evidence paths, evidence snapshot, driver captions, cohort builder, drift analysis, report payload, Mongo encoding, plot-key stability</td><td class="num">313 tests / 24 files</td></tr>
+    <tr><td><strong>Frontend smoke</strong></td><td>Terminal-state resolution, score-to-colour mapping, waterfall arithmetic against the Python formula, chart-path primitives</td><td class="num">~60 assertions</td></tr>
+    <tr><td><strong>Report contract</strong></td><td>Backend and frontend types checked in both directions against payloads generated by calling the Python builder directly</td><td class="num">26 assertions</td></tr>
+    <tr><td><strong>Type check</strong></td><td><code>tsc --noEmit</code> across the app</td><td>&mdash;</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The backend suite grew from 6 tests to 313 during the v6 pass. Two categories are worth calling out because they catch a class of bug that ordinary unit tests do not.</p>
+
+<h4>The score drift harness</h4>
+<p>Every correctness fix in the pipeline changes scores. "We fixed it, trust us" is not something to put in front of a lender, so the drift harness answers concretely: <em>how much moved, in which direction, for whom, and driven by which pillar.</em> It compares the most recent stored assessment written by the old code against a fresh run of the current code &mdash; no need to keep the old pipeline runnable.</p>
+
+<p>It should run before every release, because it has already caught three defects the unit tests missed:</p>
+<ol>
+  <li>The agro prior was dragging the peak gate down to bare soil, on an absolute clamp written for the old signal scale.</li>
+  <li>Three discriminator indices never reached the land-cover gate, because a hand-written key list in the binning step silently dropped every index added after it.</li>
+  <li>The no-evidence floor never fired. Its test asserted it and passed &mdash; because the fixture omitted a key the real analyser always supplies. <strong>A test that only exercises the shape it invented is not a test of the pipeline.</strong></li>
+</ol>
+
+<h4>The report contract test</h4>
+<p>It checks both directions &mdash; backend keys the frontend does not type would be silently dropped data; typed keys the backend never sends would render as undefined &mdash; and pins the things a renderer must not get wrong: that the scale is 300&ndash;900, that positioning is the agronomic index, that the four band names match the gauge, that the omitted panels are still named, and that <strong>the backend's KBS equals the frontend's own index-to-KBS mapping</strong>. Without that last assertion, the gauge and the report could print two different numbers for one assessment.</p>
+
+<h3><span class="sec">5.2</span>Running it locally</h3>
+
+<p>Three processes, and only the first two are strictly required.</p>
+
+<h4>1. The API</h4>
+<pre><code>cd backend/Credit_assessment
+# copy .env.example → .env, set MONGODB_URI and GEE credentials
+uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload
+</code></pre>
+<p>Imports are package-relative, so <code>uvicorn</code>, <code>worker.py</code> and the dev tools all run from that directory, not from the repository root.</p>
+
+<h4>2. Job execution &mdash; pick one</h4>
+<ul>
+  <li><strong>In-process (recommended locally):</strong> set <code>PIPELINE_API_URL=http://127.0.0.1:8000</code> in <code>frontend/.env.local</code>. The dashboard posts to <code>/v1/jobs/assess</code> and the API runs the job itself.</li>
+  <li><strong>Separate worker:</strong> leave <code>PIPELINE_API_URL</code> unset and run <code>python worker.py</code>. The Next.js route inserts a QUEUED job directly into Mongo and the worker claims it.</li>
+</ul>
+
+<h4>3. The application</h4>
+<pre><code>cd frontend
+npm install
+npm run dev          # :3000
+npm run verify       # smoke + report contract + tsc
+</code></pre>
+
+<div class="note">
+  <span class="note-label">The one configuration trap</span>
+  <p>If <code>PIPELINE_API_URL</code> is unset <em>and</em> no worker is running, enqueue still succeeds &mdash; the Mongo insert works fine &mdash; and jobs sit QUEUED forever with no error surfaced anywhere. A worker-heartbeat check at intake is open work; until then this is the first thing to check when an assessment never completes.</p>
+</div>
+
+<h3><span class="sec">5.3</span>Deployment</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Service</th><th>Host</th><th>Build</th><th>Key configuration</th></tr></thead>
+  <tbody>
+    <tr><td>Assessment API</td><td>Render, Docker</td><td>Dockerfile in <code>backend/Credit_assessment</code>; Conda geospatial stack plus pip</td><td><code>MONGODB_URI</code>, GEE credentials, optional <code>API_SERVICE_KEY</code>; health check at <code>/health</code></td></tr>
+    <tr><td>Application</td><td>Render, Node</td><td><code>npm ci &amp;&amp; npm run build</code></td><td><code>MONGODB_URI</code>, <code>AUTH_SECRET</code>, <code>PIPELINE_API_URL</code>, <code>AGRISTACK_PROXY_*</code>, <code>NEXT_PUBLIC_APP_DOMAIN</code></td></tr>
+    <tr><td>AgriStack edge</td><td>AWS Lambda <code>ap-south-1</code></td><td>Upload <code>function.zip</code></td><td><code>MONGODB_URI</code>, <code>AGRISTACK_PROXY_SECRET</code>, <code>LAMBDA_PUBLIC_BASE_URL</code> (plain URL &mdash; a markdown-wrapped URL here broke Seek once)</td></tr>
+    <tr><td>Database</td><td>MongoDB Atlas</td><td>&mdash;</td><td>Database <code>agristack</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The Render blueprint uses build filters so a frontend-only push skips the API Docker rebuild and vice versa. There is <strong>no CI pipeline in the repository today</strong> &mdash; the test suites exist and pass but nothing runs them automatically on push. That is the cheapest remaining engineering win.</p>
+
+<h3><span class="sec">5.4</span>Security and privacy posture</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Area</th><th>State</th></tr></thead>
+  <tbody>
+    <tr><td>JWT signing</td><td><span class="chip on">Fixed.</span> The hardcoded fallback secret is gone; the app throws at boot in production if <code>AUTH_SECRET</code> is unset.</td></tr>
+    <tr><td>Webhook authentication</td><td><span class="chip on">Fixed.</span> A shared-secret gate is mandatory in production and returns 401 with an empty body on failure. Permissive in development only.</td></tr>
+    <tr><td>Credential isolation</td><td>AgriStack and pipeline credentials are server-side only. Passwords are never in <code>NEXT_PUBLIC_*</code> variables, which ship to the browser.</td></tr>
+    <tr><td>Ownership enforcement</td><td>One shared helper, used by the enqueue and report routes. 404 not 403 on non-owned records.</td></tr>
+    <tr><td>API service key</td><td>Optional <code>X-API-Key</code> on the FastAPI service; the proxy holds it so it never reaches the browser.</td></tr>
+    <tr><td>Farmer PII in reports</td><td>The report payload deliberately never reads <code>farm_info</code> for Aadhaar, mobile or date of birth. <span class="chip off">Masking policy unsettled</span> &mdash; an open decision, not an oversight.</td></tr>
+    <tr><td>Rate limiting on enqueue</td><td><span class="chip off">Open.</span> Each enqueue triggers the most expensive operations in the system. A double-click or a script could produce a real quota and cost spike.</td></tr>
+    <tr><td>Job-status authorisation</td><td><span class="chip">Partial.</span> Login is required; per-job ownership on the status endpoint is open work.</td></tr>
+    <tr><td>Lint</td><td><span class="chip off">Broken repo-wide</span> by a dependency override that minimatch cannot consume. Lint has been guarding nothing. Pre-existing and unrelated to product logic, but worth a fix.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<section class="part" id="part-6">
+  <p class="part-label">Part 6</p>
+  <h2>Where we actually stand</h2>
+  <p class="part-note">Read this before any external claim. The distinction between defensible and verified is the whole answer.</p>
+</section>
+
+<p class="lead">The pipeline is <strong>defensible</strong>, not <strong>verified</strong>. Every number it produces is physically grounded and traceable to a source. None of them has been checked against a field observation, because we have never had one.</p>
+
+<h3><span class="sec">6.1</span>Verified on real parcels</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Capability</th><th>State</th><th>Evidence</th></tr></thead>
+  <tbody>
+    <tr><td>Rejects open water</td><td><span class="chip on">Verified</span></td><td>NDVI negative throughout (&minus;0.36 to &minus;0.03), MNDWI positive in 90% of 89 observations. Physically unambiguous.</td></tr>
+    <tr><td>Rejects built-up land</td><td><span class="chip on">Verified</span></td><td>NDBI positive in 99% of 90 observations; NDVI never above 0.17.</td></tr>
+    <tr><td>Does not reject fallow farmland</td><td><span class="chip on">Verified</span></td><td>No false rejection observed on a clean parcel.</td></tr>
+    <tr><td>Detects perennials</td><td><span class="chip on">Verified</span></td><td>A real orchard: three production years, 90.7% land utilisation, index 75.5. Previously returned zero cycles and scored as abandoned land.</td></tr>
+    <tr><td>Refuses unmeasurable parcels</td><td><span class="chip on">Verified</span></td><td>Four parcels correctly refused at 4&ndash;9 pixels against a 15-pixel floor.</td></tr>
+    <tr><td>Keeps the three answers distinct</td><td><span class="chip on">Verified</span></td><td>Each terminal state carries its own evidence block end to end.</td></tr>
+    <tr><td>Detects continuously-cropped land</td><td><span class="chip">Fix shipped, not re-run</span></td><td>Was returning zero cycles on a western-UP wheat&ndash;rice farm with NDVI amplitude 0.41. Passed unit tests; never re-run against imagery.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">6.2</span>Not verified, and not verifiable without field data</h3>
+
+<ul>
+  <li><strong>Whether a score of 61 means the right thing.</strong> We have shown the scores are coherent, physically grounded and no longer inflated. We have <em>not</em> shown they predict anything.</li>
+  <li><strong>Cycle dates.</strong> Sowing and harvest points are plausible and internally consistent; nothing has checked them against an actual sowing record.</li>
+  <li><strong>Any accuracy figure.</strong> None exists. None should be quoted, internally or externally.</li>
+</ul>
+
+<h3><span class="sec">6.3</span>Measured drift from the v6 correctness pass</h3>
+
+<p>Ten farmers were re-assessed against their stored pre-cutover scores:</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Group</th><th>n</th><th>Mean change</th><th>Reading</th></tr></thead>
+  <tbody>
+    <tr><td>Cycles detected</td><td class="num">5</td><td class="num">&minus;8.6</td><td>The honest drift figure. A healthy correction from a signal that was previously inflated.</td></tr>
+    <tr><td>Zero cycles</td><td class="num">3</td><td class="num">&minus;50.5</td><td>Now correctly <span class="mono">INSUFFICIENT_DATA</span> rather than a confident very-high-risk score.</td></tr>
+    <tr><td>Non-agricultural</td><td class="num">2</td><td>rejected</td><td>Barren and water, both with clean geometry. Previously scored.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p><strong>&minus;8.6 is the figure to quote.</strong> The &minus;24.3 headline from the first run mixed unassessable parcels into the distribution, which is exactly the kind of number this document exists to prevent.</p>
+
+<h3><span class="sec">6.4</span>The binding constraint is the ingest, not the pipeline</h3>
+
+<div class="note">
+  <span class="note-label">This is the number one item in the company</span>
+  <p>A geometry audit over the live database &mdash; 19 farmers, 113 parcels &mdash; found the parcel records themselves are largely unusable, and the split by source is total.</p>
+</div>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Source</th><th>Parcels</th><th>Area ratio in tolerance</th><th>Median size</th><th>Viable at 0.15 ha</th></tr></thead>
+  <tbody>
+    <tr><td>Application-drawn</td><td class="num">7</td><td class="num">7 / 7</td><td class="num">1.59 ha</td><td>6 viable, 1 marginal, 0 refused</td></tr>
+    <tr><td>AgriStack-ingested</td><td class="num">106</td><td class="num">7 / 106</td><td class="num">0.11 ha</td><td>1 viable, 51 marginal, 54 refused</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Polygon-versus-registered area ratios span <strong>0.022 to 1841 in both directions</strong>. A unit-conversion error would cluster on one constant; this scatter means the polygon and the registered area are describing <strong>different parcels</strong>. The worst observed case had 0.0036&nbsp;ha registered against a 6.63&nbsp;ha polygon.</p>
+
+<p>No amount of pipeline work fixes this. The scoring pipeline can now detect and refuse these parcels &mdash; which is precisely why the problem became visible &mdash; but it cannot repair the pairing. The fix belongs in the AgriStack ingest path: the Lambda and the ingest module in the application.</p>
+
+<p>Two consequences follow, and both are commercial rather than technical. First, <strong>a pilot should be run on application-drawn boundaries</strong>, where the data is good, rather than on bulk AgriStack ingest. Second, <strong>the ingest defect must be diagnosed before AgriStack is presented as a data-acquisition advantage</strong>, because today it supplies one usable parcel in a hundred.</p>
+
+<h3><span class="sec">6.5</span>Live gaps, in order of how much they matter</h3>
+
+<ol>
+  <li><strong>AgriStack ingest quality</strong> (&sect;6.4). Caps everything downstream.</li>
+  <li><strong>Crop-specific analysis rarely runs.</strong> The classifier is quarantined, so a crop name only arrives via the registry &mdash; and only unlocks crop-specific paths when phenology verification passes. Where it does not, the per-stage weather analysis contributes nothing and a large body of ICAR reference data stays dormant.</li>
+  <li><strong>Peer benchmarking is cold</strong> and stays cold until parcel volume improves. A percentile needs 20 assessed plots per zone; there are currently seven viable parcels in total.</li>
+  <li><strong>Third-party LULC is disabled</strong> pending the published-accuracy record. This is the strongest land-cover evidence stream and it is switched off by a documentation task.</li>
+  <li><strong>Radar reliance is visible but unvalidated.</strong> The radar-to-signal mapping is fitted on clear-season bins and extrapolated onto monsoon radar. The reliance is now recorded per assessment; its accuracy is not established.</li>
+  <li><strong>Nothing has been visually verified.</strong> No screen has been rendered against a real assessment in a credentialed environment. The interface is backed by type checks, 98 assertions and a successful build &mdash; not by looking. The dual-footprint map and the NDVI trajectory are the two most worth a manual pass before a pilot.</li>
+  <li><strong>Structural debt:</strong> two schemas still coexist in the assessment collection, the queue collection is still the de-facto payload store, and the dashboard page still holds job orchestration inline.</li>
+</ol>
+
+<h3><span class="sec">6.6</span>What would make it verified</h3>
+
+<p>One thing, and it is cheap: <strong>a manual review queue over rejections and zero-cycle outcomes.</strong> Every parcel a human eyeballs against high-resolution imagery is a ground-truth sample we did not have yesterday, and it is the only route to a measured false-rejection rate. It should start with the first operational batch, before it is needed.</p>
+<section class="part" id="part-7">
+  <p class="part-label">Part 7</p>
+  <h2>Roadmap</h2>
+  <p class="part-note">In priority order, with what blocks each item. The separation between "needs effort" and "needs data" is the important distinction.</p>
+</section>
+
+<h3><span class="sec">7.1</span>Before a pilot</h3>
+
+<p>Nothing here is large. Together they are the difference between a demo and a pilot.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>#</th><th>Item</th><th>Why now</th><th>Owner type</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td><strong>Diagnose the AgriStack ingest geometry defect</strong></td><td>One usable parcel in a hundred from that source. Everything downstream is capped by it.</td><td>Engineering</td></tr>
+    <tr><td class="num">2</td><td><strong>Record the published LULC accuracy and enable the third-party stream</strong></td><td>Half a day of reading unblocks the strongest land-cover evidence we have. Must be the South Asia cropland figure, not the global headline.</td><td>Data science</td></tr>
+    <tr><td class="num">3</td><td><strong>Start the manual review queue on rejections</strong></td><td>The only route to a measured false-rejection rate. Every day without it loses samples.</td><td>Operations</td></tr>
+    <tr><td class="num">4</td><td><strong>Re-run the drift harness against real imagery</strong></td><td>The continuously-cropped-land fix has never been validated on a real farm.</td><td>Engineering</td></tr>
+    <tr><td class="num">5</td><td><strong>Visual pass over every screen with a credentialed environment</strong></td><td>No screen has been rendered against a real assessment.</td><td>Product / design</td></tr>
+    <tr><td class="num">6</td><td><strong>Settle the PII masking policy</strong></td><td>Blocks the report header. A decision, not a build.</td><td>Founders</td></tr>
+    <tr><td class="num">7</td><td><strong>Rate-limit the enqueue route</strong></td><td>A cheap endpoint triggering the most expensive operation in the system.</td><td>Engineering</td></tr>
+    <tr><td class="num">8</td><td><strong>Worker-heartbeat check at intake</strong></td><td>Closes the silent-stall failure mode.</td><td>Engineering</td></tr>
+    <tr><td class="num">9</td><td><strong>Continuous integration running both suites on push</strong></td><td>313 tests that nothing runs automatically.</td><td>Engineering</td></tr>
+    <tr><td class="num">10</td><td><strong>Fix the repo-wide lint break</strong></td><td>Lint has been guarding nothing.</td><td>Engineering</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">7.2</span>Near term &mdash; quality and credibility</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Item</th><th>What it buys</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Formal AHP weight elicitation</strong> with agricultural and banking experts</td><td>Turns "provisional weights" into "expert-signed-off weights". No engineering, high credibility in a lender conversation.</td></tr>
+    <tr><td><strong>Decide the lease factor and the aggregation stance</strong> with a lending partner</td><td>Two one-line changes that encode a credit-policy position. They should be chosen, not inherited.</td></tr>
+    <tr><td><strong>Warm the first peer cohort</strong></td><td>Twenty assessed parcels in one zone activates percentile language across the product. Concentrating onboarding geographically gets there faster than spreading it.</td></tr>
+    <tr><td><strong>Unify the two assessment schemas</strong></td><td>A single-farm result becomes a one-parcel multi-farm result. One writer, one shape. Removes a whole class of analytics bug.</td></tr>
+    <tr><td><strong>Retire the queue collection as a data store</strong></td><td>Assessment plus evidence become authoritative; the job row shrinks to a status pointer.</td></tr>
+    <tr><td><strong>Per-parcel assessment rows</strong></td><td>A parcel gets a queryable score history rather than existing only as a slim row inside an aggregate.</td></tr>
+    <tr><td><strong>Weather source upgrade</strong> &mdash; enable IMD gridded, ERA5-Land, CHIRPS</td><td>Implemented already; needs data access. IMD is the authoritative source for India and NASA POWER is a fallback.</td></tr>
+    <tr><td><strong>Radar discipline</strong></td><td>Bound the radar-to-signal extrapolation to its training domain, or mark out-of-domain bins low quality. Include descending passes.</td></tr>
+    <tr><td><strong>Honest STAC path</strong></td><td>Either fetch the scene classification layer and mask properly, or stop stamping the mask version and discount confidence accordingly.</td></tr>
+    <tr><td><strong>Searchable farmer picker</strong></td><td>Field staff think in names and villages, not internal identifiers. One endpoint and one component.</td></tr>
+    <tr><td><strong>Split the dashboard page</strong></td><td>Job orchestration is still inline in a large page component.</td></tr>
+    <tr><td><strong>Bounded-concurrency job pool</strong></td><td>Replaces a single global lock. A distributed queue with a dead-letter path is the documented next step after that.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">7.3</span>Larger investments</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Item</th><th>Note</th></tr></thead>
+  <tbody>
+    <tr><td>Double-logistic phenology fitting with fit-quality R&sup2; on every cycle</td><td>More robust under gaps than the current peak walk, and gives an honest per-cycle confidence.</td></tr>
+    <tr><td>Dynamic monsoon-onset snapping and an ICAR/NARP zone spatial join</td><td>Replaces fixed calendar anchors and coarse latitude bands with real agro-climatic geography.</td></tr>
+    <tr><td>Regional or per-zone model variants</td><td>Requires zone-stratified samples. Long horizon.</td></tr>
+    <tr><td>Champion / challenger and population-stability monitoring</td><td>Stubs exist in the calibration block. Becomes meaningful once volume and outcomes exist.</td></tr>
+    <tr><td>Compliance-only explanation export</td><td>Deterministic blocks with no generated text, for regulated adverse-action use.</td></tr>
+    <tr><td>Intercropping and staggered-sowing detection</td><td>Needs pixel-level ground truth. Long horizon.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">7.4</span>Deferred &mdash; blocked on data, not effort</h3>
+
+<p>Everything in this table is blocked on data we do not have. Attempting any of it now would mean inventing the missing evidence. Each row names its unblocking condition, so this list doubles as the field-data collection specification.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Item</th><th>Blocked on</th><th>Unblocks at</th></tr></thead>
+  <tbody>
+    <tr><td>Retrain the crop classifier</td><td>Field-verified crop labels, geolocated, season-stamped</td><td>Roughly 2&ndash;3k parcels across agro-climatic zones, split <em>grouped by farm</em> &mdash; the existing artefact's accuracy is likely inflated precisely because that was not done</td></tr>
+    <tr><td>Turn crop classification on in the live path</td><td>The retrain, plus a held-out regional validation set</td><td>Per-zone accuracy measured, not assumed</td></tr>
+    <tr><td>Absolute yield in tonnes per hectare, and rupee estimates</td><td>Observed yields paired with assessed parcels</td><td>One season of harvest records per crop and zone</td></tr>
+    <tr><td>Calibrate yield potential to regional yield quantiles</td><td>Same</td><td>Same</td></tr>
+    <tr><td>Tune cycle-detection thresholds to real phenology</td><td>Observed sowing and harvest dates</td><td>A few hundred parcels with recorded sowing dates</td></tr>
+    <tr><td>Measure the land-cover gate's false-rejection rate</td><td>Site visits or high-resolution imagery review</td><td>First operational batch &mdash; start tracking from day one</td></tr>
+    <tr><td>Probability-of-default calibration</td><td>Loan performance outcomes</td><td>One full lending cycle with repayment data. The calibration fields are already reserved and null.</td></tr>
+    <tr><td>Convert the index into a lending limit</td><td>The above</td><td>Same</td></tr>
+    <tr><td>Publish any accuracy figure</td><td>Whichever of the above the claim concerns</td><td>&mdash;</td></tr>
+    <tr><td>Weights beyond "AHP provisional"</td><td>Expert panel sign-off, or outcome data</td><td>Until then the interface must keep disclosing them as provisional</td></tr>
+    <tr><td>Policy action layer &mdash; deferral windows, committee thresholds</td><td>Lender policy definition</td><td><strong>A conversation, not data.</strong> The one deferred item unblocked by a meeting.</td></tr>
+    <tr><td>Report review workflow and reviewer attribution</td><td>A workflow that does not exist</td><td>Product decision</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note">
+  <span class="note-label">Collect from day one, even before it is usable</span>
+  <p>Verified crop labels, sowing and harvest dates, and human land-cover verdicts on rejected parcels. The evidence store makes it possible to attach them retrospectively to assessments already run. That single practice is the highest-leverage thing available for the next twelve months.</p>
+</div>
+
+<section class="part" id="part-8">
+  <p class="part-label">Part 8</p>
+  <h2>Decisions and operations</h2>
+  <p class="part-note">What still needs an owner, and how to run the system day to day.</p>
+</section>
+
+<h3><span class="sec">8.1</span>Decisions already taken</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Decision</th><th>Resolution</th></tr></thead>
+  <tbody>
+    <tr><td>Non-agricultural land handling</td><td>Confidence-banded, three states: reject with no score, score-but-flag with a discounted gate, or flag as unknown.</td></tr>
+    <tr><td>Score scale</td><td>300&ndash;900 over four equal agronomic bands. Not the 300&ndash;950 / five credit-policy band design, which implies a policy engine.</td></tr>
+    <tr><td>Perennials and plantations</td><td>Fundable. Orchards, banana and sugarcane are products we want to score, so plantation is a distinct non-rejecting verdict with its own cycle model.</td></tr>
+    <tr><td>Land-cover evidence hierarchy</td><td>Third-party validated LULC is primary; our spectral rules corroborate. Flipped deliberately, because our own thresholds would need validation we cannot perform.</td></tr>
+    <tr><td>Minimum fundable parcel</td><td>0.15&nbsp;ha (15 pixels), a business threshold; 0.50&nbsp;ha is the separate physical reliability threshold.</td></tr>
+    <tr><td>Crop classification</td><td>Classifier quarantined. The declared crop is gated on phenology consistency instead.</td></tr>
+    <tr><td>Report route</td><td>A dedicated route rendering the report contract, not an improved dashboard print stylesheet. The payload is a different contract; rendering it through the dashboard guarantees drift.</td></tr>
+    <tr><td>Primary reader</td><td>The loan officer, on desktop. The credit committee is served by the report; the field agent is a post-pilot concern.</td></tr>
+    <tr><td>Aesthetic direction</td><td>Editorial dossier. No stock photography, no decorative hero, no illustrated empty states. Imagery only where it is evidence.</td></tr>
+    <tr><td>Dark mode</td><td>Deferred past pilot. Recorded so nobody assumes it was forgotten.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">8.2</span>Decisions still open</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>#</th><th>Decision</th><th>Recommendation</th><th>Blocks</th></tr></thead>
+  <tbody>
+    <tr><td class="num">1</td><td><strong>Farmer PII on the report</strong> &mdash; caller-supplied and masked, full, or none</td><td>Caller-supplied and masked. It matches the payload's deliberate refusal to read identity fields.</td><td>The report header</td></tr>
+    <tr><td class="num">2</td><td><strong>The lease factor</strong> &mdash; how much a cultivated-but-not-owned parcel counts toward this borrower</td><td>Ask the lending partner. A one-line change either way; it should be their credit stance, not our default.</td><td>Nothing technically; a credibility item in any lender conversation</td></tr>
+    <tr><td class="num">3</td><td><strong>Headline aggregation stance</strong> &mdash; tenure-and-area-weighted mean versus a weakest-parcel-aware conservative number</td><td>Same. Offer both and let the lender choose.</td><td>Same</td></tr>
+    <tr><td class="num">4</td><td><strong>Sub-index weights</strong> &mdash; keep provisional or run a formal AHP</td><td>Run the AHP. Cheap, no engineering, and it converts a disclosed weakness into a strength.</td><td>Nothing; removes a caveat</td></tr>
+    <tr><td class="num">5</td><td><strong>Pilot data source</strong> &mdash; application-drawn boundaries or AgriStack ingest</td><td>Application-drawn, until the ingest defect is fixed. The data quality difference is 7-of-7 versus 7-of-106.</td><td>Pilot design</td></tr>
+    <tr><td class="num">6</td><td><strong>Hosting for the application</strong> &mdash; Render, Vercel, or a Mumbai VM</td><td>Any host plus the Mumbai Lambda is sufficient; the Lambda already solves the geography problem. A single India VM only if operational simplicity outweighs the proxy glue.</td><td>Nothing urgent</td></tr>
+    <tr><td class="num">7</td><td><strong>Branded domain on the Lambda</strong></td><td>Worth doing for operational clarity; the Function URL works today.</td><td>Nothing</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">8.3</span>Operational runbook</h3>
+
+<p>All commands run from <code>backend/Credit_assessment</code>.</p>
+
+<pre><code># Before any release: what moved, for whom, driven by what
+python scripts/devtools/score_drift.py --plan          # free, no imagery quota
+python scripts/devtools/score_drift.py --limit 10 --out drift
+
+# Data quality check, no imagery quota
+python scripts/devtools/audit_geometry.py --only-flagged
+
+# Audit a single verdict against imagery
+python scripts/devtools/inspect_land_cover.py &lt;farmer_id&gt;
+python scripts/devtools/inspect_assessment.py &lt;farmer_id&gt;
+
+# Peer cohorts: how far each zone is from the 20-parcel minimum
+python scripts/devtools/build_cohorts.py                # report only
+python scripts/devtools/build_cohorts.py --write        # nightly cron is the intended home
+
+# Cache management
+python scripts/devtools/clear_satellite_cache.py
+</code></pre>
+
+<p>And from <code>frontend</code>:</p>
+<pre><code>npm run verify        # smoke assertions + report contract + tsc
+npm run dev:clean     # clears the build cache first
+</code></pre>
+
+<h3><span class="sec">8.4</span>Metrics to watch during rollout</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Metric</th><th>What it tells you</th></tr></thead>
+  <tbody>
+    <tr><td>% rejected as non-agricultural</td><td>Expect a real, non-zero number. <strong>If it is 0%, the gate is not working.</strong></td></tr>
+    <tr><td>Flagged vs rejected vs passed split</td><td>A very small flag band means the thresholds are more confident than the evidence supports.</td></tr>
+    <tr><td>Agreement rate between the three land-cover evidence streams</td><td>Disagreement is the honest signal that a parcel is hard; the rate tells you whether the gate is calibrated.</td></tr>
+    <tr><td>% of cycles with an unobserved peak</td><td>How much of the phenology is reconstruction rather than measurement.</td></tr>
+    <tr><td>Confidence-gate distribution</td><td>Expect it to <em>drop</em> as the valid-pixel-fraction input is properly measured, and that is correct &mdash; today's gate is inflated by an assumed value.</td></tr>
+    <tr><td>Cohort warm-up count</td><td>Zones reaching 20 assessed parcels.</td></tr>
+    <tr><td>Score drift per release</td><td>Every phase changes scores; we need to know by how much and why.</td></tr>
+    <tr><td>Manual-review queue throughput</td><td>The seed of every accuracy claim we will ever be able to make.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<section class="part" id="part-9">
+  <p class="part-label">Part 9</p>
+  <h2>Appendices</h2>
+  <p class="part-note">Reference tables. Configuration values are as of this document's date; <code>config.py</code> is authoritative.</p>
+</section>
+
+<h3><span class="sec">9.1</span>Version stamps</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Stamp</th><th>Value</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>pipeline_version</code></td><td>5.0</td><td>Orchestrator version</td></tr>
+    <tr><td><code>pipeline_profile</code></td><td><code>index_v5</code></td><td>Stage architecture generation</td></tr>
+    <tr><td><code>index_version</code></td><td><code>index_v5</code></td><td>Risk index formula and weight vector</td></tr>
+    <tr><td><code>signal_version</code></td><td><code>signal_v2_fixed_range</code></td><td>Vegetation-signal normalisation and backbone</td></tr>
+    <tr><td><code>cloud_mask_version</code></td><td><code>csplus_scl_v2</code></td><td>Cloud Score+ combined with SCL and QA60</td></tr>
+    <tr><td><code>payload_version</code></td><td><code>report_payload_v1</code></td><td>Report data contract</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">9.2</span>Key configuration values</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Key</th><th>Value</th><th>What it controls</th></tr></thead>
+  <tbody>
+    <tr><td><code>SUBINDEX_WEIGHTS</code></td><td>landuse 30, vigor 25, stability 20, weather 25</td><td>Must sum to 100; validated at import</td></tr>
+    <tr><td><code>CONFIDENCE_GATE_MIN</code></td><td class="num">0.60</td><td>Floor of the data-confidence multiplier</td></tr>
+    <tr><td><code>BENEFITS_BONUS_PER_FLAG</code> / <code>MAX</code></td><td class="num">2.0 / 4.0</td><td>Government-benefit bonus</td></tr>
+    <tr><td><code>RISK_THRESHOLDS</code></td><td>LOW &ge; 70, MEDIUM &ge; 50, HIGH &ge; 30, else VERY_HIGH</td><td>Risk category bands</td></tr>
+    <tr><td><code>PARCEL_MIN_PIXELS_HARD</code> / <code>RELIABLE</code></td><td class="num">15 / 50</td><td>Fundable and physical size floors</td></tr>
+    <tr><td><code>PARCEL_AREA_RATIO_MIN</code> / <code>MAX</code></td><td class="num">0.8 / 1.25</td><td>Boundary-trust tolerance</td></tr>
+    <tr><td><code>LANDCOVER_REJECT_CONFIDENCE</code></td><td class="num">0.75</td><td>Reject threshold</td></tr>
+    <tr><td><code>LANDCOVER_FLAG_CONFIDENCE</code></td><td class="num">0.45</td><td>Flag threshold</td></tr>
+    <tr><td><code>LANDCOVER_MIN_OBSERVATIONS</code></td><td class="num">8</td><td>Below this, unknown &mdash; never rejected</td></tr>
+    <tr><td><code>LANDCOVER_USE_EXTERNAL_LULC</code></td><td><code>False</code></td><td>Third-party stream, pending the accuracy record</td></tr>
+    <tr><td>Gate penalties</td><td class="num">0.85 each</td><td>Flagged land cover, substituted footprint, marginal parcel size</td></tr>
+    <tr><td><code>DATA_SUFFICIENCY_MIN_OBSERVED_FRACTION</code></td><td class="num">0.35</td><td>Minimum observed share of the window</td></tr>
+    <tr><td><code>SIGNAL_COMPOSITE_WEIGHTS</code></td><td>NDVI 0.50, EVI 0.30, NDMI 0.20</td><td>Composite signal blend</td></tr>
+    <tr><td><code>GEE_MAX_SCENES_PER_YEAR</code></td><td class="num">120</td><td>Scenes fetched before binning</td></tr>
+    <tr><td><code>CONTINUOUS_LOOKBACK_YEARS</code></td><td class="num">3</td><td>History window, season-anchor extended</td></tr>
+    <tr><td><code>SEASON_SNAP_ANCHORS</code></td><td>15 Jun, 15 Oct, 15 Feb</td><td>Kharif, Rabi, Zaid sowing anchors</td></tr>
+    <tr><td><code>SEASON_MIN_DOMINANT_SHARE</code></td><td class="num">0.55</td><td>Below this a cycle is cross-season</td></tr>
+    <tr><td><code>VIGOR</code> / <code>STABILITY_NO_EVIDENCE_SCORE</code></td><td class="num">25.0</td><td>Scores when no cultivation was observed</td></tr>
+    <tr><td><code>PERENNIAL_MIN_VEGETATION_VS</code></td><td class="num">0.50</td><td>Year-round canopy floor for the perennial branch</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">9.3</span>API surface</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Endpoint</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /health</code></td><td>Liveness, for the host health check</td></tr>
+    <tr><td><code>GET /v1/jobs/health</code></td><td>Queue health and the last reaper statistics</td></tr>
+    <tr><td><code>POST /v1/jobs/assess</code></td><td>Enqueue and run in-process. Accepts <code>farmer_id</code>, <code>force_fresh_satellite</code>, and tri-state benefit flags.</td></tr>
+    <tr><td><code>POST /v1/assess</code></td><td>Synchronous assessment. Minutes of runtime &mdash; use the job path in production.</td></tr>
+    <tr><td><code>GET /v1/assess/{farmer_id}</code></td><td>Synchronous assessment by path parameter</td></tr>
+    <tr><td><code>GET /v1/report/{farmer_id}</code></td><td>Read-only report payload, plus a <code>sections_present</code> map and an <code>omitted</code> block with reasons. Never triggers a run.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>All endpoints accept an optional <code>X-API-Key</code>, enforced when <code>API_SERVICE_KEY</code> is set. The application always calls them through its own server routes, which add the key and the ownership check.</p>
+
+<h3><span class="sec">9.4</span>Environment variables</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Variable</th><th>Where</th><th>Required</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>MONGODB_URI</code></td><td>All</td><td>Yes</td><td>Connection string</td></tr>
+    <tr><td><code>MONGODB_DATABASE</code></td><td>All</td><td>No</td><td>Defaults to <code>agristack</code></td></tr>
+    <tr><td><code>GEE_PROJECT</code>, <code>GEE_SA_KEY_PATH</code> / <code>_JSON</code> / <code>_B64</code></td><td>Pipeline</td><td>For the Earth Engine provider</td><td>Imagery credentials</td></tr>
+    <tr><td><code>SATELLITE_PROVIDER</code></td><td>Pipeline</td><td>No</td><td><code>gee</code> by default; STAC otherwise</td></tr>
+    <tr><td><code>SATELLITE_FORCE_FRESH</code></td><td>Pipeline</td><td>No</td><td>Bypass the satellite cache</td></tr>
+    <tr><td><code>ENABLE_CROP_CLASSIFICATION</code></td><td>Pipeline</td><td>No</td><td>Leave off. Experimental and unvalidated.</td></tr>
+    <tr><td><code>AI_ENRICHMENT_ENABLE</code></td><td>Pipeline</td><td>No</td><td>Master switch for stage 10</td></tr>
+    <tr><td><code>GROQ_API_KEY</code>, <code>GROQ_ENABLE</code>, <code>GROQ_MODEL</code></td><td>Pipeline</td><td>No</td><td>Narrative generation</td></tr>
+    <tr><td><code>SARVAM_API_KEY</code></td><td>Pipeline</td><td>No</td><td>Translation</td></tr>
+    <tr><td><code>API_SERVICE_KEY</code></td><td>API</td><td>Recommended</td><td>Require <code>X-API-Key</code></td></tr>
+    <tr><td><code>CORS_ORIGINS</code></td><td>API</td><td>No</td><td>Tighten from <code>*</code> in production</td></tr>
+    <tr><td><code>PIPELINE_API_URL</code></td><td>App</td><td>Recommended</td><td>The FastAPI base URL. Unset means the queue needs a standalone worker.</td></tr>
+    <tr><td><code>PIPELINE_API_SERVICE_KEY</code></td><td>App</td><td>If the API is keyed</td><td>Server-side only</td></tr>
+    <tr><td><code>AUTH_SECRET</code> / <code>NEXTAUTH_SECRET</code></td><td>App</td><td>Yes in production</td><td>JWT signing. Boot fails without it.</td></tr>
+    <tr><td><code>AGRISTACK_PROXY_URL</code> / <code>_SECRET</code></td><td>App + Lambda</td><td>Yes for AgriStack</td><td>Route Token, Seek and KDSS through Mumbai</td></tr>
+    <tr><td><code>NEXT_PUBLIC_APP_DOMAIN</code></td><td>App</td><td>Yes for webhooks</td><td>The Seek callback base URL &mdash; the Lambda URL in production</td></tr>
+    <tr><td><code>WEBHOOK_SECRET</code></td><td>App + Lambda</td><td>Yes in production</td><td>Shared-secret gate on webhook receipt</td></tr>
+    <tr><td><code>AGRISTACK_CLIENT_ID</code> / <code>USERNAME</code> / <code>PASSWORD</code></td><td>App, server-side</td><td>For auto-prepare</td><td>Never as a <code>NEXT_PUBLIC_*</code> variable</td></tr>
+    <tr><td><code>LAMBDA_PUBLIC_BASE_URL</code></td><td>Lambda</td><td>Yes</td><td>Plain URL only &mdash; a markdown-wrapped value broke Seek once</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">9.5</span>Glossary</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><strong>KBS</strong></td><td>Krishi Bhoomi Score. The headline 300&ndash;900 presentation of the internal 0&ndash;100 index.</td></tr>
+    <tr><td><strong>Index score</strong></td><td>The internal 0&ndash;100 agronomic risk index. Higher is lower risk.</td></tr>
+    <tr><td><strong>Sub-index</strong></td><td>One of four weighted pillars: land use, vigour, stability, weather.</td></tr>
+    <tr><td><strong>Confidence gate</strong></td><td>A multiplier in [0.60, 1.0] applied to the raw index, reflecting how well we could observe the parcel.</td></tr>
+    <tr><td><strong>VS / composite signal</strong></td><td>The physically-normalised vegetation signal that cycle detection runs on.</td></tr>
+    <tr><td><strong>Bin</strong></td><td>A fixed 10-day observation interval. Either observed, fused, radar-only, or imputed.</td></tr>
+    <tr><td><strong>SOS / POS / EOS</strong></td><td>Start, peak and end of season &mdash; the phenological markers of a crop cycle.</td></tr>
+    <tr><td><strong>NIRv</strong></td><td>Near-infrared reflectance of vegetation. The yield-potential backbone.</td></tr>
+    <tr><td><strong>LUI</strong></td><td>Land utilisation index. The share of the window under active cultivation.</td></tr>
+    <tr><td><strong>Cropping intensity</strong></td><td>Cycles per year. Distinct from LUI, which is a fraction of time.</td></tr>
+    <tr><td><strong>Kharif / Rabi / Zaid</strong></td><td>India's monsoon, winter and summer cropping seasons.</td></tr>
+    <tr><td><strong>Path A / Path B</strong></td><td>Crop-specific scoring versus crop-agnostic scoring. Path B is the production default.</td></tr>
+    <tr><td><strong>Tri-state</strong></td><td>A flag with three values &mdash; true, false, and unknown &mdash; where unknown is never scored as false.</td></tr>
+    <tr><td><strong>Cohort key</strong></td><td>The agro-climatic zone, season and crop-family grouping a parcel is compared within.</td></tr>
+    <tr><td><strong>Drift</strong></td><td>The measured score change between two pipeline versions on the same parcels.</td></tr>
+    <tr><td><strong>AgriStack</strong></td><td>India's national digital agriculture stack; the source of farmer and land-parcel records.</td></tr>
+    <tr><td><strong>LGD</strong></td><td>Local Government Directory. India's official administrative area coding.</td></tr>
+    <tr><td><strong>AHP</strong></td><td>Analytic Hierarchy Process. The structured expert-elicitation method behind the sub-index weights.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3><span class="sec">9.6</span>Companion documents in the repository</h3>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Document</th><th>Contents</th></tr></thead>
+  <tbody>
+    <tr><td><code>BACKEND-ENHANCEMENTS.md</code></td><td>The v6 defect register with file-and-line citations, and the phased build plan. The authority on backend history and open defects.</td></tr>
+    <tr><td><code>FRONTEND-ENHANCEMENTS.md</code></td><td>The v6 design system, measured accessibility findings, palette validator runs, and the interface build plan.</td></tr>
+    <tr><td><code>backend/Credit_assessment/BACKEND-ARCHITECTURE-v5.md</code></td><td>The design contract the index_v5 rewrite was implemented against.</td></tr>
+    <tr><td><code>docs/codebase/</code></td><td>Per-stage engineering reference. Some pages predate the index_v5 cutover &mdash; where a page and the code disagree, <strong>the code wins</strong>.</td></tr>
+    <tr><td><code>UPDATE.md</code></td><td>The AgriStack Mumbai Lambda investigation and its resolution.</td></tr>
+    <tr><td><code>render.yaml</code></td><td>Deployment blueprint for both services.</td></tr>
+  </tbody>
+</table>
+</div>
+
+</main>
+
+<footer class="colophon">
+  <p><strong>Krishi Bhoomi Score &mdash; product and technical documentation.</strong> Compiled August 2026 against pipeline v5.0 / <code>index_v5</code>, commit <code>aa80b33c</code>. Configuration values are as of that date; <code>backend/Credit_assessment/config.py</code> is authoritative. Where this document and the code disagree, the code wins and this document is wrong.</p>
+  <p>Source file: <code>docs/product-documentation.html</code>.</p>
+</footer>
+
+</div>

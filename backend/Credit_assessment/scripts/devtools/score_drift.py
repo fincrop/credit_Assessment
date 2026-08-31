@@ -136,12 +136,12 @@ def build_pipeline():
     Construct the pipeline the same way worker.py does, so the drift report
     measures what production actually runs.
     """
-    from config import resolve_package_path
+    from config import DEFAULT_CROP_MODEL_PATH, resolve_package_path
     from main import SatelliteBasedCreditPipeline
 
     model_path = str(
         resolve_package_path(
-            os.environ.get("CROP_MODEL_PATH", "models/crop_classifier_model.joblib")
+            os.environ.get("CROP_MODEL_PATH", DEFAULT_CROP_MODEL_PATH)
         )
     )
     return SatelliteBasedCreditPipeline(

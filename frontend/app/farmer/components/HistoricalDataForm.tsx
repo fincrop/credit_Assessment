@@ -1,5 +1,6 @@
 'use client';
 
+import { TriStateSelect } from '../../components/TriStateSelect';
 import type { FarmerExtras, FarmPolygon, FarmerIdentity, FarmerLocation } from '../types';
 import { CROP_OPTIONS, IRRIGATION_OPTIONS, SEASON_OPTIONS } from '../types';
 
@@ -148,25 +149,19 @@ export function HistoricalDataForm({
         </div>
       </div>
 
-      <div className="space-y-2">
-        <label className="flex items-center gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={value.pm_kisan_enrolled}
-            onChange={(e) => set({ pm_kisan_enrolled: e.target.checked })}
-            className="rounded border-rule bg-white text-emerald-600"
-          />
-          <span className="text-sm text-stone-600">PM-KISAN enrolled</span>
-        </label>
-        <label className="flex items-center gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={value.has_crop_insurance}
-            onChange={(e) => set({ has_crop_insurance: e.target.checked })}
-            className="rounded border-rule bg-white text-emerald-600"
-          />
-          <span className="text-sm text-stone-600">Has crop insurance</span>
-        </label>
+      <div className="grid sm:grid-cols-2 gap-4">
+        <TriStateSelect
+          compact
+          label="PM-KISAN enrolled"
+          value={value.pm_kisan_enrolled}
+          onChange={(pm_kisan_enrolled) => set({ pm_kisan_enrolled })}
+        />
+        <TriStateSelect
+          compact
+          label="Crop insurance (PMFBY)"
+          value={value.has_crop_insurance}
+          onChange={(has_crop_insurance) => set({ has_crop_insurance })}
+        />
       </div>
 
       <div>

@@ -58,7 +58,7 @@ export default function SavedFarmsPage() {
   return (
     <div className="min-h-screen bg-paper text-stone-800">
       <header className="bg-white border-b border-rule sticky top-0 z-20">
-        <div className="flex h-14 items-center px-6 max-w-7xl mx-auto w-full justify-between">
+        <div className="page-shell flex h-14 items-center w-full justify-between">
           <div className="flex items-center gap-4 text-sm">
             <Link href="/" className="text-stone-500 hover:text-emerald-700 font-medium">
               Home
@@ -80,7 +80,7 @@ export default function SavedFarmsPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className="page-shell py-8">
         {error && (
           <div className="mb-4 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
             {error}

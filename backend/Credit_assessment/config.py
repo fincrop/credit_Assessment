@@ -10,6 +10,7 @@ RiskIndexEngine sub-index weights, SAR/signal/phenology/weather pillar knobs.
 
 from pathlib import Path
 from typing import Union
+import os
 
 # Directory containing main.py / config.py / api/ (Docker WORKDIR=/app and local cwd).
 PACKAGE_ROOT = Path(__file__).resolve().parent
@@ -41,6 +42,20 @@ def resolve_package_path(path: Union[str, Path]) -> Path:
     if p.is_absolute():
         return p
     return (PACKAGE_ROOT / p).resolve()
+
+
+# Tier-1 XGBoost bundle (147 features, 18 crops, spatially-blocked CV).
+# Override via env CROP_MODEL_PATH if needed.
+DEFAULT_CROP_MODEL_PATH = "models/crop_classifier_tier1_v1.joblib"
+
+
+def crop_classification_enabled(default: bool = True) -> bool:
+    """Read ENABLE_CROP_CLASSIFICATION (true unless explicitly disabled)."""
+    raw = os.environ.get(
+        "ENABLE_CROP_CLASSIFICATION",
+        "true" if default else "false",
+    ).strip().lower()
+    return raw in ("1", "true", "yes")
 
 
 class PipelineConfig:

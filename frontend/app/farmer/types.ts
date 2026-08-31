@@ -37,19 +37,24 @@ export interface HistoricalSeason {
   yield_estimate_kg_ha: number | '';
 }
 
+/** Tri-state benefit flags — null means unknown (never coerce with !!). */
+export type BenefitTriState = boolean | null;
+
 export interface FarmerIdentity {
   farmer_name: string;
   phone: string;
   language: string;
   agristack_farmer_id: string;
+  pm_kisan_enrolled: BenefitTriState;
+  has_crop_insurance: BenefitTriState;
 }
 
 export interface FarmerExtras {
   historical_data: HistoricalSeason[];
   irrigation_type: string;
   soil_type: string;
-  pm_kisan_enrolled: boolean;
-  has_crop_insurance: boolean;
+  pm_kisan_enrolled: BenefitTriState;
+  has_crop_insurance: BenefitTriState;
   notes: string;
 }
 
