@@ -264,7 +264,18 @@ def main() -> int:
                     choices=["bbox", "poly"],
                     help="bbox = production parity (default)")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--parcels", default=None, help="override parcel parquet")
+    ap.add_argument("--scenes", default=None, help="override scenes parquet")
+    ap.add_argument("--out", default=None, help="override cycles parquet")
     args = ap.parse_args()
+
+    global PARCELS, SCENES, OUT
+    if args.parcels:
+        PARCELS = DATA / args.parcels
+    if args.scenes:
+        SCENES = DATA / args.scenes
+    if args.out:
+        OUT = DATA / args.out
 
     for f in (PARCELS, SCENES):
         if not f.exists():

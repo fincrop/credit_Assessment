@@ -1,0 +1,222 @@
+{
+ "viable_threshold": 30,
+ "counts": {
+  "Bajra": {
+   "DECCAN_PLATEAU": 178,
+   "GANGETIC_AND_EASTERN_PLAINS": 294,
+   "SOUTHERN_PENINSULA": 5
+  },
+  "Banana": {
+   "DECCAN_PLATEAU": 310,
+   "GANGETIC_AND_EASTERN_PLAINS": 53,
+   "SOUTHERN_PENINSULA": 41
+  },
+  "Chilli": {
+   "SOUTHERN_PENINSULA": 309
+  },
+  "Cotton": {
+   "DECCAN_PLATEAU": 48,
+   "GANGETIC_AND_EASTERN_PLAINS": 8,
+   "INDIA_UNSPECIFIED_PLAINS": 418,
+   "SOUTHERN_PENINSULA": 5
+  },
+  "Gram": {
+   "DECCAN_PLATEAU": 48,
+   "GANGETIC_AND_EASTERN_PLAINS": 240,
+   "INDIA_UNSPECIFIED_PLAINS": 16,
+   "SOUTHERN_PENINSULA": 192
+  },
+  "Grapes": {
+   "DECCAN_PLATEAU": 466,
+   "SOUTHERN_PENINSULA": 2
+  },
+  "Groundnut": {
+   "INDIA_UNSPECIFIED_PLAINS": 339,
+   "SOUTHERN_PENINSULA": 4
+  },
+  "Jowar": {
+   "DECCAN_PLATEAU": 363,
+   "GANGETIC_AND_EASTERN_PLAINS": 127
+  },
+  "Maize": {
+   "CENTRAL_HIGHLAND_MIXED": 2,
+   "GANGETIC_AND_EASTERN_PLAINS": 491
+  },
+  "Mustard": {
+   "GANGETIC_AND_EASTERN_PLAINS": 494,
+   "NORTH_WEST_SEMI_ARID": 4
+  },
+  "Onion": {
+   "DECCAN_PLATEAU": 422,
+   "INDIA_UNSPECIFIED_PLAINS": 66
+  },
+  "Potato": {
+   "GANGETIC_AND_EASTERN_PLAINS": 432,
+   "NORTH_WEST_SEMI_ARID": 67
+  },
+  "Rice": {
+   "GANGETIC_AND_EASTERN_PLAINS": 480
+  },
+  "Soyabean": {
+   "DECCAN_PLATEAU": 148,
+   "GANGETIC_AND_EASTERN_PLAINS": 104
+  },
+  "Sugarcane": {
+   "DECCAN_PLATEAU": 240,
+   "GANGETIC_AND_EASTERN_PLAINS": 181
+  },
+  "Tobacco": {
+   "SOUTHERN_PENINSULA": 390
+  },
+  "Tur": {
+   "DECCAN_PLATEAU": 421,
+   "INDIA_UNSPECIFIED_PLAINS": 1
+  },
+  "Wheat": {
+   "DECCAN_PLATEAU": 20,
+   "GANGETIC_AND_EASTERN_PLAINS": 343,
+   "INDIA_UNSPECIFIED_PLAINS": 135
+  }
+ },
+ "summary": {
+  "Bajra": {
+   "supported_regions": [
+    "DECCAN_PLATEAU",
+    "GANGETIC_AND_EASTERN_PLAINS"
+   ],
+   "n_supported_regions": 2,
+   "single_region": false
+  },
+  "Banana": {
+   "supported_regions": [
+    "DECCAN_PLATEAU",
+    "GANGETIC_AND_EASTERN_PLAINS",
+    "SOUTHERN_PENINSULA"
+   ],
+   "n_supported_regions": 3,
+   "single_region": false
+  },
+  "Chilli": {
+   "supported_regions": [
+    "SOUTHERN_PENINSULA"
+   ],
+   "n_supported_regions": 1,
+   "single_region": true
+  },
+  "Cotton": {
+   "supported_regions": [
+    "DECCAN_PLATEAU",
+    "INDIA_UNSPECIFIED_PLAINS"
+   ],
+   "n_supported_regions": 2,
+   "single_region": false
+  },
+  "Gram": {
+   "supported_regions": [
+    "DECCAN_PLATEAU",
+    "GANGETIC_AND_EASTERN_PLAINS",
+    "SOUTHERN_PENINSULA"
+   ],
+   "n_supported_regions": 3,
+   "single_region": false
+  },
+  "Grapes": {
+   "supported_regions": [
+    "DECCAN_PLATEAU"
+   ],
+   "n_supported_regions": 1,
+   "single_region": true
+  },
+  "Groundnut": {
+   "supported_regions": [
+    "INDIA_UNSPECIFIED_PLAINS"
+   ],
+   "n_supported_regions": 1,
+   "single_region": true
+  },
+  "Jowar": {
+   "supported_regions": [
+    "DECCAN_PLATEAU",
+    "GANGETIC_AND_EASTERN_PLAINS"
+   ],
+   "n_supported_regions": 2,
+   "single_region": false
+  },
+  "Maize": {
+   "supported_regions": [
+    "GANGETIC_AND_EASTERN_PLAINS"
+   ],
+   "n_supported_regions": 1,
+   "single_region": true
+  },
+  "Mustard": {
+   "supported_regions": [
+    "GANGETIC_AND_EASTERN_PLAINS"
+   ],
+   "n_supported_regions": 1,
+   "single_region": true
+  },
+  "Onion": {
+   "supported_regions": [
+    "DECCAN_PLATEAU",
+    "INDIA_UNSPECIFIED_PLAINS"
+   ],
+   "n_supported_regions": 2,
+   "single_region": false
+  },
+  "Potato": {
+   "supported_regions": [
+    "GANGETIC_AND_EASTERN_PLAINS",
+    "NORTH_WEST_SEMI_ARID"
+   ],
+   "n_supported_regions": 2,
+   "single_region": false
+  },
+  "Rice": {
+   "supported_regions": [
+    "GANGETIC_AND_EASTERN_PLAINS"
+   ],
+   "n_supported_regions": 1,
+   "single_region": true
+  },
+  "Soyabean": {
+   "supported_regions": [
+    "DECCAN_PLATEAU",
+    "GANGETIC_AND_EASTERN_PLAINS"
+   ],
+   "n_supported_regions": 2,
+   "single_region": false
+  },
+  "Sugarcane": {
+   "supported_regions": [
+    "DECCAN_PLATEAU",
+    "GANGETIC_AND_EASTERN_PLAINS"
+   ],
+   "n_supported_regions": 2,
+   "single_region": false
+  },
+  "Tobacco": {
+   "supported_regions": [
+    "SOUTHERN_PENINSULA"
+   ],
+   "n_supported_regions": 1,
+   "single_region": true
+  },
+  "Tur": {
+   "supported_regions": [
+    "DECCAN_PLATEAU"
+   ],
+   "n_supported_regions": 1,
+   "single_region": true
+  },
+  "Wheat": {
+   "supported_regions": [
+    "GANGETIC_AND_EASTERN_PLAINS",
+    "INDIA_UNSPECIFIED_PLAINS"
+   ],
+   "n_supported_regions": 2,
+   "single_region": false
+  }
+ },
+ "n_train_cycles": 7907
+}

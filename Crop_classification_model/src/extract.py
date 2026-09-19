@@ -51,6 +51,7 @@ import re
 import sys
 import time
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import geopandas as gpd
@@ -277,6 +278,10 @@ def _request(mosaic, fc, reducer) -> List[Dict[str, Any]]:
 # =============================================================================
 # planning
 # =============================================================================
+# Set by `--bin-anchor` to pin the grid origin across separate extraction runs.
+BIN_ANCHOR_OVERRIDE: Optional[date] = None
+
+
 def global_bin_anchor(parcels: gpd.GeoDataFrame) -> date:
     """
     The single origin of the 10-day bin grid: the earliest window start.
@@ -285,7 +290,21 @@ def global_bin_anchor(parcels: gpd.GeoDataFrame) -> date:
     starting at its own win_start lands on the shared grid only when the offset
     happens to be a multiple of INTERVAL_DAYS, so lookups silently miss and the
     parcel looks like it has no observations at all.
+
+    The trap this function *is*: the anchor is derived from whichever parcel set
+    is handed in, so extracting a second batch on its own silently produces a
+    DIFFERENT grid. Measured on the augmentation batch -- base anchor
+    2020-12-06, batch anchor 2021-06-27, 203 days apart and 203 % 10 != 0 -- so
+    every new shard landed 3 days off the grid `cycles.py` later built from the
+    merged parcel file, and stage 3 aborted with exactly the "looks like
+    missing data" symptom the paragraph above warns about.
+
+    Pass `--bin-anchor` (which sets BIN_ANCHOR_OVERRIDE) with the anchor of the
+    set the batch will be merged into. For anything merging with
+    `00_parcels_clean.parquet`, that is 2020-12-06.
     """
+    if BIN_ANCHOR_OVERRIDE is not None:
+        return BIN_ANCHOR_OVERRIDE
     return min(datetime.strptime(s, "%Y-%m-%d").date() for s in parcels["win_start"])
 
 
@@ -364,7 +383,35 @@ def main() -> int:
                     help="total number of parallel extractor processes")
     ap.add_argument("--worker", type=int, default=0,
                     help="this process's index in [0, workers)")
+    # Shard tags are keyed on the parcel's POSITIONAL index, not its geom_hash
+    # (see _run_extraction). Appending parcels to 00_parcels_clean.parquet
+    # therefore re-chunks every bin and invalidates all 752 existing shards --
+    # a ~5 h re-extraction to add ~1k parcels. These three overrides let an
+    # augmentation batch be extracted on its own and merged afterwards.
+    ap.add_argument("--parcels", default=None,
+                    help="parcel parquet to extract (default 00_parcels_clean)")
+    ap.add_argument("--shard-dir", default=None,
+                    help="shard directory; use a fresh one per batch")
+    ap.add_argument("--out", default=None,
+                    help="consolidated scenes parquet to write")
+    ap.add_argument("--bin-anchor", default=None,
+                    help="YYYY-MM-DD grid origin; REQUIRED when extracting a "
+                         "batch that will be merged into an existing scenes "
+                         "table (use that table's anchor, 2020-12-06 for the "
+                         "base set). See global_bin_anchor.")
     args = ap.parse_args()
+
+    global IN, OUT, SHARD_DIR, BIN_ANCHOR_OVERRIDE
+    if args.bin_anchor:
+        BIN_ANCHOR_OVERRIDE = datetime.strptime(args.bin_anchor, "%Y-%m-%d").date()
+        log.info("bin grid anchored at %s (override)", BIN_ANCHOR_OVERRIDE)
+    if args.parcels:
+        IN = DATA / args.parcels if not Path(args.parcels).is_absolute() else Path(args.parcels)
+    if args.shard_dir:
+        SHARD_DIR = DATA / args.shard_dir if not Path(args.shard_dir).is_absolute() else Path(args.shard_dir)
+    if args.out:
+        OUT = DATA / args.out if not Path(args.out).is_absolute() else Path(args.out)
+    log.info("parcels=%s  shards=%s  out=%s", IN.name, SHARD_DIR.name, OUT.name)
 
     if not IN.exists():
         log.error("missing %s — run `python -m src.ingest` first", IN)

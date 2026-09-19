@@ -93,7 +93,22 @@ def _slice_scenes(continuous: Dict, sowing: str, harvest: str) -> List[Dict]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--geom-kind", default="bbox", choices=["bbox", "poly"])
+    ap.add_argument("--parcels", default=None, help="override parcel parquet")
+    ap.add_argument("--scenes", default=None, help="override scenes parquet")
+    ap.add_argument("--cycles", default=None, help="override cycles parquet")
+    ap.add_argument("--suffix", default="", help="suffix for the output files")
     args = ap.parse_args()
+
+    global PARCELS, SCENES, CYCLES, OUT_T0, OUT_T1
+    if args.suffix:
+        OUT_T0 = DATA / f"03_features_tier0{args.suffix}.parquet"
+        OUT_T1 = DATA / f"03_features_tier1{args.suffix}.parquet"
+    if args.parcels:
+        PARCELS = DATA / args.parcels
+    if args.scenes:
+        SCENES = DATA / args.scenes
+    if args.cycles:
+        CYCLES = DATA / args.cycles
 
     for f in (PARCELS, SCENES, CYCLES):
         if not f.exists():

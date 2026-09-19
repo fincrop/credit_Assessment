@@ -1,0 +1,26 @@
+[
+ {
+  "scenario": "parcel mean (49 px, as trained)",
+  "n_pixels": 49,
+  "balanced_accuracy": 0.7614,
+  "macro_f1": 0.7541
+ },
+ {
+  "scenario": "16-pixel object",
+  "n_pixels": 16,
+  "balanced_accuracy": 0.7015,
+  "macro_f1": 0.7005
+ },
+ {
+  "scenario": "4-pixel object",
+  "n_pixels": 4,
+  "balanced_accuracy": 0.6733,
+  "macro_f1": 0.6742
+ },
+ {
+  "scenario": "SINGLE PIXEL",
+  "n_pixels": 1,
+  "balanced_accuracy": 0.6323,
+  "macro_f1": 0.6328
+ }
+]

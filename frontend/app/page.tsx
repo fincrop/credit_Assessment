@@ -103,7 +103,7 @@ export default function HomePage() {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-6">
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
           <Link
             href="/agristack/connect?next=/dashboard"
             className="group relative rounded-2xl border border-rule bg-white/80 backdrop-blur-md p-8 hover:border-emerald-400 hover:bg-emerald-50 transition-all duration-300 animate-slide-in"
@@ -150,6 +150,31 @@ export default function HomePage() {
             </p>
             <span className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 group-hover:gap-3 transition-all">
               Start farmer journey
+              <span aria-hidden>→</span>
+            </span>
+          </Link>
+
+          <Link
+            href="/classification"
+            className="group relative rounded-2xl border border-rule bg-white/80 backdrop-blur-md p-8 hover:border-emerald-400 hover:bg-emerald-50 transition-all duration-300 animate-slide-in"
+            style={{ animationDelay: '0.19s' }}
+          >
+            <div
+              className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+              style={{ boxShadow: 'inset 0 1px 0 0 rgba(255,255,255,0.06)' }}
+            />
+            <div className="w-12 h-12 rounded-xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center mb-5 text-2xl">
+              🗺️
+            </div>
+            <h2 className="text-xl font-bold text-stone-900 mb-2 group-hover:text-emerald-300 transition-colors">
+              Crop Classification
+            </h2>
+            <p className="text-sm text-stone-500 leading-relaxed mb-6">
+              Draw or upload a village boundary and map every field in it — crop-wise areas,
+              statistics and downloadable layers.
+            </p>
+            <span className="inline-flex items-center gap-2 text-sm font-semibold text-amber-700 group-hover:gap-3 transition-all">
+              Classify an area
               <span aria-hidden>→</span>
             </span>
           </Link>

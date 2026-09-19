@@ -1,0 +1,46 @@
+{
+ "baseline": {
+  "balanced_accuracy": 0.7614,
+  "accuracy": 0.7595,
+  "macro_f1": 0.7541,
+  "weighted_f1": 0.754,
+  "min_class_recall": 0.373,
+  "worst_class": "Gram",
+  "ece": 0.0259,
+  "coverage_at_gate": 0.9827,
+  "precision_at_gate": 0.7698
+ },
+ "baseline+season": {
+  "balanced_accuracy": 0.7668,
+  "accuracy": 0.7644,
+  "macro_f1": 0.7598,
+  "weighted_f1": 0.7598,
+  "min_class_recall": 0.377,
+  "worst_class": "Gram",
+  "ece": 0.0238,
+  "coverage_at_gate": 0.985,
+  "precision_at_gate": 0.7729
+ },
+ "weather_shape": {
+  "balanced_accuracy": 0.8081,
+  "accuracy": 0.8038,
+  "macro_f1": 0.8059,
+  "weighted_f1": 0.8002,
+  "min_class_recall": 0.4274,
+  "worst_class": "Gram",
+  "ece": 0.0295,
+  "coverage_at_gate": 0.9829,
+  "precision_at_gate": 0.8142
+ },
+ "weather_shape+season": {
+  "balanced_accuracy": 0.8032,
+  "accuracy": 0.7985,
+  "macro_f1": 0.8008,
+  "weighted_f1": 0.7952,
+  "min_class_recall": 0.4194,
+  "worst_class": "Gram",
+  "ece": 0.0295,
+  "coverage_at_gate": 0.9867,
+  "precision_at_gate": 0.8063
+ }
+}

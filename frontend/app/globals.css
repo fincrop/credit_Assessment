@@ -235,6 +235,24 @@ textarea:focus-visible {
   font-family: inherit;
 }
 
+/* Classification results: the leaflet root is nested so satellite tiles
+   keep a real viewport when the outer shell changes height (results step). */
+.classification-map {
+  position: relative;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #1c1917;
+}
+
+.classification-map .leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #1c1917;
+  font-family: inherit;
+}
+
 .farm-map-area-badge {
   position: absolute;
   z-index: 1000;
@@ -278,6 +296,50 @@ textarea:focus-visible {
   height: 10px;
   border-radius: 2px;
   flex-shrink: 0;
+}
+
+.classification-legend {
+  position: absolute;
+  z-index: 900;
+  bottom: 28px;
+  right: 12px;
+  background: rgba(255, 254, 250, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-width: 168px;
+  max-width: 240px;
+  max-height: min(52%, 340px);
+  overflow-y: auto;
+  font-size: 11px;
+  color: var(--text);
+  pointer-events: auto;
+  box-shadow: var(--shadow-raised);
+}
+
+.classification-legend-title {
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.classification-legend-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.classification-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(28, 25, 23, 0.25);
 }
 
 /* Geoman toolbar — light theme */

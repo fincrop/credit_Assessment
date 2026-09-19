@@ -196,6 +196,19 @@ class JobAssessRequest(BaseModel):
     force_fresh_satellite: bool = False
 
 
+class JobClassifyRequest(BaseModel):
+    """Area-classification enqueue body (matches Next.js `/api/classification/enqueue`).
+
+    `job_id` is supplied by the caller: the Next.js route inserts the row so the
+    browser has an id to poll before this service is even reached, and a second
+    insert here would orphan the first.
+    """
+
+    job_id: str = Field(..., min_length=1)
+    areas: List[Dict[str, Any]] = Field(..., min_length=1)
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+
+
 class AssessRequest(BaseModel):
     farmer_id: str = Field(..., min_length=1, description="Farmer / farm id in farm_info")
     include_heavy: bool = Field(
@@ -220,6 +233,23 @@ def _benefits_override_from_body(body: Any) -> Optional[Dict[str, Any]]:
     if getattr(body, "has_crop_insurance", None) is not None:
         out["has_crop_insurance"] = body.has_crop_insurance
     return out or None
+
+
+def _classification_jobs_col() -> Optional[Any]:
+    """The `classification_jobs` collection, or None when Mongo is down.
+
+    Separate from `_jobs_col` ("jobs"): classification jobs have their own
+    stage vocabulary and ownership rule, and sharing a collection would make
+    every reader branch on a discriminator.
+    """
+    if _mongo_for_jobs is None:
+        return None
+    dbn = (
+        os.environ.get("MONGODB_DATABASE")
+        or os.environ.get("MONGODB_DB")
+        or "agristack"
+    )
+    return _mongo_for_jobs[dbn]["classification_jobs"]
 
 
 def verify_service_key(x_api_key: Optional[str] = Header(default=None)) -> None:
@@ -631,6 +661,178 @@ async def farmer_report(
         "narrative": bool(payload["narrative"]["text"]),
     }
     return {"success": True, "report": payload}
+
+
+@app.post("/v1/jobs/classify")
+async def enqueue_classify_job(
+    body: JobClassifyRequest,
+    background_tasks: BackgroundTasks,
+    _: None = Depends(verify_service_key),
+) -> Dict[str, Any]:
+    """
+    Start an area-wide crop classification for a job row Next.js already wrote.
+
+    Runs in this process via BackgroundTasks, the same shape as
+    /v1/jobs/assess: a classification is minutes of GEE round-trips, so the
+    request returns immediately and the browser polls the job document.
+    """
+    if _mongo_for_jobs is None:
+        raise HTTPException(
+            status_code=503,
+            detail="MongoDB not available (set MONGODB_URI)",
+        )
+    col = _classification_jobs_col()
+    if col is None:
+        raise HTTPException(status_code=503, detail="classification_jobs collection unavailable")
+
+    from api.classification_runner import process_classification_job
+
+    # Areas and inputs come from the caller rather than the stored row so a
+    # retry can adjust them without another insert; the row is the record of
+    # what ran, so it is updated to match.
+    try:
+        col.update_one(
+            {"_id": ObjectId(body.job_id)},
+            {"$set": {"areas": body.areas, "inputs": body.inputs,
+                      "stage": "queued", "error": None,
+                      "updated_at": datetime.now(timezone.utc)}},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid job_id: {exc}") from exc
+
+    background_tasks.add_task(process_classification_job, col, body.job_id)
+    return {"success": True, "job_id": body.job_id, "stage": "queued"}
+
+
+@app.get("/v1/jobs/classify/{job_id}")
+async def get_classify_job(
+    job_id: str,
+    _: None = Depends(verify_service_key),
+) -> Dict[str, Any]:
+    """Job state. Next.js reads Mongo directly for the UI poll; this exists for
+    service-to-service checks and for debugging a stuck run."""
+    col = _classification_jobs_col()
+    if col is None:
+        raise HTTPException(status_code=503, detail="classification_jobs collection unavailable")
+    try:
+        doc = col.find_one({"_id": ObjectId(job_id)})
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid job_id: {exc}") from exc
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {
+        "job_id": job_id,
+        "stage": doc.get("stage"),
+        "percent": doc.get("percent"),
+        "message": doc.get("message"),
+        "checks": doc.get("checks") or [],
+        "error": doc.get("error"),
+        "has_result": doc.get("result") is not None,
+    }
+
+
+@app.get("/v1/jobs/classify/{job_id}/download")
+async def download_classify_product(
+    job_id: str,
+    format: str = "geojson",
+    _: None = Depends(verify_service_key),
+) -> Any:
+    """
+    Render a completed classification into a downloadable product.
+
+    GeoJSON and CSV are served here for completeness, but the browser builds
+    both from the result it already holds -- see the frontend DownloadPanel --
+    so the common case does not depend on this service being up.
+    """
+    from fastapi.responses import JSONResponse, Response
+
+    col = _classification_jobs_col()
+    if col is None:
+        raise HTTPException(status_code=503, detail="classification_jobs collection unavailable")
+    try:
+        doc = col.find_one({"_id": ObjectId(job_id)})
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid job_id: {exc}") from exc
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if doc.get("stage") != "complete" or not doc.get("result"):
+        raise HTTPException(status_code=409, detail="Job is not complete")
+
+    result = dict(doc["result"])
+    region = str((doc.get("inputs") or {}).get("region_name") or "").strip()
+    if region:
+        result["aoi_name"] = region
+    fmt = (format or "geojson").lower()
+
+    if fmt == "geojson":
+        fields = dict(result.get("fields") or {})
+        if region:
+            fields["name"] = region
+        return JSONResponse(fields)
+
+    if fmt == "csv":
+        from api.classification_export import result_to_csv
+        return Response(
+            content=result_to_csv(result),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{job_id}.csv"'},
+        )
+
+    if fmt == "shapefile":
+        from api.classification_export import result_to_shapefile_zip
+        try:
+            blob = result_to_shapefile_zip(result)
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=501,
+                detail=f"Shapefile export needs geopandas on the service: {exc}",
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return Response(
+            content=blob,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{job_id}.zip"'},
+        )
+
+    if fmt == "geotiff":
+        # Burned from the field polygons at 10 m — this pipeline never keeps a
+        # per-pixel model raster, so the classified raster *is* the vector layer
+        # sampled onto the Sentinel-2 grid. See classification_export.
+        from api.classification_export import result_to_geotiff
+        try:
+            blob = result_to_geotiff(result)
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=501,
+                detail=f"GeoTIFF export needs rasterio on the service: {exc}",
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return Response(
+            content=blob,
+            media_type="image/tiff",
+            headers={"Content-Disposition": f'attachment; filename="{job_id}.tif"'},
+        )
+
+    if fmt == "png":
+        from api.classification_export import result_to_png
+        try:
+            blob = result_to_png(result)
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=501,
+                detail=f"PNG export needs Pillow on the service: {exc}",
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return Response(
+            content=blob,
+            media_type="image/png",
+            headers={"Content-Disposition": f'attachment; filename="{job_id}.png"'},
+        )
+
+    raise HTTPException(status_code=400, detail=f"Unknown format '{format}'")
 
 
 # Alias for load balancers that probe /
