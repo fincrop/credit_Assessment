@@ -191,8 +191,8 @@ export default function AoiMapInner({
       .addTo(map);
     L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
 
-    resultGroupRef.current = L.featureGroup({ pane: 'fields' }).addTo(map);
-    aoiGroupRef.current = L.featureGroup({ pane: 'aoiOutline' }).addTo(map);
+    resultGroupRef.current = L.featureGroup([], { pane: 'fields' }).addTo(map);
+    aoiGroupRef.current = L.featureGroup([], { pane: 'aoiOutline' }).addTo(map);
 
     map.on('pm:create', (e: { layer: L.Layer }) => {
       const poly = e.layer as L.Polygon;
