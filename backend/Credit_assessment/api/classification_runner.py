@@ -65,6 +65,8 @@ def process_classification_job(jobs_col: Any, job_id: str) -> None:
                  percent: Optional[float] = None,
                  message: Optional[str] = None,
                  checks: Optional[List[Dict[str, Any]]] = None) -> None:
+        logger.info("[classify] job %s  %-11s %5s  %s", job_id, stage,
+                    "" if percent is None else "%.0f%%" % percent, message or "")
         update: Dict[str, Any] = {"stage": stage, "updated_at": utc_now()}
         if percent is not None:
             update["percent"] = round(float(percent), 1)

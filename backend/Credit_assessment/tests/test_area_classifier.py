@@ -15,6 +15,7 @@ import os
 import numpy as np
 import pytest
 
+from crop_analysis.crop_detector import EXTRACTOR_VERSION
 from crop_analysis.area_classifier import (
     ClassifyInputs,
     NON_CROP_CLASSES,
@@ -519,7 +520,7 @@ def test_classify_objects_loads_detector_with_crop_model_path(monkeypatch):
     assert captured["init"]["longitude"] == pytest.approx(77.2)
     assert captured["init"]["verbose"] is False
     assert objects[0]["crop"] == "Rice"
-    assert out["model_version"] == "tier1_v1"
+    assert out["model_version"] == EXTRACTOR_VERSION
     assert os.environ.get("PHENO_FIT_DISABLE") == "1"
 
 

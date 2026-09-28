@@ -98,7 +98,20 @@ export interface ClassificationInputs {
   apply_region_guard: boolean;
   /** Apply the season posterior mask derived from the cycle's own dates. */
   apply_season_mask: boolean;
+  /** Field-boundary source. 'auto' = ALU if configured, else watershed, else FTW. */
+  delineation_method: DelineationMethod;
 }
+
+export type DelineationMethod = 'auto' | 'alu' | 'hybrid' | 'ftw' | 'watershed' | 'snic';
+
+export const DELINEATION_METHODS: { value: DelineationMethod; label: string; hint: string }[] = [
+  { value: 'auto', label: 'Best available', hint: 'Google ALU when enabled, otherwise the watershed segmenter (best measured at 10 m).' },
+  { value: 'alu', label: 'Google ALU (sub-metre)', hint: 'Needs the Agricultural Understanding API key on the server.' },
+  { value: 'hybrid', label: 'FTW + watershed fusion', hint: 'Fields of The World polygons, gaps filled by our watershed segmenter.' },
+  { value: 'ftw', label: 'Fields of The World 2024/25', hint: 'Open global field polygons (10 m model, CC-BY-4.0).' },
+  { value: 'watershed', label: 'Multi-temporal watershed', hint: 'Our own: year-round Sentinel-2 edge map + seeded watershed.' },
+  { value: 'snic', label: 'Legacy superpixels (SNIC)', hint: 'Previous segmenter; kept for comparison.' },
+];
 
 export const DEFAULT_INPUTS: ClassificationInputs = {
   region_name: '',
@@ -109,6 +122,7 @@ export const DEFAULT_INPUTS: ClassificationInputs = {
   confidence_threshold: 0.25,
   apply_region_guard: true,
   apply_season_mask: true,
+  delineation_method: 'auto',
 };
 
 /** Pre-flight checks run on the AOI before any satellite work is paid for. */
@@ -309,6 +323,9 @@ export function inputsFromStored(raw: unknown): ClassificationInputs {
       : DEFAULT_INPUTS.confidence_threshold,
     apply_region_guard: r.apply_region_guard !== false,
     apply_season_mask: r.apply_season_mask !== false,
+    delineation_method: DELINEATION_METHODS.some((m) => m.value === r.delineation_method)
+      ? (r.delineation_method as DelineationMethod)
+      : DEFAULT_INPUTS.delineation_method,
   };
 }
 

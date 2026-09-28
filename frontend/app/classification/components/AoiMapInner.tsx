@@ -119,7 +119,12 @@ export default function AoiMapInner({
           opacity: 0.9,
           fillColor: color,
           fillOpacity: named ? 0.58 : 0.36,
-          lineJoin: 'round' as const,
+          lineJoin: 'miter' as const,
+          // Field edges are already straightened and shared server-side
+          // (regularize_partition). Leaflet's default per-polygon screen-space
+          // simplification (smoothFactor 1) would move each copy of a shared
+          // edge differently and reopen hairline gaps between neighbours.
+          smoothFactor: 0,
         };
       },
       onEachFeature: (feature, lyr) => {

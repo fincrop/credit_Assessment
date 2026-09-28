@@ -110,17 +110,41 @@ Crop_classification_model/
 └── models/                          crop_classifier_model.joblib
 ```
 
+## Tier 2 (current) — season-aware labels + radar, reflectance, weather
+
+The shipped model is `models/crop_classifier_tier2_v1.joblib`: 0.8315 blocked
+balanced accuracy, all six ship gates passing. Full write-up and measurements:
+[`classification_model.md` Part M](classification_model.md). Pipeline:
+
+```bash
+../.conda/python.exe -m src.cycles --parcels 00_parcels_augmented.parquet --scenes 01_scenes_augmented.parquet --out 02_cycles_season.parquet
+../.conda/python.exe -m src.features --parcels 00_parcels_augmented.parquet --scenes 01_scenes_augmented.parquet --cycles 02_cycles_season.parquet --suffix _season
+../.conda/python.exe -m src.weather --fetch --cycles 02_cycles_season.parquet
+../.conda/python.exe -m src.extract_extra --cycles 02_cycles_season.parquet
+../.conda/python.exe -m src.features_extra --cycles 02_cycles_season.parquet --suffix _season
+../.conda/python.exe -m src.train --tier 2 --blocks wx,s1,refl --estimator xgboost --export
+../.conda/python.exe -m src.evaluate --tier 2
+```
+
+Serving a tier-2 bundle fetches Sentinel-1, S2 reflectance (Earth Engine) and
+NASA POWER weather per farm at classification time, so the API needs outbound
+access to `power.larc.nasa.gov` as well as Earth Engine.
+
+Field-boundary delineation is benchmarked separately:
+`-m src.eval_delineation` (India-10k hand-drawn fields) and
+`-m src.tune_delineation` (fast offline parameter sweep).
+
 ## Deploying
 
 Copy the bundle next to the pipeline and enable the flag:
 
 ```bash
-cp models/crop_classifier_model.joblib ../backend/Credit_assessment/models/
+cp models/crop_classifier_tier2_v1.joblib ../backend/Credit_assessment/models/
 ```
 
 ```
 ENABLE_CROP_CLASSIFICATION=true
-CROP_MODEL_PATH=models/crop_classifier_model.joblib
+CROP_MODEL_PATH=models/crop_classifier_tier2_v1.joblib
 ```
 
 Do **not** enable it until `reports/evaluation_tier0.md` shows all ship gates

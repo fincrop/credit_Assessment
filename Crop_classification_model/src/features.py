@@ -74,6 +74,8 @@ META_COLS = [
     "lat", "lon", "area_ha", "attribution", "duration_outlier", "kind_mismatch",
     "cycle_kind", "season_type", "sowing_date", "harvest_date", "survey_date",
     "n_cycles_detected", "land_cover_class",
+    # season-aware attribution bookkeeping (src/crop_calendar.py)
+    "cycle_index", "peak_date", "label_season", "season_consistent", "attribution_mode",
 ]
 
 
@@ -124,7 +126,11 @@ def main() -> int:
     from config import PipelineConfig
 
     index_keys = SatelliteDataCollector.INDEX_KEYS
-    t0_names = extractor_feature_names()
+    # extractor_feature_names() lists the full live vector (tier-0 grids +
+    # tier-1 grids + scalars). Tier 0 is only the ML_FEATURE_INDICES grids —
+    # its original 45-column contract — so take that prefix explicitly.
+    t0_prefixes = tuple(f"{i.replace('_mean', '')}_t" for i in PipelineConfig.ML_FEATURE_INDICES)
+    t0_names = [n for n in extractor_feature_names() if n.startswith(t0_prefixes)]
     log.info("extractor: %s  |  tier-0 features: %d", EXTRACTOR_VERSION, len(t0_names))
     log.info("  ML_FEATURE_SCENES=%d  ML_FEATURE_INDICES=%s",
              PipelineConfig.ML_FEATURE_SCENES,

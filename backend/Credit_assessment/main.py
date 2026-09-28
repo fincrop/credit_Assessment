@@ -1019,6 +1019,9 @@ class SatelliteBasedCreditPipeline:
                 cropping_analysis = self.crop_detector.analyze_cycles(
                     crop_cycles=crop_cycles,
                     all_continuous_scenes=continuous_data.get('scenes', []),
+                    # Tier-2 bundles fetch S1 / reflectance / weather /
+                    # embeddings for this polygon; tier-0/1 ignore it.
+                    farm_geometry=geometry,
                 )
                 classification_mode = 'satellite_ndvi_ml_classifier'
                 classification_note = (

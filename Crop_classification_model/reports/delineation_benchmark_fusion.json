@@ -1,0 +1,37 @@
+{
+ "year": 2024,
+ "sites": 30,
+ "split": "test",
+ "methods": {
+  "snic": {
+   "n_fields": 148,
+   "median_iou": 0.2924,
+   "mean_iou": 0.3107,
+   "iou50": 0.0608,
+   "iou30": 0.4797,
+   "median_frag": 3.0,
+   "median_area_ratio": 1.188,
+   "sec_per_site": 5.6
+  },
+  "hybrid_ws": {
+   "n_fields": 148,
+   "median_iou": 0.2275,
+   "mean_iou": 0.2878,
+   "iou50": 0.1824,
+   "iou30": 0.3716,
+   "median_frag": 2.0,
+   "median_area_ratio": 1.578,
+   "sec_per_site": 31.5
+  },
+  "hybrid_snic": {
+   "n_fields": 148,
+   "median_iou": 0.2636,
+   "mean_iou": 0.314,
+   "iou50": 0.1892,
+   "iou30": 0.4459,
+   "median_frag": 1.0,
+   "median_area_ratio": 1.762,
+   "sec_per_site": 14.1
+  }
+ }
+}

@@ -41,6 +41,12 @@ from config import PipelineConfig
 
 from utils.india_geo_context import detector_ndvi_threshold, infer_agro_ecoregion
 
+from crop_analysis.extra_features import (
+    all_extra_feature_names,
+    blocks_required,
+    build_extra_features,
+)
+
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -54,12 +60,14 @@ logger = logging.getLogger(__name__)
 # EXTRACTOR_VERSION and retraining — a model bundle records the version it was
 # trained against and CropDetector refuses to load a mismatch.
 
-EXTRACTOR_VERSION = "tier1_v1"
+EXTRACTOR_VERSION = "tier2_v1"
 
 # Tier-0 feature SEMANTICS are unchanged by the tier-1 addition — the same 45
 # names are computed the same way — so a tier-0 bundle remains valid and is
 # still accepted. Only genuinely incompatible extractors are rejected.
-COMPATIBLE_EXTRACTOR_VERSIONS = frozenset({"tier0_v1", "tier1_v1"})
+# Tier-2 (crop_analysis/extra_features.py) only ADDS blocks — S1, reflectance,
+# weather, AlphaEarth — so tier-0/1 bundles stay valid.
+COMPATIBLE_EXTRACTOR_VERSIONS = frozenset({"tier0_v1", "tier1_v1", "tier2_v1"})
 
 # Extra index grids (tier 1). Chosen for what they discriminate:
 #   NDRE  chlorophyll / nitrogen  — the Wheat<->Mustard separator
@@ -266,7 +274,7 @@ class CropDetector:
         # 0.0 with no warning, no log line and no exception — a model trained
         # with extra features would run in production against zeros while
         # still reporting healthy confidences. Refuse to load instead.
-        producible = set(extractor_feature_names())
+        producible = set(extractor_feature_names()) | set(all_extra_feature_names())
         missing = [fn for fn in self.feature_names if fn not in producible]
         if missing:
             raise ValueError(
@@ -310,6 +318,13 @@ class CropDetector:
                 "  Model uses cycle-level features (tier 1) — classification "
                 "requires a CropCycle and will abstain without one."
             )
+
+        # Tier-2 blocks this bundle needs. Their inputs are fetched per farm in
+        # analyze_cycles (data_acquisition.extra_sources) — never zero-filled.
+        self.extra_blocks = blocks_required(self.feature_names)
+        self._extra_names = set(all_extra_feature_names())
+        if self.extra_blocks:
+            logger.info("  Model uses tier-2 blocks: %s", self.extra_blocks)
 
         self.abstain_rule = {
             **DEFAULT_ABSTAIN_RULE,
@@ -571,6 +586,8 @@ class CropDetector:
         self,
         crop_cycles: List[Dict],
         all_continuous_scenes: List[Dict],
+        farm_geometry: Any = None,
+        extra_inputs: Optional[Dict[int, Dict[str, Any]]] = None,
     ) -> Dict:
         """
         Cycle-based crop detection — aligned with Stage-4 sowing / harvest intervals.
@@ -617,6 +634,26 @@ class CropDetector:
                 return hd.strftime('%Y-%m-%d') if hasattr(hd, 'strftime') else hd
 
             return getattr(cyc, key, None)
+
+        # Tier-2 inputs for every cycle, fetched once for the farm.
+        if self.extra_blocks and extra_inputs is None and farm_geometry is not None:
+            try:
+                from data_acquisition.extra_sources import fetch_inputs_for_cycles
+                geom = (farm_geometry if isinstance(farm_geometry, dict)
+                        else farm_geometry.__geo_interface__)
+                cyc_dicts = [
+                    {'sowing_date': _get(c, 'start_date'), 'harvest_date': _get(c, 'end_date'),
+                     'peak_date': _get(c, 'peak_date')}
+                    for c in crop_cycles
+                ]
+                extra_inputs = fetch_inputs_for_cycles(
+                    geom, self.latitude or 0.0, self.longitude or 0.0,
+                    cyc_dicts, self.extra_blocks,
+                )
+            except Exception as exc:  # noqa: BLE001 — classification is best-effort
+                logger.warning("tier-2 input fetch failed: %s", str(exc)[:160])
+                extra_inputs = {}
+        self._extra_inputs = extra_inputs or {}
 
         season_results  = []
         crops_detected  = defaultdict(int)
@@ -675,6 +712,7 @@ class CropDetector:
                 try:
                     crop_pred = self._classify_crop_chronological(
                         cycle_scenes, cycle=cycle,
+                        extra=self._extra_inputs.get(i - 1),
                     )
                     predicted_crop  = crop_pred['crop']
                     crop_confidence = crop_pred['confidence']
@@ -919,6 +957,7 @@ class CropDetector:
 
     def _classify_crop_chronological(
         self, scenes: List[Dict], cycle: Any = None,
+        extra: Optional[Dict[str, Any]] = None,
     ) -> Dict:
         """
         Classify crop type from a cycle's chronologically ordered scenes.
@@ -960,8 +999,37 @@ class CropDetector:
 
         feature_dict = build_features(sorted_scenes, cycle, n_feat, indices)
 
-        feature_vector = [feature_dict.get(fn, 0.0) for fn in self.feature_names]
-        X = np.nan_to_num(np.array([feature_vector]), nan=0.0)
+        extra_missing: List[str] = []
+        blocks = getattr(self, "extra_blocks", [])
+        if blocks:
+            ex = extra or {}
+            extra_missing = list(ex.get("missing") or ([] if extra else list(blocks)))
+            def _cd(k1, k2):
+                if cycle is None:
+                    return None
+                if isinstance(cycle, dict):
+                    return cycle.get(k1) or cycle.get(k2)
+                return getattr(cycle, k1, None) or getattr(cycle, k2, None)
+            sow, har = _cd('sowing_date', 'start_date'), _cd('harvest_date', 'end_date')
+            peak = _cd('peak_date', 'peak_date')
+            if sow is not None and har is not None:
+                feature_dict.update(build_extra_features(
+                    blocks, sow, har, peak,
+                    s1_series=ex.get("s1_series"), refl_series=ex.get("refl_series"),
+                    weather_daily=ex.get("weather_daily"), embedding=ex.get("embedding"),
+                ))
+
+        # Tier-0/1 keep their historical NaN->0 fill (the extractor already
+        # interpolates gaps). Tier-2 NaN is preserved: "input unavailable" must
+        # take XGBoost's missing branch, not masquerade as 0 dB or 0 reflectance.
+        extra_names = getattr(self, "_extra_names", set())
+        feature_vector = []
+        for fn in self.feature_names:
+            v = feature_dict.get(fn, np.nan if fn in extra_names else 0.0)
+            if fn not in extra_names and (v is None or not np.isfinite(v)):
+                v = 0.0
+            feature_vector.append(np.nan if v is None else v)
+        X = np.array([feature_vector], dtype=float)
 
         prediction    = self.model.predict(X)[0]
         probabilities = self.model.predict_proba(X)[0]
@@ -1000,6 +1068,8 @@ class CropDetector:
             'feature_scenes':    n_feat,
             'method':            'temporal_interpolation',
             'extractor_version': EXTRACTOR_VERSION,
+            'extra_blocks':      list(blocks),
+            'extra_blocks_missing': extra_missing,
         }
 
 

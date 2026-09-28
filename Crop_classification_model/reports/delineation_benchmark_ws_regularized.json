@@ -1,0 +1,17 @@
+{
+ "year": 2024,
+ "sites": 30,
+ "split": "test",
+ "methods": {
+  "watershed": {
+   "n_fields": 148,
+   "median_iou": 0.3847,
+   "mean_iou": 0.3898,
+   "iou50": 0.2703,
+   "iou30": 0.723,
+   "median_frag": 2.0,
+   "median_area_ratio": 1.056,
+   "sec_per_site": 5.0
+  }
+ }
+}

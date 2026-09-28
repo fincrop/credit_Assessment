@@ -1,0 +1,17 @@
+{
+ "year": 2024,
+ "sites": 30,
+ "split": "test",
+ "methods": {
+  "ftw": {
+   "n_fields": 148,
+   "median_iou": 0.1686,
+   "mean_iou": 0.2407,
+   "iou50": 0.1824,
+   "iou30": 0.3446,
+   "median_frag": 1.0,
+   "median_area_ratio": 1.296,
+   "sec_per_site": 48.1
+  }
+ }
+}

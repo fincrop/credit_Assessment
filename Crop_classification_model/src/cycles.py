@@ -229,6 +229,35 @@ def _attribute(cycles: List, survey: date, crop: str) -> Tuple[Optional[int], st
     return None, "no_cycle_near_survey_date"
 
 
+def _attribute_seasonal(cycles: List, survey: date, crop: str,
+                        strict: bool) -> Tuple[Optional[int], str, str, bool]:
+    """
+    Season-aware attribution (see crop_calendar.py): `Date` marks the season
+    of cultivation, so resolve it to a season instance and take the cycle whose
+    peak falls in that season. Perennials keep the containment rule.
+
+    Returns (index, tag, label_season, season_consistent).
+    """
+    from config import CropGrowthCurves
+    from .crop_calendar import PERENNIAL, pick_cycle_by_season
+
+    if not cycles:
+        return None, "no_cycle_detected", "", False
+    if crop in PERENNIAL:
+        idx, tag = _attribute(cycles, survey, crop)
+        return idx, tag, "perennial", idx is not None
+
+    typical = float(CropGrowthCurves.CROP_DURATIONS.get(crop, {}).get("typical_days", 120))
+    idx, tag, inst = pick_cycle_by_season(cycles, crop, survey, typical)
+    season = inst.season if inst else ""
+    if idx is not None:
+        return idx, tag, season, True
+    if strict:
+        return None, tag, season, False
+    idx, old = _attribute(cycles, survey, crop)
+    return idx, (f"fallback_{old}" if idx is not None else old), season, False
+
+
 def _duration_outlier(cyc, crop: str) -> bool:
     from config import CropGrowthCurves
 
@@ -267,6 +296,11 @@ def main() -> int:
     ap.add_argument("--parcels", default=None, help="override parcel parquet")
     ap.add_argument("--scenes", default=None, help="override scenes parquet")
     ap.add_argument("--out", default=None, help="override cycles parquet")
+    ap.add_argument("--attribution", default="season",
+                    choices=["survey", "season", "season_strict"],
+                    help="survey = legacy 'cycle containing Date'; season = crop-"
+                         "calendar peak match with legacy fallback; season_strict "
+                         "= reject parcels with no season-consistent cycle")
     args = ap.parse_args()
 
     global PARCELS, SCENES, OUT
@@ -380,7 +414,13 @@ def main() -> int:
             continue
 
         survey = pd.to_datetime(p["Date"]).date()
-        idx, tag = _attribute(cycles, survey, p["Crop_Name"])
+        if args.attribution == "survey":
+            idx, tag = _attribute(cycles, survey, p["Crop_Name"])
+            label_season, season_ok = "", None
+        else:
+            idx, tag, label_season, season_ok = _attribute_seasonal(
+                cycles, survey, p["Crop_Name"],
+                strict=args.attribution == "season_strict")
         if idx is None:
             rejected.append({**base, "reason": tag, "n_cycles": len(cycles)})
             reasons[tag] += 1
@@ -398,7 +438,7 @@ def main() -> int:
         kept.append({
             **base,
             "attribution": tag,
-            "kind_mismatch": tag.startswith("kindmismatch_"),
+            "kind_mismatch": "kindmismatch_" in tag,
             "n_cycles_detected": len(cycles),
             "cycle_index": idx,
             "sowing_date": s.isoformat(),
@@ -423,6 +463,9 @@ def main() -> int:
             "land_cover_class": lc.get("class"),
             "land_cover_outcome": lc.get("outcome"),
             "survey_date": survey.isoformat(),
+            "attribution_mode": args.attribution,
+            "label_season": label_season,
+            "season_consistent": season_ok,
         })
 
         if i % 250 == 0 or i == len(parcels):

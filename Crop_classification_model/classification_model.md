@@ -1,7 +1,7 @@
 # Crop Classification Model — Data Audit, Pipeline Contract & Architecture
 
-**Status:** implemented and trained — see [PART L — Results](#part-l--results) and [`models/MODEL_CARD.md`](models/MODEL_CARD.md)
-**Outcome:** tier-1 model at **0.7492** blocked balanced accuracy, **5 of 6 ship gates pass**; classification stays DISABLED pending the Gram-recall and cross-region failures in L.5/L.7
+**Status:** tier 2 implemented and trained — see [PART M](#part-m--tier-2-season-aware-labels-new-data-sources-new-delineation)
+**Outcome:** tier-2 model at **0.8315** blocked balanced accuracy, **all 6 ship gates pass** (tier 1: 0.7492, 5/6); cross-region transfer still limited (LOEO 0.27) — keep the region guard on
 **Scope:** the ML crop classifier that fills the `enable_crop_classification=False` hole in Stage 5
 **Training data:** `Crop_classification_model/crop_classification_train_500.gpkg` (9,000 parcels, 18 crops)
 **Target artifact:** `backend/Credit_assessment/models/crop_classifier_model.joblib`
@@ -1395,6 +1395,196 @@ The highest-leverage remaining action is not modelling at all: **re-sample the
 training set randomly and spatially stratified from the full ~106,000 source
 rows** (J.2 item 2). That attacks the leakage gap, the LOEO failure and the
 `Area` artifact simultaneously, and no estimator change can substitute for it.
+
+# PART M — Tier 2: season-aware labels, new data sources, new delineation
+
+## M.1 `Date` is the season of cultivation — attribution rebuilt on it
+
+`Date` is always the 10th of a month and marks the *season* a survey refers to,
+not a sowing date. The legacy rule ("the cycle that contains `Date`") picked the
+wrong cycle whenever the survey fell outside the crop's own growth window — a
+10-Nov gram survey lands on the tail of the preceding kharif crop, because gram
+is only just being sown. Measured on the legacy cycles: 31 Gram cycles peaked in
+Aug–Sep, Bajra/Jowar/Rice were 89–93% season-consistent.
+
+`src/crop_calendar.py` resolves (crop, `Date`) to a season instance from
+ICAR/DES crop calendars (kharif / rabi / zaid / late-kharif / summer per crop)
+and takes the detected cycle whose **peak** falls in that season's peak window
+(±30 d). Perennials keep the containment rule. `cycles.py --attribution season`
+is now the default (`survey` reproduces the legacy rule; `season_strict`
+rejects instead of falling back).
+
+| | legacy (`survey`) | `season` |
+|---|---|---|
+| season-consistent cycles | 97.3% | **99.5%** |
+| Bajra / Jowar / Rice / Gram | 91.4 / 93.5 / 89.5 / 93.5% | 99.4 / 100 / 96.8 / 99.8% |
+| cycles that changed | — | 6.2% |
+| attributed parcels | 8,955 | 8,996 / 10,054 (89.5%) |
+
+Label-aware by design; used only to choose which cycle carries a label, never
+as a feature.
+
+## M.2 New input blocks (tier 2)
+
+All four live in backend `crop_analysis/extra_features.py` (pure feature
+builders) and `data_acquisition/extra_sources.py` (Earth Engine + NASA POWER
+fetchers), imported by both the trainer and the live pipeline — parity is
+structural, as for tier 0/1.
+
+| block | source | features |
+|---|---|---|
+| `wx` | NASA POWER daily, per-location DOY climatology | thermal time (GDD) + rainfall/temperature anomalies (9) |
+| `s1` | Sentinel-1 GRD VV/VH, 10-day medians | VV, VH, VH−VV on a 12-pt calendar grid + flood/volume stats (44) |
+| `refl` | Sentinel-2 L2A B2–B12 surface reflectance, cloud-masked 10-day medians | 10 bands × 6-pt grid + value at NDVI peak (71) |
+| `emb` | AlphaEarth `GOOGLE/SATELLITE_EMBEDDING/V1/ANNUAL` | 64-d, year of the cycle's peak |
+
+Unavailable input → NaN (never 0; 0 dB / 0 reflectance are real values), which
+XGBoost routes down a learned missing branch — the same thing that happens in
+serving when a source is down.
+
+## M.3 Which blocks earn their place (03_features_tier2_season, 8,996 cycles)
+
+| recipe | blocked | LOEO | adversarial |
+|---|---|---|---|
+| tier-1 only | 0.7364 | 0.1757 | 0.7379 |
+| + wx | 0.7849 | 0.1841 | 0.8182 |
+| + s1 | 0.7946 | 0.2078 | 0.7725 |
+| + refl | 0.7946 | 0.1977 | 0.7888 |
+| + emb | 0.8257 | **0.1572** | **0.9750** |
+| + wx + s1 | 0.8283 | 0.2389 | 0.8143 |
+| **+ wx + s1 + refl (shipped)** | **0.8514** | **0.2644** | 0.8259 |
+| + wx + s1 + emb | 0.8570 | 0.2153 | 0.9743 |
+| + all four | 0.8651 | 0.2268 | 0.9732 |
+| + all four, shape-normalised | 0.8640 | 0.2280 | 0.9715 |
+
+**AlphaEarth embeddings are rejected.** They add in-region accuracy but make
+ecoregion almost perfectly recoverable (0.97) and *lower* cross-region accuracy
+in every combination — the region_standardized failure pattern from
+`crossregion._standardize_within`. Village mapping asks for new regions, so
+the shipped set is **wx + s1 + refl**: +11.5 points blocked, +50% LOEO over
+tier-1 on the same labels.
+
+S1 is the single best block for transfer (+3.2 LOEO alone): it is the only
+input that sees the monsoon, when most kharif discrimination happens.
+
+## M.4 The shipped tier-2 model — all six gates pass
+
+`python -m src.train --tier 2 --blocks wx,s1,refl --estimator xgboost --export`
+→ `models/crop_classifier_tier2_v1.joblib` (271 features, extractor `tier2_v1`).
+
+| metric (blocked GroupKFold, calibrated) | tier 1 (L.2) | **tier 2** | gate |
+|---|---|---|---|
+| balanced accuracy | 0.7492 | **0.8315** | ≥0.55 PASS |
+| macro F1 | 0.7348 | **0.8312** | ≥0.50 PASS |
+| min class recall | 0.214 (Gram) FAIL | **0.680 (Jowar)** | ≥0.30 **PASS** |
+| ECE | 0.0109 | 0.0336 | ≤0.05 PASS |
+| precision @0.25 | 0.765 | **0.853** | ≥0.70 PASS |
+| coverage @0.25 | 0.959 | 0.961 | ≥0.40 PASS |
+| random (diagnostic) | 0.8825 | 0.9357 | — |
+| leakage gap | +0.1333 | **+0.1042** | — |
+| leave-one-ecoregion-out | 0.1898 | **0.2664** | — |
+
+First model to pass every gate; the Gram failure that blocked L.7 is gone
+(season-aware attribution removed the kharif cycles mislabelled as Gram).
+Baselines on the same folds: random forest 0.8313, logistic 0.8087, dummy 0.049.
+(crossregion's 0.8514 for the same recipe differs because train.py holds out a
+nested calibration split and applies class/block sample weights.)
+
+Cross-region transfer is still weak (0.27 LOEO; Chilli 0 because it exists in
+one region only). The region-support guard remains mandatory for village
+mapping outside trained regions.
+
+**Live parity check** (`fetch_inputs_for_cycles` → `build_extra_features`
+against Earth Engine / POWER for random training parcels): S1 and reflectance
+reproduce the training table exactly (max relative difference 0.000). Weather
+absolutes match exactly after snapping serving to the 0.25° POWER cell;
+anomaly columns differ by ~0.02 because serving climatology can only use years
+before the cycle.
+
+**Village sanity run — Tondoli, Latur (153.7 ha, kharif 2024, no ground truth).**
+End-to-end `run_classification` with `auto` delineation: 301 watershed fields
+(median 0.25 ha), 154 s.
+
+| | tier 1 | tier 2 |
+|---|---|---|
+| classified area | 74.4 ha | 93.5 ha |
+| abstained fields | 74 | 34 |
+| mean confidence | 0.63 | 0.68 |
+| top crops | Sugarcane 69, Grapes 41, **Tobacco 40** | Grapes 73, Sugarcane 66, Bajra 39, Soyabean 15 |
+
+Tier 2 removes the implausible Tobacco and abstains less, but BOTH tiers
+over-call Grapes/Sugarcane for a Marathwada kharif that should be soybean/tur
+dominated. The Deccan training parcels are horticulture-heavy (Grapes 466,
+Onion 422, Banana 310 in DECCAN_PLATEAU), so the region prior points there.
+This needs Marathwada kharif ground truth, not modelling — it is the most
+important open item before village-scale use.
+
+## M.5 Field delineation
+
+See `backend/Credit_assessment/crop_analysis/field_delineation.py`. Benchmark:
+`src/eval_delineation.py` on the India-10k manually drawn fields (Wang, Waldner
+& Lobell, CC-BY-4.0; median field 0.24 ha), 30 test sites, 148 fields.
+
+| method | median IoU | IoU≥0.5 | area ratio |
+|---|---|---|---|
+| SNIC (previous production) | 0.292 | 6% | 1.19 |
+| FTW Global 2024 (PRUE, 10 m) | 0.169 | 18% | 1.30 |
+| FTW + watershed fusion | 0.317 | 24% | 1.50 |
+| **watershed (new default at 10 m)** | **0.388** | **27%** | **1.04** |
+
+The watershed is multi-month S2 gradient strength → local-minima markers
+(2× upsampled) → priority-flood → boundary-strength region merging, tuned on
+768 settings with `src/tune_delineation.py`. Two findings worth keeping:
+
+- `scipy.ndimage.watershed_ift` is not usable here: at full uint16 range it
+  leaves ~99% of pixels unlabelled, and at any range it lets regions cross
+  one-pixel bunds. Replaced by an exact priority flood (skimage when present).
+  The fix alone moved mean IoU 0.255 → 0.390.
+- AlphaEarth and S1 edge cues did not sharpen boundaries at this field size
+  (best mean IoU s2 0.394, s2+emb 0.382, all 0.376).
+
+Chain: `auto` = Google ALU (when `AG_UNDERSTANDING_API_KEY` is set) →
+watershed → FTW → SNIC. **No 10 m method is good at 0.24 ha** — 27% of fields at
+IoU≥0.5 is the ceiling measured here. ALU (30 cm imagery, median IoU 0.82
+nationally per its paper) is the real fix; its data is CC BY-NC-ND 4.0, so
+commercial credit use must be cleared with Google. The ALU provider is written
+against the documented `v1:lookupLandscape` contract but untested without a key.
+
+### M.5.1 Straight, gap-free field edges
+
+Tracing the label raster gave every field a 5 m pixel staircase, and simplifying
+each polygon independently moved the two copies of a shared edge apart, opening
+slivers between neighbours. `field_delineation.regularize_partition` now
+straightens the edges as one shared network, and is applied to the watershed
+and FTW outputs:
+
+1. close background slivers ≤10 m wide between fields, split between neighbours
+2. node all rings into one linework and merge it into junction-to-junction chains
+3. pin true corners (heading change > 50° over ±15 m — a staircase averages ~45°)
+4. Douglas-Peucker each chain between pinned points at 7 m (`REGULARIZE_M`)
+5. polygonize, give faces back to their fields, absorb small orphan faces
+
+Tondoli, same segmentation before → after: median vertices per field 19 → 8,
+sliver gaps between fields 147 (0.56 ha) → 3, 0 overlaps, all polygons valid.
+Accuracy on India-10k is unchanged (median IoU 0.388 → 0.385, IoU≥0.5 27.0% →
+27.0%), and it runs ~3× faster downstream on the simpler polygons. The map
+renders with Leaflet `smoothFactor: 0` so the browser does not re-simplify each
+polygon independently and reopen the gaps.
+Figure: `reports/delineation_regularized_tondoli.png`.
+
+## M.6 Reproduce
+
+```bash
+python -m src.cycles --parcels 00_parcels_augmented.parquet --scenes 01_scenes_augmented.parquet --out 02_cycles_season.parquet
+python -m src.features --parcels 00_parcels_augmented.parquet --scenes 01_scenes_augmented.parquet --cycles 02_cycles_season.parquet --suffix _season
+python -m src.weather --fetch --cycles 02_cycles_season.parquet
+python -m src.extract_extra --cycles 02_cycles_season.parquet          # ~5 min, resumable
+python -m src.features_extra --cycles 02_cycles_season.parquet --suffix _season
+python -m src.crossregion --features 03_features_tier2_season.parquet --blocked --adversarial --recipe t2_t1only --recipe t2_wx_s1_refl
+python -m src.train --tier 2 --blocks wx,s1,refl --estimator xgboost --export
+python -m src.eval_delineation --sites 30 --methods snic,ftw,watershed
+```
+
 
 ## Appendix — reproducing the audit
 

@@ -124,6 +124,9 @@ class ClassifyInputs:
     apply_season_mask: bool = True
     # Optional label for the run (history, result header, download filenames).
     region_name: str = ""
+    # Field-boundary source: auto | alu | ftw | watershed | snic. See
+    # crop_analysis/field_delineation.py for the chain and its benchmark.
+    delineation_method: str = "auto"
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "ClassifyInputs":
@@ -137,6 +140,8 @@ class ClassifyInputs:
             apply_region_guard=bool(d.get("apply_region_guard", True)),
             apply_season_mask=bool(d.get("apply_season_mask", True)),
             region_name=str(d.get("region_name") or "").strip(),
+            delineation_method=str(d.get("delineation_method") or
+                                   os.environ.get("DELINEATION_METHOD") or "auto").lower(),
         )
 
 
@@ -547,33 +552,8 @@ def validate_aoi(areas: List[Dict[str, Any]], inputs: ClassifyInputs) -> List[Va
 # =============================================================================
 # stage 2/3 — segment, then per-object time series
 # =============================================================================
-def segment_and_extract(
-    areas: List[Dict[str, Any]],
-    inputs: ClassifyInputs,
-    progress: ProgressFn,
-) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """SNIC superpixels + their index trajectories.
-
-    Returns (objects, bin_dates) where each object carries `geometry`,
-    `area_ha`, `n_pixels` and `series` -- a per-bin dict of index means in the
-    exact `SatelliteDataCollector.INDEX_KEYS` naming the model expects.
-    """
-    ee = _ee()
-    aoi = _aoi_geometry(areas)
-    d0, d1 = season_window(inputs.season, inputs.year)
-
-    from config import PipelineConfig
-    cloud_cap = float(getattr(PipelineConfig, "MAX_CLOUD_COVER_CONTINUOUS", 70.0))
-
-    progress("extracting", 10.0, f"Building composites for {d0}–{d1}", None)
-    images, bins = _composite_collection(ee, aoi, d0, d1, cloud_cap)
-    if not images:
-        raise ClassificationError("No Sentinel-2 composites could be built for that window.")
-
-    # Segmentation runs on a season summary, not on one date: a single scene
-    # splits on transient cloud shadow, while a median true-colour/NIR view
-    # plus NDVI percentiles over the window respond to bunds and to how the
-    # surface behaves — which is what a field boundary actually is.
+def _snic_objects(ee, images, aoi, inputs: "ClassifyInputs", progress) -> List[Dict[str, Any]]:
+    """Legacy SNIC segmentation — the last-resort boundary source."""
     progress("segmenting", 30.0, "Finding field boundaries from imagery", None)
     seg_input = _segmentation_image(ee, images, aoi)
     snic = ee.Algorithms.Image.Segmentation.SNIC(
@@ -628,6 +608,89 @@ def segment_and_extract(
             "centroid": geometry_centroid(geom),
             "series": {},
         })
+
+    for o in objects:
+        o["boundary_source"] = "snic"
+    return objects
+
+
+def _areas_geojson(areas: List[Dict[str, Any]]) -> Dict[str, Any]:
+    from shapely.geometry import mapping, shape
+    from shapely.ops import unary_union
+    geoms = [shape(a["boundary"]) for a in areas if a.get("boundary")]
+    if not geoms:
+        raise ClassificationError("No usable boundary geometry in the request.")
+    return mapping(unary_union(geoms))
+
+
+def _delineated_objects(areas, inputs: "ClassifyInputs", progress) -> Optional[List[Dict[str, Any]]]:
+    """Field polygons from the delineation chain; None -> caller falls back to SNIC."""
+    from crop_analysis.field_delineation import DelineationError, delineate
+
+    def _p(method: str) -> None:
+        progress("segmenting", 30.0, "Delineating field boundaries (%s)" % method, None)
+
+    try:
+        res = delineate(_areas_geojson(areas), year=inputs.year,
+                        method=inputs.delineation_method,
+                        min_field_ha=max(0.03, min(inputs.min_field_area_ha, 0.1)),
+                        progress=_p)
+    except DelineationError as exc:
+        logger.warning("[area_classifier] delineation unavailable (%s); using SNIC",
+                       str(exc)[:200])
+        return None
+    objects = []
+    for i, f in enumerate(res.fields, 1):
+        geom = f["geometry"]
+        area_ha = geometry_area_ha(geom)
+        if area_ha <= 0:
+            continue
+        objects.append({
+            "field_id": i,
+            "geometry": geom,
+            "area_ha": round(area_ha, 4),
+            "n_pixels": int(area_ha * 10_000 / (TARGET_SCALE_M ** 2)),
+            "centroid": geometry_centroid(geom),
+            "series": {},
+            "boundary_source": res.method,
+            "boundary_confidence": (f.get("properties") or {}).get("confidence"),
+        })
+    logger.info("[area_classifier] %d fields from %s delineation", len(objects), res.method)
+    return objects or None
+
+
+def segment_and_extract(
+    areas: List[Dict[str, Any]],
+    inputs: ClassifyInputs,
+    progress: ProgressFn,
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """SNIC superpixels + their index trajectories.
+
+    Returns (objects, bin_dates) where each object carries `geometry`,
+    `area_ha`, `n_pixels` and `series` -- a per-bin dict of index means in the
+    exact `SatelliteDataCollector.INDEX_KEYS` naming the model expects.
+    """
+    ee = _ee()
+    aoi = _aoi_geometry(areas)
+    d0, d1 = season_window(inputs.season, inputs.year)
+
+    from config import PipelineConfig
+    cloud_cap = float(getattr(PipelineConfig, "MAX_CLOUD_COVER_CONTINUOUS", 70.0))
+
+    progress("extracting", 10.0, f"Building composites for {d0}–{d1}", None)
+    images, bins = _composite_collection(ee, aoi, d0, d1, cloud_cap)
+    if not images:
+        raise ClassificationError("No Sentinel-2 composites could be built for that window.")
+
+    # Segmentation runs on a season summary, not on one date: a single scene
+    # splits on transient cloud shadow, while a median true-colour/NIR view
+    # plus NDVI percentiles over the window respond to bunds and to how the
+    # surface behaves — which is what a field boundary actually is.
+    objects = None
+    if inputs.delineation_method != "snic":
+        objects = _delineated_objects(areas, inputs, progress)
+    if objects is None:
+        objects = _snic_objects(ee, images, aoi, inputs, progress)
 
     logger.info("[area_classifier] %d objects after segmentation", len(objects))
 
@@ -772,6 +835,89 @@ def _representative_latlon(objects: List[Dict[str, Any]]) -> Tuple[Optional[floa
     return float(np.median(lats)), float(np.median(lons))
 
 
+TIER2_CHUNK = 150
+
+
+def _prefetch_tier2(objects, crop_model, d0: date, d1: date, lat, lon, progress):
+    """S1 / reflectance for every object (one reduceRegions per chunk over the
+    season window) and one weather series for the AOI. Embeddings are fetched
+    lazily per year in `_with_embedding`, since the year depends on the cycle.
+    Returns {field_id: extra-inputs dict}; empty when the bundle is tier-0/1."""
+    blocks = list(getattr(crop_model, "extra_blocks", []) or [])
+    if not blocks:
+        return {}
+    from crop_analysis.extra_features import PAD_DAYS
+    from data_acquisition import extra_sources as xs
+
+    ee = _ee()
+    lo, hi = d0 - timedelta(days=PAD_DAYS), d1 + timedelta(days=PAD_DAYS)
+    out: Dict[int, Dict[str, Any]] = {o["field_id"]: {"missing": []} for o in objects}
+    if set(blocks) & {"s1", "refl"}:
+        for k in range(0, len(objects), TIER2_CHUNK):
+            chunk = objects[k:k + TIER2_CHUNK]
+            progress("classifying", 80.0, "Radar & reflectance %d/%d" % (k + len(chunk), len(objects)), None)
+            try:
+                res = xs.fetch_time_series(
+                    ee, [(str(o["field_id"]), o["geometry"]) for o in chunk], lo, hi, blocks)
+            except Exception as exc:                          # noqa: BLE001
+                logger.warning("tier-2 series chunk failed: %s", str(exc)[:160])
+                res = {}
+            for o in chunk:
+                r = res.get(str(o["field_id"]), {})
+                e = out[o["field_id"]]
+                e["s1_series"], e["refl_series"] = r.get("s1"), r.get("refl")
+                e["missing"] += [b for b in ("s1", "refl") if b in blocks and not r.get(b)]
+    if "emb" in blocks:
+        # A season window spans at most two calendar years; batch both so the
+        # per-object lookup in _with_embedding is a cache hit.
+        for y in sorted({d0.year, d1.year}):
+            for k in range(0, len(objects), TIER2_CHUNK * 3):
+                chunk = objects[k:k + TIER2_CHUNK * 3]
+                try:
+                    res = xs.fetch_embeddings(
+                        ee, [(str(o["field_id"]), o["geometry"]) for o in chunk], y)
+                except Exception as exc:                      # noqa: BLE001
+                    logger.warning("embedding prefetch %s failed: %s", y, str(exc)[:120])
+                    continue
+                for o in chunk:
+                    _EMB_CACHE[(o["field_id"], y)] = res.get(str(o["field_id"]))
+    if "weather" in blocks and lat is not None and lon is not None:
+        try:
+            daily = xs.fetch_weather_for_cycles(lat, lon, lo, hi)
+        except Exception as exc:                              # noqa: BLE001
+            logger.warning("tier-2 weather failed: %s", str(exc)[:160])
+            daily = None
+        for e in out.values():
+            e["weather_daily"] = daily
+            if daily is None:
+                e["missing"].append("weather")
+    return out
+
+
+_EMB_CACHE: Dict[Tuple[int, int], Optional[List[float]]] = {}
+
+
+def _with_embedding(extra, obj, cycle, crop_model):
+    from crop_analysis.extra_features import embedding_year
+    from data_acquisition.extra_sources import fetch_embeddings
+
+    g = cycle.get if isinstance(cycle, dict) else (lambda k: getattr(cycle, k, None))
+    y = embedding_year(g("sowing_date") or g("start_date"),
+                       g("harvest_date") or g("end_date"), g("peak_date"))
+    key = (obj["field_id"], y)
+    if key not in _EMB_CACHE:
+        try:
+            _EMB_CACHE[key] = fetch_embeddings(_ee(), [(str(obj["field_id"]), obj["geometry"])], y).get(
+                str(obj["field_id"]))
+        except Exception:                                     # noqa: BLE001
+            _EMB_CACHE[key] = None
+    e = dict(extra)
+    e["embedding"] = _EMB_CACHE[key]
+    if e["embedding"] is None:
+        e["missing"] = list(e.get("missing", [])) + ["emb"]
+    return e
+
+
 def classify_objects(
     objects: List[Dict[str, Any]],
     bin_dates: List[str],
@@ -804,6 +950,9 @@ def classify_objects(
 
     allow = {c.strip() for c in inputs.target_crops if c and c.strip()}
     n_total = len(objects)
+
+    _EMB_CACHE.clear()
+    extra_by_obj = _prefetch_tier2(objects, crop_model, d0, d1, lat, lon, progress)
 
     # Double-logistic phenology refinement calls scipy.optimize.curve_fit, which
     # on Windows can abort the process inside LAPACK with no Python exception
@@ -851,7 +1000,14 @@ def classify_objects(
                 continue
 
             try:
-                pred = crop_model._classify_crop_chronological(scenes, cycle)
+                blocks = getattr(crop_model, "extra_blocks", None) or []
+                if blocks:
+                    extra = extra_by_obj.get(obj["field_id"])
+                    if extra is not None and "emb" in blocks:
+                        extra = _with_embedding(extra, obj, cycle, crop_model)
+                    pred = crop_model._classify_crop_chronological(scenes, cycle, extra=extra)
+                else:
+                    pred = crop_model._classify_crop_chronological(scenes, cycle)
             except Exception as exc:                              # noqa: BLE001
                 obj["crop"] = "Unclassified"
                 obj["confidence"] = 0.0
@@ -984,6 +1140,7 @@ def _absorb_speck_into(host: Dict[str, Any], speck: Dict[str, Any]) -> None:
 def merge_field_objects(
     objects: List[Dict[str, Any]],
     min_area_ha: float = 0.2,
+    dissolve_same_crop: bool = True,
 ) -> List[Dict[str, Any]]:
     """Turn SNIC pieces into farm-like polygons.
 
@@ -991,6 +1148,11 @@ def merge_field_objects(
     if that neighbour is a different crop). Remaining adjacent same-crop
     pieces dissolve into one field. Disconnected patches of the same crop
     stay separate.
+
+    `dissolve_same_crop=False` is for objects that already ARE field
+    boundaries (ALU / FTW / watershed): two neighbouring wheat farms are two
+    fields, and dissolving them would throw away exactly what delineation
+    produced. Specks are still absorbed.
     """
     from shapely.ops import unary_union
 
@@ -1054,7 +1216,9 @@ def merge_field_objects(
 
     merged: List[Dict[str, Any]] = []
     fid = 1
-    for crop, group in by_crop.items():
+    groups = (list(by_crop.items()) if dissolve_same_crop
+              else [(it.get("crop") or "Unclassified", [it]) for it in items])
+    for crop, group in groups:
         union = unary_union([it["_g"] for it in group])
         for part in _polygon_parts(union):
             gj = _to_geojson(part)
@@ -1095,6 +1259,9 @@ def merge_field_objects(
                 rec["note"] = note
             if duration:
                 rec["cycle_duration_days"] = duration
+            src = group[0].get("boundary_source")
+            if src:
+                rec["boundary_source"] = src
             merged.append(rec)
             fid += 1
     return merged
@@ -1165,6 +1332,8 @@ def build_result(
             props["note"] = o["note"]
         if o.get("cycle_duration_days"):
             props["cycle_duration_days"] = o["cycle_duration_days"]
+        if o.get("boundary_source"):
+            props["boundary_source"] = o["boundary_source"]
         features.append({"type": "Feature", "geometry": o["geometry"], "properties": props})
 
     classified_ha = sum(v["area_ha"] for k, v in by_crop.items() if k not in NON_CROP_CLASSES)
@@ -1235,8 +1404,11 @@ def run_classification(
     out = classify_objects(objects, bin_dates, inputs, prog)
 
     prog("vectorizing", 96.0, "Cleaning field boundaries", None)
-    cleaned = merge_field_objects(out["objects"], inputs.min_field_area_ha)
+    sources = sorted({o.get("boundary_source", "snic") for o in out["objects"]})
+    cleaned = merge_field_objects(out["objects"], inputs.min_field_area_ha,
+                                  dissolve_same_crop=(sources == ["snic"]))
     result = build_result(cleaned, areas, inputs, bin_dates, out.get("model_version"))
+    result["delineation"] = {"requested": inputs.delineation_method, "sources": sources}
     result["validation_checks"] = [c.to_dict() for c in checks]
     prog("complete", 100.0, None, [c.to_dict() for c in checks])
     return result

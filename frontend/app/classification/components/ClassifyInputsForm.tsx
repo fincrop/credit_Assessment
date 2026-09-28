@@ -1,8 +1,8 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { ClassificationInputs, SeasonValue } from '../types';
-import { CLASSIFIABLE_CROPS, SEASONS, classColor, formatHa } from '../types';
+import type { ClassificationInputs, DelineationMethod, SeasonValue } from '../types';
+import { CLASSIFIABLE_CROPS, DELINEATION_METHODS, SEASONS, classColor, formatHa } from '../types';
 
 interface Props {
   value: ClassificationInputs;
@@ -170,6 +170,28 @@ export function ClassifyInputsForm({ value, onChange, totalAreaHa, disabled }: P
 
       <section className="space-y-4">
         <h3 className="text-sm font-bold text-stone-900">Output tuning</h3>
+
+        <div>
+          <label className="text-xs font-semibold text-stone-700 block mb-1" htmlFor="cls-delin">
+            Field boundaries from
+          </label>
+          <select
+            id="cls-delin"
+            value={value.delineation_method}
+            disabled={disabled}
+            onChange={(e) => set('delineation_method', e.target.value as DelineationMethod)}
+            className="w-full rounded-lg border border-rule bg-white px-3 py-2 text-sm text-stone-800"
+          >
+            {DELINEATION_METHODS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-[11px] text-stone-500 mt-1">
+            {DELINEATION_METHODS.find((m) => m.value === value.delineation_method)?.hint}
+          </p>
+        </div>
 
         <div>
           <div className="flex justify-between items-baseline mb-1">

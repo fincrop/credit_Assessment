@@ -249,13 +249,14 @@ def _plot_importance(names, gains, path, top=30):
 # =============================================================================
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--tier", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--tier", type=int, default=0, choices=[0, 1, 2])
     args = ap.parse_args()
 
     tier = args.tier
     rep_json = REPORTS / f"cv_report_tier{tier}.json"
     proba_npy = REPORTS / f"oof_proba_tier{tier}.npy"
-    feats = DATA / f"03_features_tier{tier}.parquet"
+    feats = DATA / (f"03_features_tier{tier}.parquet" if tier < 2
+                    else "03_features_tier2_season.parquet")
 
     for f in (rep_json, proba_npy, feats):
         if not f.exists():
@@ -270,6 +271,14 @@ def main() -> int:
     df = pd.read_parquet(feats)
 
     feat_cols = [c for c in df.columns if c not in META_COLS]
+    if tier == 2:
+        # Match the shipped tier-2 block set (wx + s1 + refl): AlphaEarth
+        # embeddings were measured and rejected (classification_model.md M.3).
+        from crop_analysis.extra_features import embedding_feature_names
+        emb = set(embedding_feature_names())
+        feat_cols = [c for c in feat_cols if c not in emb]
+        if len(feat_cols) != report["n_features"]:
+            log.warning("feature count %d != trained %d", len(feat_cols), report["n_features"])
     X = np.nan_to_num(df[feat_cols].to_numpy(dtype=float))
     classes = report["classes"]
     le = LabelEncoder().fit(classes)
@@ -311,7 +320,8 @@ def main() -> int:
     # ── competitors and diagnostics ───────────────────────────────────────
     # n_scenes_real lives in the cycles table, not the feature matrix (it is a
     # tier-1 feature and metadata at tier 0), so join it back for the sweep.
-    cyc = pd.read_parquet(DATA / "02_cycles.parquet")[["geom_hash", "n_scenes_real"]]
+    cyc = pd.read_parquet(DATA / ("02_cycles.parquet" if tier < 2
+                                  else "02_cycles_season.parquet"))[["geom_hash", "n_scenes_real"]]
     n_scenes = (
         df[["geom_hash"]].merge(cyc, on="geom_hash", how="left")["n_scenes_real"]
         .fillna(0).to_numpy()

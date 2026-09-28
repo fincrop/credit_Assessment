@@ -320,6 +320,50 @@ def _weather_shape_plant(df: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
     return X.astype(np.float32), names + WEATHER_COLS_PLANT
 
 
+# =============================================================================
+# tier-2 blocks (03_features_tier2*.parquet, see src/features_extra.py)
+# =============================================================================
+def _tier2_cols():
+    from crop_analysis.extra_features import (
+        embedding_feature_names, refl_feature_names, s1_feature_names, weather_feature_names,
+    )
+    return {"wx": weather_feature_names(), "s1": s1_feature_names(),
+            "refl": refl_feature_names(), "emb": embedding_feature_names()}
+
+
+def _tier1_cols(df: pd.DataFrame) -> List[str]:
+    extra = {c for cols in _tier2_cols().values() for c in cols}
+    return [c for c in _base_cols(df) if c not in extra]
+
+
+def _tier2_recipe(blocks: Tuple[str, ...], shape: bool):
+    def fn(df: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
+        t1 = df[_tier1_cols(df)]
+        if shape:
+            X1, names = _shape_only(t1)
+        else:
+            X1, names = t1.to_numpy(dtype=np.float32), list(t1.columns)
+        parts, cols = [X1.astype(np.float64)], list(names)
+        groups = _tier2_cols()
+        for b in blocks:
+            have = [c for c in groups[b] if c in df.columns]
+            # NaN stays NaN: XGBoost routes it down a learned missing branch,
+            # exactly as in production when an input source is unavailable.
+            parts.append(df[have].to_numpy(dtype=np.float64))
+            cols += have
+        return np.hstack(parts).astype(np.float32), cols
+    fn.__doc__ = f"tier-1{' (shape-normalised)' if shape else ''} + {'+'.join(blocks) or 'nothing'}"
+    return fn
+
+
+for _blocks in [(), ("wx",), ("s1",), ("refl",), ("emb",), ("wx", "s1"),
+                ("wx", "s1", "refl"), ("wx", "s1", "refl", "emb"), ("wx", "emb"),
+                ("wx", "s1", "emb")]:
+    for _shape in (False, True):
+        _n = ("t2" + ("s" if _shape else "") + "_" + ("_".join(_blocks) or "t1only"))
+        RECIPES[_n] = _tier2_recipe(_blocks, _shape)
+
+
 @recipe("region_rank")
 def _region_rank(df: pd.DataFrame) -> Tuple[np.ndarray, List[str]]:
     """REJECTED (0.0637 vs 0.1444, adversarial 1.0000 -- region becomes
@@ -708,8 +752,8 @@ def adversarial_region(X: np.ndarray, eco: np.ndarray,
 # =============================================================================
 # cli
 # =============================================================================
-def _load(tier: int) -> pd.DataFrame:
-    path = DATA / f"03_features_tier{tier}.parquet"
+def _load(tier: int, path: str | None = None) -> pd.DataFrame:
+    path = DATA / (path or f"03_features_tier{tier}.parquet")
     if not path.exists():
         raise SystemExit(f"missing {path} -- run `python -m src.features` first")
     return pd.read_parquet(path)
@@ -725,6 +769,8 @@ def main() -> int:
     ap.add_argument("--adversarial", action="store_true",
                     help="also score how well the features predict ecoregion")
     ap.add_argument("--list", action="store_true", help="list recipes and exit")
+    ap.add_argument("--features", default=None,
+                    help="feature parquet in data/ (overrides --tier)")
     ap.add_argument("--out", default=None, help="write JSON here")
     a = ap.parse_args()
 
@@ -735,7 +781,7 @@ def main() -> int:
             print(f"  {k:24s} {(fn.__doc__ or '').strip().splitlines()[0]}")
         return 0
 
-    df = _load(a.tier)
+    df = _load(a.tier, a.features)
     classes = sorted(df.Crop_Name.unique())
     y = np.array([classes.index(c) for c in df.Crop_Name])
     eco = df.ecoregion.to_numpy()

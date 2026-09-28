@@ -325,17 +325,18 @@ def _cv(
 
         w = _sample_weights(y[fit], blocks[fit])
         model = _make_model(n_classes, kind)
+        Xk = X if kind == "xgboost" else np.nan_to_num(X, nan=0.0)
         if hasattr(model, "steps"):
-            model.fit(X[fit], y[fit],
+            model.fit(Xk[fit], y[fit],
                       **{f"{model.steps[-1][0]}__sample_weight": w})
         else:
-            model.fit(X[fit], y[fit], sample_weight=w)
+            model.fit(Xk[fit], y[fit], sample_weight=w)
 
-        p_cal = _expand(model.predict_proba(X[cal]), model.classes_, n_classes)
+        p_cal = _expand(model.predict_proba(Xk[cal]), model.classes_, n_classes)
         scaler = TemperatureScaler().fit(p_cal, y[cal])
         temps.append(scaler.temperature)
 
-        p_raw = _expand(model.predict_proba(X[te]), model.classes_, n_classes)
+        p_raw = _expand(model.predict_proba(Xk[te]), model.classes_, n_classes)
         oof[te] = p_raw
         oof_cal[te] = scaler.transform(p_raw)
         covered[te] = True
@@ -346,7 +347,8 @@ def _cv(
             # made logistic look like it beat the selected model (0.7646 vs
             # 0.7492) when the like-for-like comparison had it losing (0.7448).
             wb = _sample_weights(y[fit], blocks[fit])
-            for name, p in _baselines(X[fit], y[fit], X[te], wb, n_classes).items():
+            Xb = np.nan_to_num(X, nan=0.0)
+            for name, p in _baselines(Xb[fit], y[fit], Xb[te], wb, n_classes).items():
                 base_oof.setdefault(name, np.zeros((len(y), n_classes)))[te] = p
 
         fold_stats.append({
@@ -383,7 +385,11 @@ def _cv(
 # =============================================================================
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--tier", type=int, default=0, choices=[0, 1])
+    ap.add_argument("--tier", type=int, default=0, choices=[0, 1, 2])
+    ap.add_argument("--features", default=None,
+                    help="feature parquet in data/ (tier 2 default: 03_features_tier2_season.parquet)")
+    ap.add_argument("--blocks", default="wx,s1,refl,emb",
+                    help="tier 2 only: which extra blocks to use (wx,s1,refl,emb)")
     ap.add_argument("--export", action="store_true",
                     help="fit on all data and write the joblib bundle")
     ap.add_argument("--skip-loeo", action="store_true")
@@ -393,7 +399,9 @@ def main() -> int:
                          "random split and not by assertion")
     args = ap.parse_args()
 
-    src = DATA / f"03_features_tier{args.tier}.parquet"
+    default_src = ("03_features_tier2_season.parquet" if args.tier == 2
+                   else f"03_features_tier{args.tier}.parquet")
+    src = DATA / (args.features or default_src)
     if not src.exists():
         log.error("missing %s — run `python -m src.features` first", src)
         return 1
@@ -402,6 +410,20 @@ def main() -> int:
 
     df = pd.read_parquet(src)
     feat_cols = [c for c in df.columns if c not in META_COLS]
+    extra_cols: set = set()
+    if args.tier == 2:
+        from crop_analysis.extra_features import (
+            embedding_feature_names, refl_feature_names, s1_feature_names,
+            weather_feature_names,
+        )
+        groups = {"wx": weather_feature_names(), "s1": s1_feature_names(),
+                  "refl": refl_feature_names(), "emb": embedding_feature_names()}
+        all_extra = {c for g in groups.values() for c in g}
+        chosen_blocks = [b.strip() for b in args.blocks.split(",") if b.strip()]
+        keep = {c for b in chosen_blocks for c in groups[b]}
+        feat_cols = [c for c in feat_cols if c not in all_extra or c in keep]
+        extra_cols = keep & set(feat_cols)
+        log.info("tier 2 blocks: %s (%d extra columns)", chosen_blocks, len(extra_cols))
 
     banned = {"lat", "lon", "area_ha", "Date", "year", "month", "sample_id",
               "source_file", "survey_date"}
@@ -411,7 +433,12 @@ def main() -> int:
         return 1
 
     X = df[feat_cols].to_numpy(dtype=float)
-    X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+    # Tier-0/1 columns keep their historical 0-fill. Tier-2 NaN means "input
+    # unavailable" and must stay NaN — XGBoost learns a missing branch, which
+    # is exactly what serving does when a source is down.
+    t01 = np.array([c not in extra_cols for c in feat_cols])
+    X[:, t01] = np.nan_to_num(X[:, t01], nan=0.0, posinf=0.0, neginf=0.0)
+    X[:, ~t01] = np.where(np.isinf(X[:, ~t01]), np.nan, X[:, ~t01])
 
     le = LabelEncoder().fit(sorted(df["Crop_Name"].unique()))
     y = le.transform(df["Crop_Name"])
@@ -598,10 +625,13 @@ def _export(X, y, blocks, classes, le, feat_cols, report, tier,
     import xgboost
 
     from crop_analysis.crop_detector import EXTRACTOR_VERSION, extractor_feature_names
+    from crop_analysis.extra_features import all_extra_feature_names
     from config import PipelineConfig
 
+    if kind != "xgboost":
+        X = np.nan_to_num(X, nan=0.0)
     if tier != 0:
-        producible = set(extractor_feature_names())
+        producible = set(extractor_feature_names()) | set(all_extra_feature_names())
         missing = [c for c in feat_cols if c not in producible]
         if missing:
             log.error(
