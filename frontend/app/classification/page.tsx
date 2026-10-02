@@ -335,6 +335,9 @@ export default function ClassificationPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/monitoring" className="text-xs text-stone-500 hover:text-emerald-700">
+            Monitoring
+          </Link>
           {step > 1 && (
             <>
               <HistoryMenu

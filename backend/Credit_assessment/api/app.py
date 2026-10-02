@@ -209,6 +209,23 @@ class JobClassifyRequest(BaseModel):
     inputs: Dict[str, Any] = Field(default_factory=dict)
 
 
+class MonitorRequestBody(BaseModel):
+    """One classified parcel. Geometry is GeoJSON (Polygon or MultiPolygon)."""
+
+    geometry: Dict[str, Any]
+    crop: str = Field(..., min_length=1)
+    confidence: float = Field(0.8, ge=0.0, le=1.0)
+    season: Optional[str] = None
+    ecoregion: Optional[str] = None
+    as_of: Optional[str] = None
+    start: Optional[str] = None
+    end: Optional[str] = None
+    sowing_date: Optional[str] = None
+    sowing_source: str = "provided"
+    district_yield_t_ha: Optional[float] = None
+    peer_integrals: Optional[List[float]] = None
+
+
 class AssessRequest(BaseModel):
     farmer_id: str = Field(..., min_length=1, description="Farmer / farm id in farm_info")
     include_heavy: bool = Field(
@@ -250,6 +267,24 @@ def _classification_jobs_col() -> Optional[Any]:
         or "agristack"
     )
     return _mongo_for_jobs[dbn]["classification_jobs"]
+
+
+def _monitoring_jobs_col() -> Optional[Any]:
+    """Present-season monitoring jobs. Separate from classification and credit jobs."""
+    if _mongo_for_jobs is None:
+        return None
+    dbn = (
+        os.environ.get("MONGODB_DATABASE")
+        or os.environ.get("MONGODB_DB")
+        or "agristack"
+    )
+    return _mongo_for_jobs[dbn]["monitoring_jobs"]
+
+
+class JobMonitorRequest(BaseModel):
+    job_id: str = Field(..., min_length=1)
+    areas: List[Dict[str, Any]] = Field(default_factory=list)
+    inputs: Dict[str, Any] = Field(default_factory=dict)
 
 
 def verify_service_key(x_api_key: Optional[str] = Header(default=None)) -> None:
@@ -833,6 +868,156 @@ async def download_classify_product(
         )
 
     raise HTTPException(status_code=400, detail=f"Unknown format '{format}'")
+
+
+@app.post("/v1/jobs/monitor")
+async def enqueue_monitor_job(
+    body: JobMonitorRequest,
+    background_tasks: BackgroundTasks,
+    _: None = Depends(verify_service_key),
+) -> Dict[str, Any]:
+    """Start present-season monitoring for a job row Next.js already wrote."""
+    if _mongo_for_jobs is None:
+        raise HTTPException(status_code=503, detail="MongoDB not available (set MONGODB_URI)")
+    col = _monitoring_jobs_col()
+    if col is None:
+        raise HTTPException(status_code=503, detail="monitoring_jobs collection unavailable")
+
+    from api.monitoring_runner import process_monitoring_job
+
+    try:
+        col.update_one(
+            {"_id": ObjectId(body.job_id)},
+            {"$set": {
+                "areas": body.areas,
+                "inputs": body.inputs,
+                "stage": "queued",
+                "error": None,
+                "updated_at": datetime.now(timezone.utc),
+            }},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid job_id: {exc}") from exc
+
+    background_tasks.add_task(process_monitoring_job, col, body.job_id)
+    return {"success": True, "job_id": body.job_id, "stage": "queued"}
+
+
+@app.get("/v1/jobs/monitor/{job_id}/download")
+async def download_monitor_product(
+    job_id: str,
+    format: str = "png",
+    _: None = Depends(verify_service_key),
+) -> Any:
+    """Shapefile, GeoTIFF, PNG, or the analytical CSV for a finished monitoring job."""
+    from fastapi.responses import Response
+
+    col = _monitoring_jobs_col()
+    if col is None:
+        raise HTTPException(status_code=503, detail="monitoring_jobs collection unavailable")
+    try:
+        doc = col.find_one({"_id": ObjectId(job_id)})
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid job_id: {exc}") from exc
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if doc.get("stage") != "complete" or not doc.get("result"):
+        raise HTTPException(status_code=409, detail="Job is not complete")
+
+    result = doc["result"]
+    fmt = (format or "").lower()
+    try:
+        if fmt == "csv":
+            from api.monitoring_export import monitoring_csv
+            body = monitoring_csv(result).encode("utf-8")
+            media, filename = "text/csv", f"{job_id}.csv"
+        elif fmt in ("shapefile", "shp", "zip"):
+            from api.monitoring_export import monitoring_shapefile_zip
+            body = monitoring_shapefile_zip(result)
+            media, filename = "application/zip", f"{job_id}.zip"
+        elif fmt in ("geotiff", "tif", "tiff"):
+            from api.monitoring_export import monitoring_geotiff
+            body = monitoring_geotiff(result)
+            media, filename = "image/tiff", f"{job_id}.tif"
+        elif fmt == "png":
+            from api.monitoring_export import monitoring_png
+            body = monitoring_png(result)
+            media, filename = "image/png", f"{job_id}.png"
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown format '{format}'")
+    except ImportError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return Response(
+        content=body,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _parse_monitor_day(text: Optional[str]):
+    if not text:
+        return None
+    return datetime.strptime(text[:10], "%Y-%m-%d").date()
+
+
+@app.post("/v1/monitor")
+def run_monitor(
+    body: MonitorRequestBody,
+    _: None = Depends(verify_service_key),
+) -> Dict[str, Any]:
+    """
+    Present-season monitoring for one classified field.
+
+    The browser (or a worker) sends the parcel, the crop, and the confidence.
+    The pipeline pulls Sentinel-2, Sentinel-1, Landsat, and buffer weather from
+    Earth Engine and returns the farm document. This call blocks for the
+    satellite round-trip; it does not write a job row.
+    """
+    import sys
+
+    root = Path(__file__).resolve().parents[3]
+    package = root / "Crop_Monitoring"
+    if str(package) not in sys.path:
+        sys.path.insert(0, str(package))
+    try:
+        from src.models import MonitorRequest
+        from src.observe import MonitorFetchError
+        from src.pipeline import run_monitoring
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"monitoring package unavailable: {exc}") from exc
+
+    geometry = body.geometry
+    if geometry.get("type") == "Feature":
+        geometry = geometry.get("geometry") or geometry
+    elif geometry.get("type") == "FeatureCollection":
+        features = geometry.get("features") or []
+        if not features:
+            raise HTTPException(status_code=400, detail="FeatureCollection has no features")
+        geometry = features[0].get("geometry")
+
+    request = MonitorRequest(
+        crop=body.crop,
+        geometry=geometry,
+        confidence=body.confidence,
+        season=body.season,
+        ecoregion=body.ecoregion,
+        as_of=_parse_monitor_day(body.as_of),
+        start=_parse_monitor_day(body.start),
+        end=_parse_monitor_day(body.end),
+        sowing_hint=_parse_monitor_day(body.sowing_date),
+        sowing_hint_source=body.sowing_source or "provided",
+        district_yield_t_ha=body.district_yield_t_ha,
+        peer_integrals=body.peer_integrals,
+    )
+    try:
+        document = run_monitoring(request)
+    except MonitorFetchError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"success": True, "monitor": document}
 
 
 # Alias for load balancers that probe /
