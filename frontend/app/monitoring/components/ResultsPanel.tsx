@@ -1,6 +1,32 @@
 'use client';
 
-import { STRESS_COLORS, type MonitoringResult, type MonitorZone } from '../types';
+import {
+  RECORD_STATUS_LABELS,
+  RECORD_STATUS_STYLES,
+  STRESS_COLORS,
+  type MonitoringResult,
+  type MonitorZone,
+  type RecordStatus,
+} from '../types';
+import { FieldRecordCard } from './FieldRecordCard';
+
+function StatusBadge({ status }: { status?: string | null }) {
+  if (!status) return <span className="text-stone-400">—</span>;
+  const known = status in RECORD_STATUS_LABELS ? (status as RecordStatus) : null;
+  return (
+    <span
+      className={`inline-block whitespace-nowrap rounded-full border px-1.5 py-px text-[10px] font-semibold ${
+        known ? RECORD_STATUS_STYLES[known] : 'border-stone-300 bg-stone-100 text-stone-600'
+      }`}
+    >
+      {known ? RECORD_STATUS_LABELS[known] : status.replace(/_/g, ' ')}
+    </span>
+  );
+}
+
+function shortDate(date: string | null | undefined): string {
+  return date ? date.slice(5) : '—';
+}
 
 function num(value: number | null | undefined, digits = 2): string {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—';
@@ -88,9 +114,24 @@ function skipSummary(skipped: NonNullable<MonitoringResult['skipped']>): string 
   return parts.join(' ');
 }
 
-export function ResultsPanel({ result }: { result: MonitoringResult }) {
+export function ResultsPanel({
+  result,
+  selectedFieldId = null,
+  onSelectField,
+}: {
+  result: MonitoringResult;
+  selectedFieldId?: string | null;
+  onSelectField?: (fieldId: string | null) => void;
+}) {
   const zones = (result.zones || []).filter((z) => z.kind !== 'non_crop');
   const recent = zones[0]?.intervals?.slice(-6).reverse() || [];
+  const records = result.records || [];
+  const record =
+    (selectedFieldId != null ? records.find((r) => String(r.field_id) === selectedFieldId) : undefined) ||
+    (records.length === 1 ? records[0] : undefined);
+  const statusCounts = result.cluster_summary?.status_counts;
+  const hasStatus = (result.farms || []).some((farm) => Boolean(farm.status));
+  const obs = result.observations;
   return (
     <div className="space-y-4">
       <div>
@@ -108,6 +149,19 @@ export function ResultsPanel({ result }: { result: MonitoringResult }) {
           </p>
         )}
       </div>
+      {record && (
+        <FieldRecordCard
+          record={record}
+          jobId={result.job_id}
+          onset={result.onset}
+          onClose={records.length > 1 && onSelectField ? () => onSelectField(null) : undefined}
+        />
+      )}
+      {!record && selectedFieldId != null && records.length > 0 && (
+        <p className="rounded-lg border border-rule bg-stone-50 px-3 py-2 text-[11px] text-stone-600">
+          Field {selectedFieldId} has no monitoring record in this run.
+        </p>
+      )}
       {result.cluster_summary && (
         <div className="rounded-xl border border-rule bg-stone-50 px-3 py-2 text-[11px] text-stone-700 leading-relaxed">
           <p className="font-semibold text-stone-900">
@@ -130,6 +184,40 @@ export function ResultsPanel({ result }: { result: MonitoringResult }) {
                 .join(' · ')}
             </p>
           )}
+          {!!statusCounts && Object.keys(statusCounts).length > 0 && (
+            <p className="flex flex-wrap gap-1 mt-1">
+              {Object.entries(statusCounts).map(([label, count]) => (
+                <span key={label} className="inline-flex items-center gap-1">
+                  <StatusBadge status={label} />
+                  <span className="tabular-nums">{count}</span>
+                </span>
+              ))}
+            </p>
+          )}
+        </div>
+      )}
+      {(result.onset || obs) && (
+        <div className="rounded-xl border border-rule bg-stone-50 px-3 py-2 text-[11px] text-stone-700 leading-relaxed">
+          {result.onset?.date ? (
+            <p>
+              <span className="font-semibold text-stone-900">Monsoon onset {result.onset.date}</span>
+              {typeof result.onset.cumulative_mm === 'number'
+                ? ` · ${Math.round(result.onset.cumulative_mm)} mm`
+                : ''}
+              {result.onset.false_starts?.length
+                ? ` · ${result.onset.false_starts.length} false start${result.onset.false_starts.length === 1 ? '' : 's'}`
+                : ''}
+            </p>
+          ) : result.onset ? (
+            <p>Monsoon onset not detected.</p>
+          ) : null}
+          {result.onset?.note && <p className="text-stone-500">{result.onset.note}</p>}
+          {obs && (
+            <p className="text-stone-500">
+              Clear looks: {obs.s2_dates?.length ?? 0} Sentinel-2 · {obs.landsat_dates?.length ?? 0} Landsat ·{' '}
+              {obs.s1_dates?.length ?? 0} Sentinel-1 radar
+            </p>
+          )}
         </div>
       )}
       <div className="grid grid-cols-3 gap-2">
@@ -146,10 +234,16 @@ export function ResultsPanel({ result }: { result: MonitoringResult }) {
       </div>
       {(result.farms && result.farms.length > 1) ? (
         <div className="overflow-x-auto">
+          {hasStatus && onSelectField && (
+            <p className="text-[10px] text-stone-500 mb-1">
+              Select a farm, here or on the map, for its full record. Sowing shows the P10–P90 window under the date.
+            </p>
+          )}
           <table className="w-full text-[11px] text-left">
             <thead className="text-stone-500">
               <tr>
                 <th className="py-1 pr-2 font-medium">Crop</th>
+                {hasStatus && <th className="py-1 pr-2 font-medium">Status</th>}
                 <th className="py-1 pr-2 font-medium">ha</th>
                 <th className="py-1 pr-2 font-medium">Sowing</th>
                 <th className="py-1 pr-2 font-medium">Harvest</th>
@@ -157,22 +251,58 @@ export function ResultsPanel({ result }: { result: MonitoringResult }) {
               </tr>
             </thead>
             <tbody>
-              {result.farms.slice(0, 40).map((farm) => (
-                <tr key={farm.field_id} className="border-t border-rule">
-                  <td className="py-1 pr-2">{farm.crop}</td>
-                  <td className="py-1 pr-2">{typeof farm.area_ha === 'number' ? farm.area_ha.toFixed(2) : '—'}</td>
-                  <td className="py-1 pr-2">{farm.sowing_date || '—'}</td>
-                  <td className="py-1 pr-2">{farm.harvest_date || '—'}</td>
-                  <td className="py-1">{typeof farm.yield_t_ha === 'number' ? farm.yield_t_ha.toFixed(2) : '—'}</td>
-                </tr>
-              ))}
+              {result.farms.slice(0, 40).map((farm) => {
+                const selected = selectedFieldId != null && String(farm.field_id) === selectedFieldId;
+                return (
+                  <tr
+                    key={farm.field_id}
+                    onClick={onSelectField ? () => onSelectField(selected ? null : String(farm.field_id)) : undefined}
+                    className={`border-t border-rule ${onSelectField ? 'cursor-pointer hover:bg-emerald-50' : ''} ${
+                      selected ? 'bg-emerald-50' : ''
+                    }`}
+                  >
+                    <td className="py-1 pr-2">
+                      {farm.crop}
+                      {typeof farm.confidence === 'number' ? (
+                        <span className="block text-[10px] text-stone-500 tabular-nums">
+                          {Math.round(farm.confidence * 100)}%
+                        </span>
+                      ) : null}
+                    </td>
+                    {hasStatus && (
+                      <td className="py-1 pr-2">
+                        <StatusBadge status={farm.status} />
+                      </td>
+                    )}
+                    <td className="py-1 pr-2">{typeof farm.area_ha === 'number' ? farm.area_ha.toFixed(2) : '—'}</td>
+                    <td className="py-1 pr-2">
+                      {farm.sowing_date || (farm.sowing_p10 || farm.sowing_p90 ? 'Not estimated' : '—')}
+                      {farm.sowing_p10 || farm.sowing_p90 ? (
+                        <span className="block text-[10px] text-stone-500 font-mono whitespace-nowrap">
+                          {shortDate(farm.sowing_p10)}–{shortDate(farm.sowing_p90)}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="py-1 pr-2">{farm.harvest_date || '—'}</td>
+                    <td className="py-1">
+                      {typeof farm.yield_t_ha === 'number' ? (
+                        farm.yield_t_ha.toFixed(2)
+                      ) : typeof farm.yield_index === 'number' ? (
+                        <span title="Yield index relative to village median">idx {farm.yield_index.toFixed(2)}</span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {result.farms.length > 40 && (
             <p className="text-[11px] text-stone-500 mt-1">Showing 40 of {result.farms.length}. The download has every farm.</p>
           )}
         </div>
-      ) : zones.map((zone) => (
+      ) : record ? null : zones.map((zone) => (
         <ZoneCard key={zone.zone_id} zone={zone} />
       ))}
       {recent.length > 0 && (

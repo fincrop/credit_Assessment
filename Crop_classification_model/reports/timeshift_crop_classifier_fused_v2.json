@@ -1,0 +1,200 @@
+{
+ "model": "crop_classifier_fused_v2.joblib",
+ "n": 814,
+ "results": {
+  "10-01 shift -20d": {
+   "recall": {
+    "Cotton": 0.705,
+    "Soyabean": 0.591,
+    "Tur": 0.01
+   },
+   "predicted_mix": [
+    [
+     "Cotton",
+     428
+    ],
+    [
+     "Soyabean",
+     314
+    ],
+    [
+     "Onion",
+     45
+    ],
+    [
+     "Tur",
+     11
+    ],
+    [
+     "Groundnut",
+     7
+    ],
+    [
+     "Tobacco",
+     3
+    ]
+   ]
+  },
+  "10-01 shift +0d": {
+   "recall": {
+    "Cotton": 0.894,
+    "Soyabean": 0.358,
+    "Tur": 0.35
+   },
+   "predicted_mix": [
+    [
+     "Cotton",
+     559
+    ],
+    [
+     "Soyabean",
+     152
+    ],
+    [
+     "Tur",
+     85
+    ],
+    [
+     "Onion",
+     15
+    ],
+    [
+     "Groundnut",
+     2
+    ],
+    [
+     "Grapes",
+     1
+    ]
+   ]
+  },
+  "10-01 shift +20d": {
+   "recall": {
+    "Cotton": 0.834,
+    "Soyabean": 0.0,
+    "Tur": 0.0
+   },
+   "predicted_mix": [
+    [
+     "Cotton",
+     689
+    ],
+    [
+     "Rice",
+     78
+    ],
+    [
+     "Banana",
+     39
+    ],
+    [
+     "Chilli",
+     7
+    ],
+    [
+     "Soyabean",
+     1
+    ]
+   ]
+  },
+  "full shift -20d": {
+   "recall": {
+    "Cotton": 0.884,
+    "Soyabean": 0.865,
+    "Tur": 0.11
+   },
+   "predicted_mix": [
+    [
+     "Cotton",
+     462
+    ],
+    [
+     "Soyabean",
+     235
+    ],
+    [
+     "Onion",
+     62
+    ],
+    [
+     "Tur",
+     32
+    ],
+    [
+     "Groundnut",
+     11
+    ],
+    [
+     "Tobacco",
+     5
+    ]
+   ]
+  },
+  "full shift +0d": {
+   "recall": {
+    "Cotton": 0.956,
+    "Soyabean": 0.828,
+    "Tur": 0.72
+   },
+   "predicted_mix": [
+    [
+     "Cotton",
+     495
+    ],
+    [
+     "Soyabean",
+     205
+    ],
+    [
+     "Tur",
+     101
+    ],
+    [
+     "Onion",
+     9
+    ],
+    [
+     "Groundnut",
+     2
+    ],
+    [
+     "Grapes",
+     1
+    ]
+   ]
+  },
+  "full shift +20d": {
+   "recall": {
+    "Cotton": 0.802,
+    "Soyabean": 0.0,
+    "Tur": 0.0
+   },
+   "predicted_mix": [
+    [
+     "Cotton",
+     617
+    ],
+    [
+     "Rice",
+     159
+    ],
+    [
+     "Banana",
+     27
+    ],
+    [
+     "Chilli",
+     9
+    ],
+    [
+     "Tur",
+     1
+    ],
+    [
+     "Groundnut",
+     1
+    ]
+   ]
+  }
+ }
+}

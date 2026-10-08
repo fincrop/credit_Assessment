@@ -170,6 +170,42 @@ def build_feature_dict(
     return feature_dict
 
 
+def cycle_scene_date_bounds(start_str: str, end_str: str) -> Tuple[str, str]:
+    """Widen [sowing, harvest] slightly for gathering scenes (ML / temporal only).
+
+    Shared by the credit path, area classification and (by the same constant)
+    the trainer, so a cycle's feature window is defined once.
+    """
+    pad = int(
+        getattr(PipelineConfig, 'CROP_DETECTOR_CYCLE_SCENE_PADDING_DAYS', 0) or 0
+    )
+    if pad <= 0:
+        return start_str[:10], end_str[:10]
+    s = datetime.strptime(start_str[:10], '%Y-%m-%d')
+    e = datetime.strptime(end_str[:10], '%Y-%m-%d')
+    d = timedelta(days=pad)
+    return (s - d).strftime('%Y-%m-%d'), (e + d).strftime('%Y-%m-%d')
+
+
+def collect_scenes_between(
+    all_continuous_scenes: List[Dict],
+    lo: str,
+    hi: str,
+) -> List[Dict]:
+    """Real (non-missing) scenes dated within [lo, hi], sorted by date."""
+    rows: List[Dict] = []
+    for s in all_continuous_scenes:
+        if s.get('missing'):
+            continue
+        raw = s.get('date', '') or ''
+        ds = raw[:10] if isinstance(raw, str) else str(raw)[:10]
+        if len(ds) < 10:
+            continue
+        if lo <= ds <= hi:
+            rows.append(s)
+    return sorted(rows, key=lambda x: (x.get('date') or '')[:10])
+
+
 def _cycle_get(cycle: Any, key: str, default: float = 0.0) -> float:
     """Read a field from a CropCycle object or its to_dict() form."""
     if cycle is None:
@@ -499,16 +535,7 @@ class CropDetector:
 
     @staticmethod
     def _cycle_scene_date_bounds(start_str: str, end_str: str) -> Tuple[str, str]:
-        """Widen [sowing, harvest] slightly for gathering scenes (ML / temporal only)."""
-        pad = int(
-            getattr(PipelineConfig, 'CROP_DETECTOR_CYCLE_SCENE_PADDING_DAYS', 0) or 0
-        )
-        if pad <= 0:
-            return start_str[:10], end_str[:10]
-        s = datetime.strptime(start_str[:10], '%Y-%m-%d')
-        e = datetime.strptime(end_str[:10], '%Y-%m-%d')
-        d = timedelta(days=pad)
-        return (s - d).strftime('%Y-%m-%d'), (e + d).strftime('%Y-%m-%d')
+        return cycle_scene_date_bounds(start_str, end_str)
 
     @staticmethod
     def _collect_scenes_between(
@@ -516,17 +543,7 @@ class CropDetector:
         lo: str,
         hi: str,
     ) -> List[Dict]:
-        rows: List[Dict] = []
-        for s in all_continuous_scenes:
-            if s.get('missing'):
-                continue
-            raw = s.get('date', '') or ''
-            ds = raw[:10] if isinstance(raw, str) else str(raw)[:10]
-            if len(ds) < 10:
-                continue
-            if lo <= ds <= hi:
-                rows.append(s)
-        return sorted(rows, key=lambda x: (x.get('date') or '')[:10])
+        return collect_scenes_between(all_continuous_scenes, lo, hi)
 
     def _stage4_metadata(self, cycle, cycle_index: int) -> Dict:
         """Mirror Stage-4 cycle fields into season_results (dict or CropCycle object)."""

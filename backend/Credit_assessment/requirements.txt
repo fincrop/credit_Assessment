@@ -3,8 +3,11 @@
 # ========================================
 numpy==1.26.4
 pandas==2.2.2
-# FTW Global field-boundary reader (crop_analysis/field_delineation.py)
+# FTW Global field-boundary reader (crop_analysis/field_delineation.py):
+# GeoParquet over HTTPS from data.source.coop with row-group bbox pruning
 pyarrow==25.0.1
+fsspec==2025.7.0
+aiohttp==3.12.15
 scipy==1.11.4
 
 # ========================================

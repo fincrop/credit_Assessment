@@ -1,0 +1,25 @@
+17:47:36  INFO    split mh2023_v1: 814 test parcels, 1026 excluded from training
+17:47:37  INFO    01_scenes_mh check: {'exists': True, 'n_new_parcels': 2314, 'bbox': 2314, 'poly': 2314}
+17:47:44  INFO    merged scenes: 986087 base + 370240 new = 1356327 rows (0 dupes dropped); parcels bbox=12368 poly=4575
+17:47:44  INFO    ── cycles [bbox] ──
+17:47:49  INFO      cycles[bbox] worker 0: 3092 parcels
+17:47:51  INFO      cycles[bbox] worker 1: 3092 parcels
+17:47:53  INFO      cycles[bbox] worker 2: 3092 parcels
+17:47:55  INFO      cycles[bbox] worker 3: 3092 parcels
+18:11:37  INFO      cycles[bbox] workers done in 23.7 min
+18:11:38  INFO      cycles[bbox]: 10637 attributed, 1731 rejected
+18:11:38  INFO    kharif check [bbox]: new attributed 1641, kharif-ok 1638, rejected {'Soyabean': 3}
+18:11:38  INFO    ── cycles [poly] ──
+18:11:40  INFO      cycles[poly] worker 0: 1144 parcels
+18:11:41  INFO      cycles[poly] worker 1: 1144 parcels
+18:11:42  INFO      cycles[poly] worker 2: 1144 parcels
+18:11:43  INFO      cycles[poly] worker 3: 1143 parcels
+18:19:32  INFO      cycles[poly] workers done in 7.8 min
+18:19:32  INFO      cycles[poly]: 3634 attributed, 941 rejected
+18:19:32  INFO    kharif check [poly]: new attributed 1613, kharif-ok 1605, rejected {'Cotton': 6, 'Soyabean': 2}
+18:19:32  INFO    ── features [bbox] ──
+18:19:48  INFO    extractor: tier2_v1  |  tier-0 features: 45
+18:19:48  INFO      ML_FEATURE_SCENES=15  ML_FEATURE_INDICES=['NDVI_mean', 'EVI_mean', 'NDMI_mean']
+18:19:49  INFO    cycles to featurise: 10634
+18:20:13  INFO      500/10634  built=500 skipped=0
+18:20:41  INFO      1000/10634  built=1000 skipped=0

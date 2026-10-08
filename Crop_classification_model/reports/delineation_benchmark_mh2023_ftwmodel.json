@@ -1,0 +1,172 @@
+{
+ "year": 2023,
+ "sites": 40,
+ "split": "test",
+ "ground_truth": "mh2023",
+ "methods": {
+  "watershed": {
+   "n_fields": 520,
+   "median_iou": 0.1769,
+   "mean_iou": 0.229,
+   "iou50": 0.1212,
+   "iou30": 0.2692,
+   "median_frag": 1.0,
+   "median_area_ratio": 5.124,
+   "sec_per_site": 3.7
+  },
+  "watershed_ftwmodel": {
+   "n_fields": 520,
+   "median_iou": 0.2968,
+   "mean_iou": 0.3188,
+   "iou50": 0.1423,
+   "iou30": 0.4962,
+   "median_frag": 2.0,
+   "median_area_ratio": 1.959,
+   "sec_per_site": 10.4
+  },
+  "watershed_ftwall": {
+   "n_fields": 520,
+   "median_iou": 0.3308,
+   "mean_iou": 0.3626,
+   "iou50": 0.2038,
+   "iou30": 0.5885,
+   "median_frag": 2.0,
+   "median_area_ratio": 1.769,
+   "sec_per_site": 5.6
+  }
+ },
+ "ftw_model_sweep": [
+  {
+   "model_weight": 0.5,
+   "global_weight": 0.5,
+   "n_fields": 520,
+   "median_iou": 0.3351,
+   "mean_iou": 0.3626,
+   "iou50": 0.1981,
+   "iou30": 0.5942,
+   "median_frag": 2.0,
+   "median_area_ratio": 1.617
+  },
+  {
+   "model_weight": 0.35,
+   "global_weight": 0.35,
+   "n_fields": 520,
+   "median_iou": 0.3308,
+   "mean_iou": 0.3626,
+   "iou50": 0.2038,
+   "iou30": 0.5885,
+   "median_frag": 2.0,
+   "median_area_ratio": 1.769
+  },
+  {
+   "model_weight": 0.5,
+   "global_weight": 0.35,
+   "n_fields": 520,
+   "median_iou": 0.3294,
+   "mean_iou": 0.3443,
+   "iou50": 0.1654,
+   "iou30": 0.5712,
+   "median_frag": 2.0,
+   "median_area_ratio": 1.749
+  },
+  {
+   "model_weight": 0.35,
+   "global_weight": 0.5,
+   "n_fields": 520,
+   "median_iou": 0.3093,
+   "mean_iou": 0.3516,
+   "iou50": 0.1942,
+   "iou30": 0.5212,
+   "median_frag": 2.0,
+   "median_area_ratio": 2.032
+  },
+  {
+   "model_weight": 0.35,
+   "global_weight": 0.0,
+   "n_fields": 520,
+   "median_iou": 0.2968,
+   "mean_iou": 0.3188,
+   "iou50": 0.1423,
+   "iou30": 0.4962,
+   "median_frag": 2.0,
+   "median_area_ratio": 1.959
+  },
+  {
+   "model_weight": 0.5,
+   "global_weight": 0.0,
+   "n_fields": 520,
+   "median_iou": 0.2929,
+   "mean_iou": 0.3071,
+   "iou50": 0.1288,
+   "iou30": 0.4788,
+   "median_frag": 2.0,
+   "median_area_ratio": 1.986
+  },
+  {
+   "model_weight": 0.2,
+   "global_weight": 0.0,
+   "n_fields": 520,
+   "median_iou": 0.2568,
+   "mean_iou": 0.2886,
+   "iou50": 0.1481,
+   "iou30": 0.4212,
+   "median_frag": 1.0,
+   "median_area_ratio": 2.691
+  },
+  {
+   "model_weight": 0.2,
+   "global_weight": 0.5,
+   "n_fields": 520,
+   "median_iou": 0.2435,
+   "mean_iou": 0.3066,
+   "iou50": 0.1788,
+   "iou30": 0.4192,
+   "median_frag": 1.0,
+   "median_area_ratio": 3.16
+  },
+  {
+   "model_weight": 0.2,
+   "global_weight": 0.35,
+   "n_fields": 520,
+   "median_iou": 0.2418,
+   "mean_iou": 0.3109,
+   "iou50": 0.1827,
+   "iou30": 0.425,
+   "median_frag": 1.0,
+   "median_area_ratio": 3.086
+  },
+  {
+   "model_weight": 0.1,
+   "global_weight": 0.5,
+   "n_fields": 520,
+   "median_iou": 0.2373,
+   "mean_iou": 0.2998,
+   "iou50": 0.1692,
+   "iou30": 0.3904,
+   "median_frag": 1.0,
+   "median_area_ratio": 3.394
+  },
+  {
+   "model_weight": 0.1,
+   "global_weight": 0.35,
+   "n_fields": 520,
+   "median_iou": 0.2284,
+   "mean_iou": 0.2993,
+   "iou50": 0.1808,
+   "iou30": 0.3769,
+   "median_frag": 1.0,
+   "median_area_ratio": 3.504
+  },
+  {
+   "model_weight": 0.1,
+   "global_weight": 0.0,
+   "n_fields": 520,
+   "median_iou": 0.1986,
+   "mean_iou": 0.2482,
+   "iou50": 0.1192,
+   "iou30": 0.3288,
+   "median_frag": 1.0,
+   "median_area_ratio": 4.332
+  }
+ ]
+}

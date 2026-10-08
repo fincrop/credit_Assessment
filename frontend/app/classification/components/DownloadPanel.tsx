@@ -25,19 +25,30 @@ function triggerDownload(blob: Blob, filename: string) {
 }
 
 function toCsv(result: ClassificationResult): string {
-  const head = ['field_id', 'crop', 'area_ha', 'confidence', 'lon', 'lat'];
+  const head = [
+    'field_id', 'crop', 'status', 'area_ha', 'confidence', 'model_top_crop', 'top2_crop',
+    'p_top1', 'p_top2', 'margin', 'abstain_reason', 'lon', 'lat',
+  ];
+  const prob = (v: unknown) => (typeof v === 'number' ? v.toFixed(4) : '');
   const rows = (result.fields.features || []).map((f, i) => {
     const p = (f.properties || {}) as Record<string, unknown>;
     const c = (p.centroid as { lat?: number; lng?: number }) || {};
     return [
       String(p.field_id ?? i + 1),
       String(p.crop ?? 'Unclassified'),
+      String(p.status ?? ''),
       typeof p.area_ha === 'number' ? p.area_ha.toFixed(4) : '',
-      typeof p.confidence === 'number' ? p.confidence.toFixed(4) : '',
+      prob(p.confidence),
+      String(p.model_top_crop ?? ''),
+      String(p.top2_crop ?? ''),
+      prob(p.p_top1),
+      prob(p.p_top2),
+      prob(p.margin),
+      String(p.abstain_reason ?? ''),
       c.lng?.toFixed(6) ?? '',
       c.lat?.toFixed(6) ?? '',
     ]
-      .map((v) => (v.includes(',') ? `"${v}"` : v))
+      .map((v) => (v.includes(',') || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v))
       .join(',');
   });
 

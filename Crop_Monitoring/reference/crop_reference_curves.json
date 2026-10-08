@@ -1,0 +1,111 @@
+{
+ "meta": {
+  "built_from": "Marathwada labelled parcels, Kharif 2023, outside mh2023 test blocks",
+  "season": 2023,
+  "min_fields": 30,
+  "parcels_used": {
+   "Cotton": 388,
+   "Soyabean": 446,
+   "Tur": 35
+  },
+  "note": "Single season (2023, El Nino, late monsoon). Timing is DAS-relative, so it transfers; peak NDVI levels may not."
+ },
+ "curves": [
+  {
+   "crop": "Cotton",
+   "t_rise": 32.939090933890455,
+   "k_rise": 0.0708737766338915,
+   "t_fall": 185.05502067960975,
+   "k_fall": 0.03573966333094587,
+   "base": 0.16898014414930274,
+   "peak": 0.7686516530683822,
+   "source": "labelled_mh2023",
+   "perennial": false,
+   "n_fields": 388
+  },
+  {
+   "crop": "Soyabean",
+   "t_rise": 27.78900374392157,
+   "k_rise": 0.10273970831718403,
+   "t_fall": 88.59402755403914,
+   "k_fall": 0.11697391135991476,
+   "base": 0.2462581258485293,
+   "peak": 0.9171986942751934,
+   "source": "labelled_mh2023",
+   "perennial": false,
+   "n_fields": 446
+  },
+  {
+   "crop": "Tur",
+   "t_rise": 25.180075314374342,
+   "k_rise": 0.1029248604503833,
+   "t_fall": 177.23770866875816,
+   "k_fall": 0.06191065336081879,
+   "base": 0.19142567118606427,
+   "peak": 0.6988214635792727,
+   "source": "labelled_mh2023",
+   "perennial": false,
+   "n_fields": 35
+  },
+  {
+   "crop": "Maize",
+   "t_rise": 28,
+   "k_rise": 0.15,
+   "t_fall": 95,
+   "k_fall": 0.11,
+   "base": 0.18,
+   "peak": 0.8,
+   "source": "parametric_default",
+   "perennial": false,
+   "n_fields": 0
+  },
+  {
+   "crop": "Jowar",
+   "t_rise": 30,
+   "k_rise": 0.13,
+   "t_fall": 100,
+   "k_fall": 0.1,
+   "base": 0.18,
+   "peak": 0.74,
+   "source": "parametric_default",
+   "perennial": false,
+   "n_fields": 0
+  },
+  {
+   "crop": "Bajra",
+   "t_rise": 24,
+   "k_rise": 0.16,
+   "t_fall": 78,
+   "k_fall": 0.13,
+   "base": 0.18,
+   "peak": 0.68,
+   "source": "parametric_default",
+   "perennial": false,
+   "n_fields": 0
+  },
+  {
+   "crop": "Groundnut",
+   "t_rise": 30,
+   "k_rise": 0.12,
+   "t_fall": 105,
+   "k_fall": 0.1,
+   "base": 0.18,
+   "peak": 0.74,
+   "source": "parametric_default",
+   "perennial": false,
+   "n_fields": 0
+  },
+  {
+   "crop": "Sugarcane",
+   "t_rise": 70,
+   "k_rise": 0.05,
+   "t_fall": 9999,
+   "k_fall": 0.01,
+   "base": 0.18,
+   "peak": 0.8,
+   "source": "parametric_default",
+   "perennial": true,
+   "n_fields": 0
+  }
+ ]
+}

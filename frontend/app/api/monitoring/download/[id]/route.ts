@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { jobsCollection, ownedBy, pipelineBaseUrl, pipelineHeaders, requireUser } from '../../lib/jobs';
 
-const SERVER_FORMATS = new Set(['shapefile', 'geotiff', 'png']);
+const SERVER_FORMATS = new Set(['shapefile', 'geotiff', 'png', 'csv', 'report']);
+const EXTENSIONS: Record<string, string> = {
+  shapefile: 'zip',
+  geotiff: 'tif',
+  png: 'png',
+  csv: 'csv',
+  report: 'png',
+};
 
 export async function GET(
   req: NextRequest,
@@ -19,6 +26,11 @@ export async function GET(
     if (!SERVER_FORMATS.has(format)) {
       return NextResponse.json({ error: `Unsupported format "${format}".` }, { status: 400 });
     }
+    // A report card is one farm: the field must be named.
+    const fieldId = (req.nextUrl.searchParams.get('field_id') || '').trim();
+    if (format === 'report' && !fieldId) {
+      return NextResponse.json({ error: 'field_id is required for a farm report.' }, { status: 400 });
+    }
     const job = await (await jobsCollection()).findOne({ _id: new ObjectId(id) });
     if (!job || !ownedBy(job, auth.user)) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
@@ -31,7 +43,9 @@ export async function GET(
       return NextResponse.json({ error: 'No monitoring service configured to render this format.' }, { status: 503 });
     }
     const upstream = await fetch(
-      `${base}/v1/jobs/monitor/${id}/download?format=${encodeURIComponent(format)}`,
+      `${base}/v1/jobs/monitor/${id}/download?format=${encodeURIComponent(format)}${
+        format === 'report' ? `&field_id=${encodeURIComponent(fieldId)}` : ''
+      }`,
       {
         headers: pipelineHeaders(),
         signal: AbortSignal.timeout(Number(process.env.PIPELINE_DOWNLOAD_TIMEOUT_MS || 120000)),
@@ -44,7 +58,7 @@ export async function GET(
         { status: 502 }
       );
     }
-    const ext = format === 'shapefile' ? 'zip' : format === 'geotiff' ? 'tif' : 'png';
+    const ext = EXTENSIONS[format] || 'bin';
     return new NextResponse(upstream.body, {
       status: 200,
       headers: {

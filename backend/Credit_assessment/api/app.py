@@ -907,6 +907,7 @@ async def enqueue_monitor_job(
 async def download_monitor_product(
     job_id: str,
     format: str = "png",
+    field_id: Optional[str] = None,
     _: None = Depends(verify_service_key),
 ) -> Any:
     """Shapefile, GeoTIFF, PNG, or the analytical CSV for a finished monitoring job."""
@@ -927,7 +928,13 @@ async def download_monitor_product(
     result = doc["result"]
     fmt = (format or "").lower()
     try:
-        if fmt == "csv":
+        if fmt == "report":
+            if not field_id:
+                raise HTTPException(status_code=400, detail="field_id is required for a report card")
+            from api.monitoring_export import monitoring_report_card
+            body = monitoring_report_card(result, field_id, result.get("raster_dir"))
+            media, filename = "image/png", f"{job_id}_field_{field_id}.png"
+        elif fmt == "csv":
             from api.monitoring_export import monitoring_csv
             body = monitoring_csv(result).encode("utf-8")
             media, filename = "text/csv", f"{job_id}.csv"
@@ -954,6 +961,43 @@ async def download_monitor_product(
         media_type=media,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+_RASTER_MEDIA = {".png": "image/png", ".tif": "image/tiff", ".json": "application/json"}
+
+
+@app.get("/v1/jobs/monitor/{job_id}/raster/{path:path}")
+async def monitor_raster_file(
+    job_id: str,
+    path: str,
+    _: None = Depends(verify_service_key),
+) -> Any:
+    """A raster product (COG, PNG overlay or products.json) of a finished raster-engine job.
+
+    Only files inside that job's own raster directory are served.
+    """
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse
+
+    col = _monitoring_jobs_col()
+    if col is None:
+        raise HTTPException(status_code=503, detail="monitoring_jobs collection unavailable")
+    try:
+        doc = col.find_one({"_id": ObjectId(job_id)}, {"result.raster_dir": 1, "stage": 1})
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid job_id: {exc}") from exc
+    raster_dir = ((doc or {}).get("result") or {}).get("raster_dir")
+    if not doc or not raster_dir:
+        raise HTTPException(status_code=404, detail="No raster products for this job")
+    root = Path(raster_dir).resolve()
+    target = (root / path).resolve()
+    if root not in target.parents or not target.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    media = _RASTER_MEDIA.get(target.suffix.lower())
+    if media is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return FileResponse(str(target), media_type=media)
 
 
 def _parse_monitor_day(text: Optional[str]):

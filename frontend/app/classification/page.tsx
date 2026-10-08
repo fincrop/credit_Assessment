@@ -10,6 +10,7 @@ import { ClassifyInputsForm } from './components/ClassifyInputsForm';
 import { ProcessingPanel } from './components/ProcessingPanel';
 import { ResultStats } from './components/ResultStats';
 import { DownloadPanel } from './components/DownloadPanel';
+import { FieldDetail } from './components/FieldDetail';
 import { HistoryMenu, HistoryPanel } from './components/HistoryPanel';
 import type {
   AreaOfInterest,
@@ -335,6 +336,9 @@ export default function ClassificationPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/clusters" className="text-xs text-stone-500 hover:text-emerald-700">
+            Clusters
+          </Link>
           <Link href="/monitoring" className="text-xs text-stone-500 hover:text-emerald-700">
             Monitoring
           </Link>
@@ -383,6 +387,7 @@ export default function ClassificationPage() {
               onAreasChange={setAreas}
               resultLayer={result?.fields ?? null}
               onFieldClick={setSelectedField}
+              selectedFieldId={selectedField?.field_id != null ? String(selectedField.field_id) : null}
               readOnly={mapReadOnly}
               heightClass="h-[52dvh] lg:flex-1 lg:min-h-0"
               legend={step === 4 ? result?.stats ?? null : null}
@@ -501,37 +506,7 @@ export default function ClassificationPage() {
             {step === 4 && result && (
               <div className="space-y-4">
                 {selectedField && (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 px-3 py-2.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-sm font-bold text-stone-900 truncate">
-                          {String(selectedField.crop ?? 'Unclassified')}
-                        </p>
-                        <p className="text-[11px] text-stone-600 mt-0.5">
-                          Field {String(selectedField.field_id ?? '—')} ·{' '}
-                          {typeof selectedField.area_ha === 'number'
-                            ? `${selectedField.area_ha.toFixed(2)} ha`
-                            : '—'}{' '}
-                          ·{' '}
-                          {typeof selectedField.confidence === 'number'
-                            ? `${(selectedField.confidence * 100).toFixed(0)}% conf.`
-                            : '—'}
-                        </p>
-                        {typeof selectedField.note === 'string' && selectedField.note && (
-                          <p className="text-[11px] text-stone-600 mt-1 leading-relaxed">
-                            {selectedField.note}
-                          </p>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => setSelectedField(null)}
-                        className="text-stone-400 hover:text-stone-700 text-sm"
-                        aria-label="Close field details"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  </div>
+                  <FieldDetail field={selectedField} onClose={() => setSelectedField(null)} />
                 )}
                 <ResultStats result={result} />
               </div>

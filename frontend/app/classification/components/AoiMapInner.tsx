@@ -24,6 +24,22 @@ interface Props {
   legend?: ClassStat[] | null;
   /** Overlay in the map's top-right, e.g. the download menu. */
   toolbar?: ReactNode;
+  /**
+   * Pre-rendered raster product (PNG already in Web Mercator) drawn in its own
+   * pane below the field outlines. While one is shown, fields draw as outlines.
+   */
+  rasterOverlay?: RasterOverlaySpec | null;
+  /** Panel in the map's bottom-right, e.g. the raster product picker and legend. */
+  overlay?: ReactNode;
+  /** Field drawn with a heavier outline (matched on `properties.field_id`). */
+  selectedFieldId?: string | null;
+}
+
+export interface RasterOverlaySpec {
+  url: string;
+  /** [[south, west], [north, east]] in lat/lon. */
+  bounds: [[number, number], [number, number]];
+  opacity: number;
 }
 
 const ESRI_IMAGERY =
@@ -45,6 +61,9 @@ export default function AoiMapInner({
   heightClass = 'h-[520px]',
   legend = null,
   toolbar,
+  rasterOverlay = null,
+  overlay,
+  selectedFieldId = null,
 }: Props) {
   const shellRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -62,6 +81,12 @@ export default function AoiMapInner({
   onFieldClickRef.current = onFieldClick;
   const resultLayerRef = useRef(resultLayer);
   resultLayerRef.current = resultLayer;
+  const selectedFieldIdRef = useRef(selectedFieldId);
+  selectedFieldIdRef.current = selectedFieldId;
+  const outlineOnlyRef = useRef(Boolean(rasterOverlay));
+  outlineOnlyRef.current = Boolean(rasterOverlay);
+  const resultGeoJsonRef = useRef<L.GeoJSON | null>(null);
+  const rasterLayerRef = useRef<L.ImageOverlay | null>(null);
 
   const redrawAoi = useCallback(() => {
     const group = aoiGroupRef.current;
@@ -104,6 +129,7 @@ export default function AoiMapInner({
     const group = resultGroupRef.current;
     if (!group) return;
     group.clearLayers();
+    resultGeoJsonRef.current = null;
     const fc = resultLayerRef.current;
     if (!fc?.features?.length) return;
 
@@ -113,12 +139,18 @@ export default function AoiMapInner({
         const crop = String(feature?.properties?.crop ?? 'Unclassified');
         const color = (feature?.properties?.color as string) || '#B0A89C';
         const named = isNamedCrop(crop);
+        const fid = feature?.properties?.field_id;
+        const selected =
+          selectedFieldIdRef.current != null && fid != null && String(fid) === selectedFieldIdRef.current;
+        // Over a raster product the field is an outline only, so the pixels
+        // behind its numbers stay visible. Fill opacity 0 keeps it clickable.
+        const outlineOnly = outlineOnlyRef.current;
         return {
-          color: '#1c1917',
-          weight: named ? 1.7 : 1.2,
-          opacity: 0.9,
+          color: selected ? '#facc15' : outlineOnly ? '#fafaf9' : '#1c1917',
+          weight: selected ? 3.2 : named ? 1.7 : 1.2,
+          opacity: selected ? 1 : 0.9,
           fillColor: color,
-          fillOpacity: named ? 0.58 : 0.36,
+          fillOpacity: outlineOnly ? 0 : named ? 0.58 : 0.36,
           lineJoin: 'miter' as const,
           // Field edges are already straightened and shared server-side
           // (regularize_partition). Leaflet's default per-polygon screen-space
@@ -130,15 +162,36 @@ export default function AoiMapInner({
       onEachFeature: (feature, lyr) => {
         const p = (feature.properties || {}) as Record<string, unknown>;
         const crop = String(p.crop ?? 'Unclassified');
+        const modelCrop =
+          typeof p.model_top_crop === 'string' && p.model_top_crop && p.model_top_crop !== crop
+            ? ` (${p.model_top_crop})`
+            : '';
         const ha = typeof p.area_ha === 'number' ? p.area_ha.toFixed(2) : '—';
+        // Classification fields carry a probability; monitoring fields carry
+        // status and stress instead.
         const conf =
-          typeof p.confidence === 'number' ? `${(p.confidence * 100).toFixed(0)}%` : '—';
+          typeof p.confidence === 'number'
+            ? `${(p.confidence * 100).toFixed(0)}%`
+            : [p.status, p.stress].filter((v) => typeof v === 'string' && v).join(' · ') || '—';
         const note = typeof p.note === 'string' && p.note ? ` · ${p.note}` : '';
-        lyr.bindTooltip(`${crop} · ${ha} ha · ${conf}${note}`, { sticky: true, pane: 'tooltipPane' });
+        lyr.bindTooltip(`${crop}${modelCrop} · ${ha} ha · ${conf}${note}`, { sticky: true, pane: 'tooltipPane' });
         lyr.on('click', () => onFieldClickRef.current?.(p));
       },
     });
     group.addLayer(layer);
+    resultGeoJsonRef.current = layer;
+  }, []);
+
+  const restyleResult = useCallback(() => {
+    const layer = resultGeoJsonRef.current;
+    if (!layer) return;
+    layer.eachLayer((lyr) => {
+      layer.resetStyle(lyr);
+      const fid = (lyr as L.Layer & { feature?: GeoJSON.Feature }).feature?.properties?.field_id;
+      if (selectedFieldIdRef.current != null && fid != null && String(fid) === selectedFieldIdRef.current) {
+        (lyr as L.Path).bringToFront?.();
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -155,6 +208,13 @@ export default function AoiMapInner({
     if (labelsPane) {
       labelsPane.style.zIndex = '450';
       labelsPane.style.pointerEvents = 'none';
+    }
+    // Raster products sit above the basemap and below the field outlines.
+    map.createPane('raster');
+    const rasterPane = map.getPane('raster');
+    if (rasterPane) {
+      rasterPane.style.zIndex = '410';
+      rasterPane.style.pointerEvents = 'none';
     }
     map.createPane('fields');
     const fieldsPane = map.getPane('fields');
@@ -230,6 +290,8 @@ export default function AoiMapInner({
       mapRef.current = null;
       aoiGroupRef.current = null;
       resultGroupRef.current = null;
+      resultGeoJsonRef.current = null;
+      rasterLayerRef.current = null;
     };
     // Mount-only: handlers read through refs, so this must not re-run.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -281,11 +343,48 @@ export default function AoiMapInner({
     if (map) window.setTimeout(() => map.invalidateSize({ animate: false }), 50);
   }, [resultLayer, redrawResult, redrawAoi]);
 
+  const rasterUrl = rasterOverlay?.url ?? null;
+  const rasterBoundsKey = rasterOverlay ? JSON.stringify(rasterOverlay.bounds) : null;
+  const rasterOpacity = rasterOverlay?.opacity ?? 1;
+  const rasterOpacityRef = useRef(rasterOpacity);
+  rasterOpacityRef.current = rasterOpacity;
+
+  // The PNG is already reprojected to Web Mercator, so an image overlay on its
+  // lat/lon bounds lands on the right pixels. Never re-stretched here.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (rasterLayerRef.current) {
+      map.removeLayer(rasterLayerRef.current);
+      rasterLayerRef.current = null;
+    }
+    if (!rasterUrl || !rasterBoundsKey) return;
+    const bounds = JSON.parse(rasterBoundsKey) as [[number, number], [number, number]];
+    rasterLayerRef.current = L.imageOverlay(rasterUrl, bounds, {
+      pane: 'raster',
+      opacity: rasterOpacityRef.current,
+      interactive: false,
+      className: 'raster-overlay',
+    }).addTo(map);
+  }, [rasterUrl, rasterBoundsKey]);
+
+  useEffect(() => {
+    rasterLayerRef.current?.setOpacity(rasterOpacity);
+  }, [rasterOpacity]);
+
+  const hasRaster = Boolean(rasterOverlay);
+  useEffect(() => {
+    restyleResult();
+  }, [selectedFieldId, hasRaster, restyleResult]);
+
   return (
     <div ref={shellRef} className={`classification-map ${heightClass}`}>
       <div ref={containerRef} className="h-full w-full" />
       {toolbar ? (
         <div className="absolute top-3 right-3 z-[1100] pointer-events-auto">{toolbar}</div>
+      ) : null}
+      {overlay ? (
+        <div className="absolute bottom-7 right-3 z-[1000] pointer-events-auto">{overlay}</div>
       ) : null}
       {legend && legend.length > 0 ? (
         <div className="classification-legend">

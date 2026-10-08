@@ -64,7 +64,12 @@ export const CROP_COLORS: Record<string, string> = {
   Sugarcane: '#2E7D4F', Banana: '#3F9E68', Grapes: '#276145',
   // horticulture — blues/teals
   Onion: '#3E7FA8', Potato: '#5FA3C4', Chilli: '#2A5F80',
+  // intercrop — a close soybean/tur split inside one 10 m parcel
+  'Soyabean+Tur': '#A2512B',
 };
+
+/** Intercrop classes: named, but not one of the 18 single-crop classes. */
+export const INTERCROP_CLASSES = ['Soyabean+Tur'] as const;
 
 /** Non-crop outcomes the map must be able to draw. */
 export const NON_CROP_COLORS: Record<string, string> = {
@@ -73,15 +78,75 @@ export const NON_CROP_COLORS: Record<string, string> = {
   Fallow: '#C4B99F',
   Unclassified: '#B0A89C',
   Abstained: '#8F8779',
+  /** Older runs. New runs use Others. */
+  'Not requested': '#D6CFC2',
+  /** Model named a crop that is not printed as that crop. The name is `model_top_crop`. */
+  Others: '#C4BBAE',
+  /** Too few clear looks to say anything. Never shown as Fallow. */
+  'Insufficient data': '#E4DED3',
 };
 
 export function classColor(name: string): string {
   return CROP_COLORS[name] || NON_CROP_COLORS[name] || '#B0A89C';
 }
 
+/** Per-field decision the classifier attaches to every polygon. */
+export type FieldStatus =
+  | 'confirmed'
+  | 'provisional'
+  | 'intercrop'
+  | 'abstained'
+  | 'not_requested'
+  | 'no_cycle'
+  | 'no_data';
+
+export const FIELD_STATUS_LABELS: Record<FieldStatus, string> = {
+  confirmed: 'Confirmed',
+  provisional: 'Provisional',
+  intercrop: 'Intercrop',
+  abstained: 'Abstained',
+  not_requested: 'Other crop',
+  no_cycle: 'No crop cycle',
+  no_data: 'Insufficient data',
+};
+
+/** Properties of one classified field polygon. Every key is optional so older results still read. */
+export interface ClassifiedFieldProps {
+  field_id?: string | number;
+  crop?: string;
+  area_ha?: number;
+  confidence?: number;
+  color?: string;
+  note?: string;
+  status?: FieldStatus;
+  /** The model's own top crop — differs from `crop` when it was not requested. */
+  model_top_crop?: string | null;
+  top2_crop?: string | null;
+  p_top1?: number | null;
+  p_top2?: number | null;
+  margin?: number | null;
+  cycle_complete?: boolean | null;
+  n_obs_cycle?: number | null;
+  abstain_reason?: string | null;
+  region_support?: string | boolean | null;
+  season_consistent?: boolean | null;
+  ecoregion?: string | null;
+  cycle_sowing?: string | null;
+  cycle_peak?: string | null;
+  cycle_harvest?: string | null;
+  /** Uncertain field whose best guess is a requested crop (still shown as Others). */
+  possible_crop?: string | null;
+  /** Fused classifier evidence: clear optical looks, radar looks, share of the curve imputed from radar. */
+  n_obs_optical?: number | null;
+  n_obs_radar?: number | null;
+  frac_imputed?: number | null;
+}
+
 export interface ClassificationInputs {
   /** Display name for this run — history, result header, and download filenames. */
   region_name: string;
+  /** SBI revenue circle this village belongs to. Empty when the run is not part of a cluster. */
+  rc_id: string;
   season: SeasonValue;
   /** Agricultural year the season belongs to, e.g. 2024 for Rabi 2024/25. */
   year: number;
@@ -115,6 +180,7 @@ export const DELINEATION_METHODS: { value: DelineationMethod; label: string; hin
 
 export const DEFAULT_INPUTS: ClassificationInputs = {
   region_name: '',
+  rc_id: '',
   season: 'kharif',
   year: new Date().getFullYear(),
   target_crops: [],
@@ -194,7 +260,21 @@ export interface ClassificationResult {
   fields: GeoJSON.FeatureCollection;
   /** Scene dates actually used, for the provenance note under the map. */
   scenes_used?: string[];
+  /** Model file name (older results: the feature-extractor version). */
   model_version?: string;
+  model?: {
+    name?: string;
+    path?: string;
+    sha256?: string;
+    extractor_version?: string;
+    classes?: string[];
+  };
+  /** Observation window the classifier read; `end`/`as_of` is the last date seen. */
+  window?: { start?: string; end?: string; as_of?: string };
+  target_crops?: string[];
+  validation_checks?: ValidationCheck[];
+  /** Fields printed as Others whose best (uncertain) guess is a requested crop, by crop. */
+  possible_requested?: Record<string, { field_count: number; area_ha: number }>;
   /**
    * Cross-region caveat. The classifier scores ~0.81 balanced accuracy inside
    * regions it has training data for and ~0.22 outside them, so a result in an
@@ -310,6 +390,7 @@ export function inputsFromStored(raw: unknown): ClassificationInputs {
   return {
     region_name:
       typeof r.region_name === 'string' ? r.region_name : DEFAULT_INPUTS.region_name,
+    rc_id: typeof r.rc_id === 'string' ? r.rc_id : '',
     season,
     year: Number.isFinite(Number(r.year)) ? Number(r.year) : DEFAULT_INPUTS.year,
     target_crops: Array.isArray(r.target_crops)

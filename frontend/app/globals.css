@@ -463,3 +463,10 @@ textarea:focus-visible {
   padding-inline: clamp(0.875rem, 1.25vw, 1.25rem);
 }
 
+
+/* Raster products are 10 m pixels: keep them crisp instead of smoothing
+   across pixel edges (which would invent values between observations). */
+.raster-overlay {
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+}

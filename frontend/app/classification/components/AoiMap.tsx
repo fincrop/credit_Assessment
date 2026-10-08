@@ -3,6 +3,9 @@
 import dynamic from 'next/dynamic';
 import type { ReactNode } from 'react';
 import type { AreaOfInterest, ClassStat } from '../types';
+import type { RasterOverlaySpec } from './AoiMapInner';
+
+export type { RasterOverlaySpec };
 
 /** Leaflet touches `window` at import time, so the map is client-only. */
 const AoiMapInner = dynamic(() => import('./AoiMapInner'), {
@@ -23,6 +26,9 @@ interface Props {
   heightClass?: string;
   legend?: ClassStat[] | null;
   toolbar?: ReactNode;
+  rasterOverlay?: RasterOverlaySpec | null;
+  overlay?: ReactNode;
+  selectedFieldId?: string | null;
 }
 
 export function AoiMap(props: Props) {

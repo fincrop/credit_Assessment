@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { MonitorDownload, MonitoringResult } from '../types';
 import { DOWNLOAD_OPTIONS } from '../types';
 
-function triggerDownload(blob: Blob, filename: string) {
+export function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -24,11 +24,26 @@ function toCsv(result: MonitoringResult): string {
   const farms = result.farms || [];
   const zones = [
     farms.length
-      ? 'field_id,crop,area_ha,sowing_date,harvest_date,yield_t_ha,stress'
+      ? 'field_id,crop,confidence,status,area_ha,sowing_date,sowing_p10,sowing_p90,stage,harvest_date,yield_t_ha,yield_index,stress,qa_flags'
       : 'zone_id,crop,kind,area_share,greenup,sowing_date,sowing_early,sowing_late,sowing_confidence,sowing_sources,stage,tau,harvest,yield_t_ha,yield_low,yield_high,reference_pool',
     ...(farms.length
       ? farms.map((farm) =>
-          [farm.field_id, farm.crop, farm.area_ha, farm.sowing_date, farm.harvest_date, farm.yield_t_ha, farm.stress].map(csvCell).join(',')
+          [
+            farm.field_id,
+            farm.crop,
+            farm.confidence,
+            farm.status,
+            farm.area_ha,
+            farm.sowing_date,
+            farm.sowing_p10,
+            farm.sowing_p90,
+            farm.stage,
+            farm.harvest_date,
+            farm.yield_t_ha,
+            farm.yield_index,
+            farm.stress,
+            Array.isArray(farm.qa_flags) ? farm.qa_flags.join(';') : farm.qa_flags,
+          ].map(csvCell).join(',')
         )
       : (result.zones || [])
           .filter((z) => z.kind !== 'non_crop')
@@ -113,8 +128,18 @@ export function DownloadPanel({ result }: { result: MonitoringResult }) {
           new Blob([JSON.stringify(result.fields, null, 2)], { type: 'application/geo+json' }),
           `${stem}.geojson`
         );
-      } else if (format === 'csv') {
+      } else if (format === 'csv' && result.engine !== 'raster_v1') {
         triggerDownload(new Blob([toCsv(result)], { type: 'text/csv' }), `${stem}_analysis.csv`);
+      } else if (format === 'csv') {
+        // The raster engine's CSV carries the full per-field record (sowing
+        // window, status, QA flags), which only the service writes.
+        const res = await fetch(`/api/monitoring/download/${result.job_id}?format=csv`, {
+          credentials: 'include',
+        });
+        triggerDownload(
+          res.ok ? await res.blob() : new Blob([toCsv(result)], { type: 'text/csv' }),
+          `${stem}_analysis.csv`
+        );
       } else if (format === 'json') {
         triggerDownload(
           new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' }),

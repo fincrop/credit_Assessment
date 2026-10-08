@@ -324,7 +324,10 @@ def test_csv_escapes_nothing_it_should_not_and_stays_parseable():
 
     rows = list(_csv.reader(_io.StringIO(result_to_csv(_result()))))
     header = rows[0]
-    assert header == ["field_id", "crop", "area_ha", "confidence", "lon", "lat", "note"]
+    # Original seven columns keep their order; audit columns follow.
+    assert header[:7] == ["field_id", "crop", "area_ha", "confidence", "lon", "lat", "note"]
+    assert header[7:10] == ["status", "model_top_crop", "top2_crop"]
+    assert len(rows[1]) == len(header)
     # first three data rows are the fields
     assert rows[1][1] == "Rice"
     assert rows[3][1] == "Abstained"
@@ -514,13 +517,16 @@ def test_classify_objects_loads_detector_with_crop_model_path(monkeypatch):
 
     assert captured["init"]["kwargs"] == {}
     assert str(captured["init"]["crop_model_path"]).endswith(
-        "crop_classifier_tier1_v1.joblib"
+        "crop_classifier_tier1_mh_v1.joblib"
     )
     assert captured["init"]["latitude"] == pytest.approx(23.1)
     assert captured["init"]["longitude"] == pytest.approx(77.2)
     assert captured["init"]["verbose"] is False
     assert objects[0]["crop"] == "Rice"
-    assert out["model_version"] == EXTRACTOR_VERSION
+    # model_version names the model file that ran; the extractor version is
+    # recorded separately (it was previously shown as if it were the model).
+    assert out["model_version"] == "crop_classifier_tier1_mh_v1"
+    assert out["model"]["extractor_version"] == EXTRACTOR_VERSION
     assert os.environ.get("PHENO_FIT_DISABLE") == "1"
 
 

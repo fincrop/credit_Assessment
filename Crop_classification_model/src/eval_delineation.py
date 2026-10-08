@@ -41,6 +41,7 @@ import pandas as pd
 from ._bootstrap import DATA, REPORTS, init_ee, setup_logging
 
 log = setup_logging("eval_delineation")
+from crop_analysis import field_delineation as fd  # noqa: E402
 
 GT_URL = ("https://s3.us-west-2.amazonaws.com/us-west-2.opendata.source.coop/"
           "ftw/india-10k-ml/india_10k_ml.parquet")
@@ -48,6 +49,26 @@ GT_PATH = DATA / "india_10k_ml.parquet"
 CACHE = DATA / "delin_cache"
 YEAR = 2024
 SEED = 7
+
+
+MH_PARCELS = DATA / "00_parcels_mh_new.parquet"
+MH_SPLIT = DATA / "splits" / "mh2023_split.json"
+
+
+def _load_mh() -> gpd.GeoDataFrame:
+    """Marathwada cotton/soybean 2023 parcels (accuracy plan C1.1).
+
+    Labels are partial: only cotton and soybean parcels are drawn, so the
+    per-GT-field scores (best IoU, fragmentation, area ratio) are valid, but
+    over-segmentation of unlabelled neighbours is not measured. Parcels in the
+    frozen mh2023 test blocks form split "test"; the rest are "train" (for
+    --sweep tuning only).
+    """
+    g = gpd.read_parquet(MH_PARCELS)
+    held = set(json.loads(MH_SPLIT.read_text())["excluded_from_training"]) if MH_SPLIT.exists() else set()
+    g["split"] = np.where(g["geom_hash"].isin(held), "test", "train")
+    g["metrics:area"] = g.to_crs(32643).geometry.area
+    return g
 
 
 def _load_gt() -> gpd.GeoDataFrame:
@@ -145,6 +166,61 @@ def run_snic(aoi: Dict[str, Any]) -> List[Dict[str, Any]]:
             for f in fc.get("features", [])]
 
 
+def _cached(key: str, fetch):
+    from crop_analysis.field_delineation import BoundaryArrays
+    fp = CACHE / f"{key}.npz"
+    if fp.exists():
+        z = np.load(fp)
+        return BoundaryArrays(z["bands"], float(z["x0"]), float(z["y1"]), int(z["epsg"]), YEAR)
+    ba = fetch()
+    np.savez_compressed(fp, bands=ba.bands, x0=ba.x0, y1=ba.y1, epsg=ba.epsg)
+    return ba
+
+
+def _cached_prof(key: str, fetch):
+    fp = CACHE / f"{key}.npz"
+    if fp.exists():
+        return np.load(fp)["profiles"]
+    arr = fetch()
+    np.savez_compressed(fp, profiles=arr)
+    return arr
+
+
+def _ftw_polys(key: str, aoi):
+    """FTW Global polygons for a site, cached as WKB (the row groups are also
+    cached by the backend reader)."""
+    import pickle
+
+    import shapely
+
+    fp = CACHE / f"{key}_ftw.pkl"
+    if fp.exists():
+        raw = pickle.loads(fp.read_bytes())
+        return [(shapely.from_wkb(w), p) for w, p in raw]
+    polys, _ = fd.ftw_polygons(aoi, year=YEAR)
+    fp.write_bytes(pickle.dumps([(shapely.to_wkb(g), p) for g, p in polys]))
+    return polys
+
+
+def _ftw_model_edge(key: str, aoi, ba):
+    """FTW U-Net boundary probability on the site's own-year S2 (cached)."""
+    from crop_analysis import ftw_model as fm
+
+    fp = CACHE / f"{key}_ftwmodel.npz"
+    if fp.exists():
+        return np.load(fp)["p"]
+    p = fm.boundary_prob(fm.fetch_input(ba, aoi, YEAR))
+    np.savez_compressed(fp, p=p)
+    return p
+
+
+FTW_VARIANTS = {                      # method -> (edge weight, merge)
+    "watershed_ftwedge": (fd.FTW_EDGE_WEIGHT, False),
+    "watershed_ftwmerge": (0.0, True),
+    "watershed_ftw": (fd.FTW_EDGE_WEIGHT, True),
+}
+
+
 def _ws_arrays(key: str, aoi):
     from crop_analysis.field_delineation import BoundaryArrays, fetch_boundary_arrays
     fp = CACHE / f"{key}.npz"
@@ -162,9 +238,18 @@ def main() -> int:
     ap.add_argument("--split", default="test")
     ap.add_argument("--methods", default="snic,ftw,watershed")
     ap.add_argument("--sweep", action="store_true", help="grid-search watershed params")
+    ap.add_argument("--sweep-ftw", action="store_true",
+                    help="grid-search FTW edge weight and same-field merge")
+    ap.add_argument("--sweep-profile", action="store_true",
+                    help="grid-search profile-merge thresholds (needs watershed_profile)")
     ap.add_argument("--min-field-ha", type=float, default=0.03)
     ap.add_argument("--tag", default="", help="suffix for the report file")
+    ap.add_argument("--gt", default="india10k", choices=["india10k", "mh2023"],
+                    help="ground truth: India 10k (2024) or Marathwada cotton/soybean (2023)")
+    ap.add_argument("--year", type=int, default=None, help="imagery year (default: by --gt)")
     a = ap.parse_args()
+    global YEAR
+    YEAR = a.year or (2023 if a.gt == "mh2023" else YEAR)
 
     CACHE.mkdir(exist_ok=True)
     init_ee()
@@ -173,7 +258,7 @@ def main() -> int:
     methods = [m.strip() for m in a.methods.split(",") if m.strip()]
     if "alu" not in methods and fd.os.getenv(fd.ALU_KEY_ENV):
         methods.append("alu")
-    gt = _load_gt()
+    gt = _load_mh() if a.gt == "mh2023" else _load_gt()
     sites = _sites(gt, a.sites, a.split)
     log.info("sites: %d  (%d GT fields, median %.3f ha)", len(sites),
              sum(len(s) for s in sites),
@@ -181,9 +266,12 @@ def main() -> int:
 
     rows: Dict[str, List[Dict[str, float]]] = {m: [] for m in methods}
     arrays = {}
+    prof_sets = {}
+    ftw_sets = {}
+    model_sets = {}
     timing: Dict[str, float] = {m: 0.0 for m in methods}
     for i, site in enumerate(sites, 1):
-        key = f"site_{int(site['site'].iloc[0])}"
+        key = (f"{a.gt}_" if a.gt != "india10k" else "") + f"site_{int(site['site'].iloc[0])}"
         aoi = _aoi(site)
         for m in methods:
             t = time.time()
@@ -201,6 +289,35 @@ def main() -> int:
                     else:
                         fill = run_snic(aoi)
                     fields = fd.fuse_fields(base, fill, aoi, min_field_ha=a.min_field_ha)
+                elif m in ("watershed_season", "watershed_profile", "watershed_profile12"):
+                    months = fd.kharif_months(YEAR)
+                    # Kharif-month profiles sit on the same AOI grid as either edge map.
+                    if m == "watershed_profile12":
+                        ba_e = _ws_arrays(key, aoi)
+                    else:
+                        ba_e = _cached(f"{key}_k", lambda: fd.fetch_boundary_arrays(aoi, year=YEAR, months=months))
+                    prof = None
+                    if m != "watershed_season":
+                        prof = _cached_prof(f"{key}_prof", lambda: fd.fetch_profile_arrays(
+                            aoi, ba_e, year=YEAR, months=months))
+                        prof_sets[(m, key)] = (ba_e, prof, aoi, site)
+                    fields = fd.segment_arrays(ba_e, aoi, min_field_ha=a.min_field_ha,
+                                               min_cropland=0.0, profiles=prof).fields
+                elif m in ("watershed_ftwmodel", "watershed_ftwall"):
+                    from scipy import ndimage as ndi
+                    ba = _ws_arrays(key, aoi)
+                    me = ndi.zoom(_ftw_model_edge(key, aoi, ba), 2, order=1)
+                    grid = fd.ftw_on_grid(_ftw_polys(key, aoi), ba, 2) if m == "watershed_ftwall" else None
+                    model_sets[key] = (ba, me, grid, aoi, site)
+                    fields = fd.segment_arrays(ba, aoi, min_field_ha=a.min_field_ha, min_cropland=0.0,
+                                               ftw=grid, model_edge=me).fields
+                elif m in FTW_VARIANTS:
+                    ba = _ws_arrays(key, aoi)
+                    grid = fd.ftw_on_grid(_ftw_polys(key, aoi), ba, 2)
+                    ftw_sets[key] = (ba, grid, aoi, site)
+                    w, merge = FTW_VARIANTS[m]
+                    fields = fd.segment_arrays(ba, aoi, min_field_ha=a.min_field_ha, min_cropland=0.0,
+                                               ftw=grid, ftw_edge_weight=w, ftw_merge=merge).fields
                 elif m == "alu":
                     fields = fd.delineate_alu(aoi, min_field_ha=a.min_field_ha).fields
                 else:
@@ -217,7 +334,7 @@ def main() -> int:
             log.info("  %d/%d  %s", i, len(sites),
                      "  ".join(f"{m}={_summ(rows[m]).get('median_iou', 0):.3f}" for m in methods))
 
-    report = {"year": YEAR, "sites": len(sites), "split": a.split,
+    report = {"year": YEAR, "sites": len(sites), "split": a.split, "ground_truth": a.gt,
               "methods": {m: {**_summ(rows[m]), "sec_per_site": round(timing[m] / len(sites), 1)}
                           for m in methods}}
 
@@ -249,6 +366,64 @@ def main() -> int:
         sw = pd.DataFrame(sweep).sort_values("mean_iou", ascending=False)
         log.info("\n%s", sw.head(12).to_string(index=False))
         report["sweep_top"] = sw.head(20).to_dict("records")
+
+    if a.sweep_profile and prof_sets:
+        log.info("sweeping profile-merge thresholds over %d cached sites", len(prof_sets))
+        sweep = []
+        variants = sorted({k[0] for k in prof_sets})
+        for variant in variants:
+            sets = [v for k, v in prof_sets.items() if k[0] == variant]
+            for d_merge in (0.3, 0.5, 0.7, 1.0, 1.5):
+                for w_max in (0.15, 0.25, 0.35, 0.5):
+                    rr = []
+                    for ba_e, prof, aoi, site in sets:
+                        f = fd.segment_arrays(ba_e, aoi, min_field_ha=a.min_field_ha, min_cropland=0.0,
+                                              profiles=prof, profile_d_merge=d_merge,
+                                              profile_w_max=w_max).fields
+                        rr += score(site, f)
+                    sweep.append({"variant": variant, "d_merge": d_merge, "w_max": w_max, **_summ(rr)})
+        sw = pd.DataFrame(sweep).sort_values("median_iou", ascending=False)
+        log.info("%s", sw.to_string(index=False))
+        report["profile_sweep"] = sw.to_dict("records")
+
+    if a.sweep_ftw and ftw_sets:
+        log.info("sweeping FTW evidence over %d cached sites", len(ftw_sets))
+        sweep = []
+        for w in (0.0, 0.2, 0.35, 0.5, 0.7):
+            for merge, cover, w_max in ((False, 0, 0), (True, 0.6, 0.6), (True, 0.6, 0.8),
+                                        (True, 0.75, 0.8), (True, 0.6, 1.0)):
+                rr = []
+                for ba, grid, aoi, site in ftw_sets.values():
+                    f = fd.segment_arrays(ba, aoi, min_field_ha=a.min_field_ha, min_cropland=0.0,
+                                          ftw=grid, ftw_edge_weight=w, ftw_merge=merge,
+                                          ftw_min_cover=cover or fd.FTW_MIN_COVER,
+                                          ftw_w_max=w_max or fd.FTW_W_MAX).fields
+                    rr += score(site, f)
+                sweep.append({"edge_weight": w, "merge": merge, "min_cover": cover,
+                              "w_max": w_max, **_summ(rr)})
+                log.info("  ftw w=%.2f merge=%s cover=%.2f w_max=%.1f  median_iou=%.3f  area_ratio=%s",
+                         w, merge, cover, w_max, sweep[-1].get("median_iou", 0),
+                         sweep[-1].get("median_area_ratio"))
+        report["ftw_sweep"] = sorted(sweep, key=lambda r: -r.get("median_iou", 0))
+
+    if model_sets:
+        log.info("sweeping FTW-model edge weight over %d cached sites", len(model_sets))
+        sweep = []
+        for mw in (0.1, 0.2, 0.35, 0.5):
+            for gw in (0.0, 0.35, 0.5):
+                rr = []
+                for ba, me, grid, aoi, site in model_sets.values():
+                    if gw and grid is None:
+                        continue
+                    f = fd.segment_arrays(ba, aoi, min_field_ha=a.min_field_ha, min_cropland=0.0,
+                                          ftw=grid if gw else None, ftw_edge_weight=gw,
+                                          model_edge=me, model_edge_weight=mw).fields
+                    rr += score(site, f)
+                if rr:
+                    sweep.append({"model_weight": mw, "global_weight": gw, **_summ(rr)})
+                    log.info("  model w=%.2f global w=%.2f  median_iou=%.3f", mw, gw,
+                             sweep[-1].get("median_iou", 0))
+        report["ftw_model_sweep"] = sorted(sweep, key=lambda r: -r.get("median_iou", 0))
 
     out = REPORTS / f"delineation_benchmark{('_' + a.tag) if a.tag else ''}.json"
     out.write_text(json.dumps(report, indent=1))

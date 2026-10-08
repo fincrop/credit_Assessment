@@ -1,0 +1,16 @@
+{
+ "meta": {
+  "description": "Sentinel-1 IW GRD bare-soil and canopy signatures for kharif fields (field-mean dB).",
+  "basis": "Published Sentinel-1 crop studies show the VH/VV cross-ratio tracks vegetation volume and is far less sensitive to soil moisture than VV or VH alone (e.g. Veloso et al. 2017, Remote Sensing of Environment; Vreugdenhil et al. 2018, Remote Sensing). Thresholds calibrated on labelled Marathwada parcels (Cotton, Soyabean, Tur, Jowar, Bajra; Kharif 2022-2024; training blocks only, mh2023 test blocks excluded) by pairing each radar look with an optical look within the same 10-day bin.",
+  "calibration": {
+   "bare_dry_may":   {"n": 3750, "vh_q10_q50_q90": [-25.7, -22.6, -20.0], "vv_q50": -12.2, "cr_q10_q50_q90": [-12.5, -10.4, -8.4], "condition": "NDVI < 0.2, May"},
+   "bare_wet_june":  {"n": 2268, "vh_q10_q50_q90": [-25.8, -22.9, -20.4], "vv_q50": -11.9, "cr_q10_q50_q90": [-13.1, -10.9, -9.0], "condition": "NDVI < 0.2, June (monsoon onset)"},
+   "canopy_aug_oct": {"n": 5059, "vh_q10_q50_q90": [-17.9, -16.1, -14.4], "vv_q50": -8.5, "cr_q10_q50_q90": [-9.3, -7.7, -6.1], "condition": "NDVI > 0.6, Aug-Oct"}
+  },
+  "created": "2026-10-03"
+ },
+ "bare_vh_max_db": -20.0,
+ "bare_cr_max_db": -8.5,
+ "canopy_vh_min_db": -19.0,
+ "canopy_cr_min_db": -9.0
+}

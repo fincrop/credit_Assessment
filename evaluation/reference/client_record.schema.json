@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Client field record (Track D3)",
+  "description": "One field-season outcome supplied by a client. Requires consent. Either field_id or boundary must be given.",
+  "type": "object",
+  "properties": {
+    "record_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "field_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "boundary": {
+      "description": "WKT string or GeoJSON geometry (EPSG:4326)",
+      "type": [
+        "string",
+        "object",
+        "null"
+      ]
+    },
+    "crop": {
+      "type": "string",
+      "minLength": 1
+    },
+    "season": {
+      "type": "string",
+      "enum": [
+        "kharif",
+        "rabi",
+        "zaid",
+        "summer",
+        "perennial"
+      ]
+    },
+    "year": {
+      "type": "integer",
+      "minimum": 2000,
+      "maximum": 2100
+    },
+    "sowing_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "harvest_date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
+    "yield_value": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "yield_unit": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "t_ha",
+        "q_ha",
+        "q_acre",
+        "kg_acre",
+        null
+      ]
+    },
+    "irrigated": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "consent": {
+      "const": true
+    }
+  },
+  "required": [
+    "crop",
+    "season",
+    "year",
+    "source",
+    "consent"
+  ],
+  "anyOf": [
+    {
+      "required": [
+        "field_id"
+      ],
+      "properties": {
+        "field_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    {
+      "required": [
+        "boundary"
+      ],
+      "properties": {
+        "boundary": {
+          "type": [
+            "string",
+            "object"
+          ]
+        }
+      }
+    }
+  ],
+  "dependentRequired": {
+    "yield_value": [
+      "yield_unit"
+    ]
+  },
+  "additionalProperties": true
+}

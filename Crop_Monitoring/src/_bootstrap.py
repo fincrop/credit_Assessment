@@ -37,6 +37,40 @@ def _register_conda_dlls() -> None:
 _register_conda_dlls()
 
 
+def _pin_geodata() -> None:
+    """Drop PROJ / GDAL data paths that belong to another installation.
+
+    A machine-wide PROJ_LIB (PostgreSQL/PostGIS sets one on Windows) points at
+    a different PROJ release; rasterio then fails with "Cannot find proj.db",
+    pyproj with "no database context specified". Pointing everything at one
+    library's copy does not work either: rasterio and pyproj wheels each bundle
+    their own PROJ release and database. With these variables unset, every
+    library uses its own bundled data (wheels) or the environment's share/
+    directory (conda), which is what they are built to do.
+    """
+    import site
+
+    own = [Path(sys.prefix).resolve()]
+    try:
+        own.append(Path(site.getusersitepackages()).resolve())
+    except Exception:  # noqa: BLE001
+        pass
+    for var in ("PROJ_LIB", "PROJ_DATA", "GDAL_DATA"):
+        value = os.environ.get(var)
+        if not value:
+            continue
+        try:
+            path = Path(value).resolve()
+        except OSError:
+            os.environ.pop(var, None)
+            continue
+        if not any(path == root or root in path.parents for root in own):
+            os.environ.pop(var, None)
+
+
+_pin_geodata()
+
+
 def load_env(path: Optional[Path] = None) -> dict:
     env_path = path or (BACKEND / ".env")
     found = {}

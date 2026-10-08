@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import type { ClassificationInputs, DelineationMethod, SeasonValue } from '../types';
 import { CLASSIFIABLE_CROPS, DELINEATION_METHODS, SEASONS, classColor, formatHa } from '../types';
+import { REVENUE_CIRCLES, circleById } from '../../clusters/catalog';
 
 interface Props {
   value: ClassificationInputs;
@@ -75,6 +76,44 @@ export function ClassifyInputsForm({ value, onChange, totalAreaHa, disabled }: P
           onBlur={() => set('region_name', value.region_name.trim())}
           className="w-full rounded-lg border border-rule bg-white px-3 py-2 text-sm text-stone-800 placeholder:text-stone-400 disabled:opacity-60"
         />
+      </section>
+
+      <section>
+        <label className="block text-sm font-bold text-stone-900 mb-1" htmlFor="cls-rc">
+          Revenue circle
+        </label>
+        <p className="text-xs text-stone-500 mb-2">
+          Tags this village to an SBI cluster so the two circles in a district can be compared.
+          Leave blank for a run that is not part of those clusters.
+        </p>
+        <select
+          id="cls-rc"
+          disabled={disabled}
+          value={value.rc_id}
+          onChange={(e) => {
+            const rc_id = e.target.value;
+            const circle = circleById(rc_id);
+            onChange({
+              ...value,
+              rc_id,
+              target_crops: circle ? [circle.modelCrop] : value.target_crops,
+            });
+          }}
+          className="w-full rounded-lg border border-rule bg-white px-3 py-2 text-sm text-stone-800 disabled:opacity-60"
+        >
+          <option value="">Not part of a cluster</option>
+          {REVENUE_CIRCLES.map((rc) => (
+            <option key={rc.id} value={rc.id}>
+              {rc.district} · {rc.taluka} · {rc.name} ({rc.crop})
+            </option>
+          ))}
+        </select>
+        {value.rc_id && circleById(value.rc_id)?.modelCrop === 'Soyabean' && (
+          <p className="mt-2 text-[11px] text-amber-800 leading-relaxed">
+            Soybean at the start of October was right on about 42% of the frozen test.
+            The run still names it. Treat that name as provisional until a November pass.
+          </p>
+        )}
       </section>
 
       <section>
@@ -165,6 +204,15 @@ export function ClassifyInputsForm({ value, onChange, totalAreaHa, disabled }: P
           >
             Clear ({value.target_crops.length} selected)
           </button>
+        )}
+        {value.target_crops.length === 1 && (
+          <p
+            role="status"
+            className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-900 leading-relaxed"
+          >
+            Only one crop selected. Every other crop the model names is reported as &lsquo;Others&rsquo;,
+            with the model&rsquo;s crop shown on hover — not relabelled.
+          </p>
         )}
       </section>
 

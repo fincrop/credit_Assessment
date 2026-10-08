@@ -38,7 +38,10 @@ def result_to_csv(result: Dict[str, Any]) -> str:
     """
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
-    w.writerow(["field_id", "crop", "area_ha", "confidence", "lon", "lat", "note"])
+    # The first seven columns are the original contract; the model's own answer
+    # (top two crops, margin, status) follows so a reader can audit every call.
+    w.writerow(["field_id", "crop", "area_ha", "confidence", "lon", "lat", "note",
+                *_AUDIT_COLUMNS])
 
     features: List[Dict[str, Any]] = (result.get("fields") or {}).get("features") or []
     for i, f in enumerate(features, 1):
@@ -52,6 +55,7 @@ def result_to_csv(result: Dict[str, Any]) -> str:
             f'{float(c.get("lng") or 0.0):.6f}',
             f'{float(c.get("lat") or 0.0):.6f}',
             p.get("note", ""),
+            *[_cell(p.get(k)) for k in _AUDIT_COLUMNS],
         ])
 
     w.writerow([])
@@ -71,7 +75,35 @@ def result_to_csv(result: Dict[str, Any]) -> str:
     for key in ("aoi_name", "season", "year", "total_area_ha", "classified_area_ha",
                 "unclassified_area_ha", "field_count", "mean_confidence", "model_version"):
         w.writerow([key, result.get(key)])
+    model = result.get("model") or {}
+    window = result.get("window") or {}
+    for key, value in (
+        ("model_sha256", model.get("sha256")),
+        ("extractor_version", model.get("extractor_version")),
+        ("window_start", window.get("start")),
+        ("window_end", window.get("end")),
+        ("as_of", window.get("as_of")),
+        ("target_crops", ";".join(result.get("target_crops") or [])),
+    ):
+        if value:
+            w.writerow([key, value])
     return buf.getvalue()
+
+
+_AUDIT_COLUMNS = (
+    "status", "model_top_crop", "top2_crop", "p_top1", "p_top2", "margin",
+    "cycle_complete", "n_obs_cycle", "abstain_reason",
+)
+
+
+def _cell(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    return str(value)
 
 
 def _fields_gdf(result: Dict[str, Any]):

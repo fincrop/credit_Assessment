@@ -1,0 +1,204 @@
+{
+ "model": "crop_classifier_fused_v3.joblib",
+ "n": 814,
+ "results": {
+  "10-01 shift -20d": {
+   "recall": {
+    "Cotton": 0.98,
+    "Soyabean": 0.781,
+    "Tur": 0.43
+   },
+   "predicted_mix": [
+    [
+     "Cotton",
+     523
+    ],
+    [
+     "Soyabean",
+     223
+    ],
+    [
+     "Tur",
+     58
+    ],
+    [
+     "Onion",
+     6
+    ],
+    [
+     "Groundnut",
+     3
+    ],
+    [
+     "Grapes",
+     1
+    ]
+   ]
+  },
+  "10-01 shift +0d": {
+   "recall": {
+    "Cotton": 0.852,
+    "Soyabean": 0.419,
+    "Tur": 0.39
+   },
+   "predicted_mix": [
+    [
+     "Cotton",
+     525
+    ],
+    [
+     "Soyabean",
+     178
+    ],
+    [
+     "Tur",
+     96
+    ],
+    [
+     "Onion",
+     11
+    ],
+    [
+     "Groundnut",
+     3
+    ],
+    [
+     "Grapes",
+     1
+    ]
+   ]
+  },
+  "10-01 shift +20d": {
+   "recall": {
+    "Cotton": 0.886,
+    "Soyabean": 0.228,
+    "Tur": 0.38
+   },
+   "predicted_mix": [
+    [
+     "Cotton",
+     580
+    ],
+    [
+     "Soyabean",
+     120
+    ],
+    [
+     "Tur",
+     102
+    ],
+    [
+     "Onion",
+     5
+    ],
+    [
+     "Groundnut",
+     3
+    ],
+    [
+     "Banana",
+     2
+    ]
+   ]
+  },
+  "full shift -20d": {
+   "recall": {
+    "Cotton": 0.964,
+    "Soyabean": 0.967,
+    "Tur": 0.77
+   },
+   "predicted_mix": [
+    [
+     "Cotton",
+     489
+    ],
+    [
+     "Soyabean",
+     227
+    ],
+    [
+     "Tur",
+     92
+    ],
+    [
+     "Groundnut",
+     2
+    ],
+    [
+     "Onion",
+     2
+    ],
+    [
+     "Sugarcane",
+     1
+    ]
+   ]
+  },
+  "full shift +0d": {
+   "recall": {
+    "Cotton": 0.962,
+    "Soyabean": 0.958,
+    "Tur": 0.84
+   },
+   "predicted_mix": [
+    [
+     "Cotton",
+     491
+    ],
+    [
+     "Soyabean",
+     220
+    ],
+    [
+     "Tur",
+     97
+    ],
+    [
+     "Groundnut",
+     2
+    ],
+    [
+     "Onion",
+     2
+    ],
+    [
+     "Grapes",
+     2
+    ]
+   ]
+  },
+  "full shift +20d": {
+   "recall": {
+    "Cotton": 0.968,
+    "Soyabean": 0.8,
+    "Tur": 0.7
+   },
+   "predicted_mix": [
+    [
+     "Cotton",
+     524
+    ],
+    [
+     "Soyabean",
+     186
+    ],
+    [
+     "Tur",
+     91
+    ],
+    [
+     "Rice",
+     5
+    ],
+    [
+     "Groundnut",
+     3
+    ],
+    [
+     "Onion",
+     3
+    ]
+   ]
+  }
+ }
+}

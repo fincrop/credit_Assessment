@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: loaded.error }, { status: loaded.status });
       }
       inputs.classification_job_id = classJobId;
+      if (loaded.rcId) inputs.rc_id = loaded.rcId;
       inputs.field_ids = loaded.ids;
       inputs.farm_count = loaded.ids.length;
       inputs.crops = loaded.crops;
@@ -146,7 +147,7 @@ async function loadClassifiedFields(
   jobId: string,
   fieldIds: string[],
   user: AuthedUser,
-): Promise<{ ids: string[]; crops: string[]; name: string; areaHa: number } | { error: string; status: number }> {
+): Promise<{ ids: string[]; crops: string[]; name: string; areaHa: number; rcId: string } | { error: string; status: number }> {
   if (!ObjectId.isValid(jobId)) {
     return { error: 'That classification id is not valid.', status: 400 };
   }
@@ -175,12 +176,13 @@ async function loadClassifiedFields(
   if (ids.length === 0) {
     return { error: 'None of those fields are named crops on that classification.', status: 400 };
   }
-  const inputs = (doc.inputs || {}) as { region_name?: string };
+  const inputs = (doc.inputs || {}) as { region_name?: string; rc_id?: string };
   const result = (doc.result || {}) as { aoi_name?: string };
   return {
     ids,
     crops,
     name: result.aoi_name || inputs.region_name || 'Classification',
     areaHa,
+    rcId: typeof inputs.rc_id === 'string' ? inputs.rc_id : '',
   };
 }

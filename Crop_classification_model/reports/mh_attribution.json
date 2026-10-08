@@ -1,0 +1,58 @@
+{
+  "bbox": {
+    "geom_kind": "bbox",
+    "attributed_total": 10637,
+    "new_attributed": 1641,
+    "new_kharif_ok": 1638,
+    "new_rejected_not_kharif": {
+      "Soyabean": 3
+    },
+    "new_survey_in_cycle_rate": 0.8854,
+    "new_soy_gdate_in_cycle_rate": 0.9934,
+    "new_label_season_counts": {
+      "kharif": 1641
+    },
+    "stage_rejections_new": {
+      "Cotton:cycle_too_few_scenes": 9,
+      "Cotton:no_cycle_near_survey_date": 13,
+      "Cotton:too_few_core_pixels": 292,
+      "Soyabean:cycle_too_few_scenes": 100,
+      "Soyabean:too_few_core_pixels": 259
+    },
+    "stage_rejections_all": {
+      "cycle_too_few_scenes": 752,
+      "too_few_core_pixels": 675,
+      "no_cycle_near_survey_date": 302,
+      "no_cycle_detected": 2
+    }
+  },
+  "poly": {
+    "geom_kind": "poly",
+    "attributed_total": 3634,
+    "new_attributed": 1613,
+    "new_kharif_ok": 1605,
+    "new_rejected_not_kharif": {
+      "Cotton": 6,
+      "Soyabean": 2
+    },
+    "new_survey_in_cycle_rate": 0.8698,
+    "new_soy_gdate_in_cycle_rate": 0.9953,
+    "new_label_season_counts": {
+      "kharif": 1613
+    },
+    "stage_rejections_new": {
+      "Cotton:cycle_too_few_scenes": 1,
+      "Cotton:no_cycle_near_survey_date": 17,
+      "Cotton:too_few_core_pixels": 292,
+      "Soyabean:cycle_too_few_scenes": 132,
+      "Soyabean:too_few_core_pixels": 259
+    },
+    "stage_rejections_all": {
+      "too_few_core_pixels": 582,
+      "cycle_too_few_scenes": 269,
+      "no_cycle_near_survey_date": 88,
+      "land_cover_fail": 1,
+      "no_cycle_detected": 1
+    }
+  }
+}

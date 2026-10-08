@@ -3,7 +3,7 @@
 **Goal:** field-level crop, boundary, sowing, stage, stress and yield outputs that are accurate enough, and honest enough about uncertainty, to share with banks and other stakeholders.
 
 **Trigger:** audit of the Dhaswadi Kharif 2026 run (`Crop_Monitoring/Results/`), 2 Oct 2026.
-**Status:** revision 2 (constraints confirmed 2 Oct 2026). Nothing in this plan has been implemented yet.
+**Status:** revision 3 (3 Oct 2026). Tracks A and B and the monitoring rework are in. Revision 3 corrects three results from the Dhaswadi Kharif 2026 cotton run after those changes (§12).
 
 ### Constraints confirmed for this plan
 | Item | Status | Effect on the plan |
@@ -557,6 +557,127 @@ Estimates assume one engineer plus Earth Engine quota; adjust after week 1.
 
 ---
 
+## 11. Implementation status (3 Oct 2026)
+
+### 11.1 What was built
+
+| Plan item | Status | Where | Tests |
+|---|---|---|---|
+| **B1** no rescaling over requested crops; "Not requested" outcome | Done | `crop_analysis/area_classifier.py` (`decide_crop`) | `tests/test_classification_decisions.py` |
+| **B2** per field: `model_top_crop`, `top2_crop`, `p_top1/p_top2`, `margin`, `status`, `abstain_reason` | Done (GeoJSON + CSV audit columns) | `area_classifier.py`, `api/classification_export.py` | same + `test_area_classifier.py` |
+| **B3** window ends at the run date; only real in-cycle scenes, using the same helpers training uses (`cycle_scene_date_bounds`, `collect_scenes_between`) | Done | `area_classifier.py`, `crop_detector.py` | same |
+| **B4** in-season mode | Partial: `provisional` status, `season_progress` warning, `season_complete` flag. Truncated-cycle accuracy is measured in Track A | `area_classifier.py` | same |
+| **B5** region guard + season mask switched on | Done. The crop calendar is now one shared module | `crop_analysis/region_guard.py`, `crop_analysis/crop_calendar.py` (training copy re-exports it) | same |
+| **B6** model provenance (`model.name`, `sha256`, `extractor_version`) | Done | `area_classifier.py` | same |
+| **B7** Fallow split into Fallow / Insufficient data / Unclassified | Done | `area_classifier.py` (`classify_without_cycle`) | same |
+| **A1–A2** Marathwada ingest + frozen spatial split | Done | `Crop_classification_model/src/ingest_mh.py`, `data/splits/mh2023_split.json` | dry-run audit |
+| **A3** extraction | Done: 2,314 parcels × 80 bins, both bbox and polygon footprints, 71% valid | `data/01_scenes_mh.parquet` | — |
+| **A4–A6** label QA, retrain, evaluation | See §11.3 | `src/run_mh.py`, `src/mh_*.py` | `src/test_run_mh.py` |
+| **C1.1** delineation benchmark on Marathwada parcels | Done for 35 of 40 sites (stopped at a time limit) | `src/eval_delineation.py --gt mh2023` | — |
+| **C1.3** cadastral co-registration + segment constraint | Done; wired into classification via the `cadastral_plots` input | `crop_analysis/cadastral_align.py` | `tests/test_cadastral_align.py` |
+| **5.1** raster data layer: per-scene S2, Landsat, S1; village grid; interior / inner / full pixel tiers; cache | Done | `Crop_Monitoring/src/raster/{grid,stack,fetch}.py` | `tests/test_raster_core.py` |
+| Landsat → S2 cross-calibration | Done; median of per-pair fits (a pooled fit is flattened by noise) | `raster/indices.py` | yes |
+| **5.2** Whittaker upper-envelope smoothing, bare-soil-first phenology, gap length | Done | `raster/smooth.py`, `raster/phenology.py` | yes |
+| Crop reference curves from labelled data | Done: Cotton (388 parcels), Soyabean (446), Tur (35), from 2023 training blocks only; other crops keep parametric curves | `build_reference_curves.py`, `reference/crop_reference_curves.json` | yes |
+| **5.3** sowing: onset prior, curve-fit and radar cues, robust posterior, P10–P90 | Done | `raster/sowing.py`, `raster/reference.py` | yes |
+| **5.4** crop check, crop group, cotton multi-pick window, fits stop after harvest | Done | `raster/reference.py`, `raster/engine.py` | `tests/test_raster_engine.py` |
+| **5.5** stress vs same-crop fields at the same days after sowing (spread widened by sowing uncertainty), persistence, waterlogging, damage, village normal 2019–2025 | Done | `raster/stress.py`, `raster/village_normal.py` | yes |
+| **5.6** yield Stage 1 (district-anchored index; withheld when the crop is unknown or disputed) and Stage 2 `calibrate()` | Done; Stage 2 waits for ≥ 30 client records per crop | `raster/yield_index.py` | yes |
+| **5.7** handoff: real probability, farmer sowing dates, raster engine as default | Done. `MONITORING_ENGINE=point` keeps the old engine for shadow runs | `api/monitoring_runner.py` | `tests/test_monitoring_runner_raster.py` |
+| **5.8** COG + PNG overlays with fixed colour-blind-safe scales and hatched no-data; raster file endpoint; farm report card | Done | `raster/products.py`, `api/app.py`, `api/monitoring_export.py` | `tests/test_monitoring_export_records.py` |
+| Frontend: raster overlay control, field record card, report download, classification audit fields, single-crop warning | Done (`tsc` clean, `next build` passes) | `frontend/app/...` | type-check + build |
+| **Track D**: metrics, Olofsson area, D1 sampling + blind sheets + image chips, kappa, D3 client intake, D4 official checks, gate report | Done | `evaluation/` | `evaluation/tests` (86) |
+| Environment | A foreign `PROJ_LIB`/`GDAL_DATA` (PostGIS) is dropped at import; conda DLL folders registered in backend `config.py` | `Crop_Monitoring/src/_bootstrap.py`, `backend/.../config.py` | suites pass under `.conda` and miniconda |
+
+**Track A1–A2 detail:**
+- 2,314 new parcels: 1,499 cotton, 815 soybean.
+- 46 cotton and 300 soybean duplicates of existing training parcels are kept train-only.
+- Test set: 499 cotton, 215 soybean and 100 tur, in 27 blocks.
+
+**C1.1 detail:** median IoU was watershed 0.30, FTW 0.22, SNIC 0.34.
+
+**C1.3 detail:**
+- Gate: held-out residual ≤ 10 m and ≥ 60% edge agreement.
+- Tie points are aperture-aware: a block of mostly parallel lines can't give a reliable local shift, so it anchors at zero.
+
+### 11.2 Dhaswadi Kharif 2026, re-run with the fixes (as of 2 Oct 2026)
+
+**Classification** (no crop filter, window ending 2 Oct): 1,786 of 2,355 fields return *Insufficient data*, 380 return *Unclassified*, and about 140 fields get a crop name.
+
+Measured cause:
+- Inside cycles still in progress, the classifier sees only 2–4 clear 10-day composites; it was trained with at least 5.
+- 6 of the 16 bins were empty, partly because classification composites drop any scene more than 70% cloudy across the whole tile.
+
+**The old "438 ha Cotton at confidence 1.0" came from the cotton-only rescaling plus a window filled through December, not from evidence.** Crop names for this village need the post-harvest run.
+
+**Monitoring** (raster engine, all 2,355 fields; crop "unknown" where classification gave no name):
+
+| | Old point engine | New raster engine |
+|---|---|---|
+| Clear looks per field | 1–4 points on 11-day composites | median 45 real scenes (37 S2 + 17 Landsat + 15 S1 dates) |
+| Sowing in April–May | 685 of 1,090 (63%) | 18 of 1,946 dated fields (1%) |
+| Sowing in June–July | 394 (36%) | 1,927 (99%); median P10–P90 window 13 days |
+| Monsoon onset | not used | 25 June 2026 (75 mm rule) |
+| Crop group decided | — | 368 fields (275 short-season, 93 long-season) |
+| Crop group not decided | — | 875 "too early", 842 ambiguous, 270 no fit (details below) |
+| Stress | relative to a farm's own 1–4 points | scored for 373 fields that have a valid cohort; withheld elsewhere |
+| Yield | 0.40–0.65 t/ha, effectively constant | index only where a crop is named; withheld for unknown or disputed crops |
+| Village vs 2019–2025 normal | — | near normal |
+
+On the undecided crop groups:
+- **Too early (875):** 62–88 days after sowing, before short-season crops visibly senesce.
+- **Ambiguous (842):** the curve fits both groups within noise, which is what intercrops and mixed pixels look like.
+
+**Outputs:**
+- `Crop_Monitoring/outputs/dhaswadi_2026_final/`: `monitoring.json`, `cog/`, `png/`, `products.json`.
+- `Crop_Monitoring/Results/Dhaswadi_kharif_2026_raster_records.csv`.
+- `Crop_Monitoring/Results/Dhaswadi_kharif_2026_rerun.geojson`.
+
+**What this means for bank reporting now:**
+- Supportable for the fields above: sowing dates (with windows), stage and crop group.
+- Not supportable on 2 Oct for this village: crop names, area by crop and yield.
+- Re-run monitoring around 25 Oct, when most "too early" fields pass 90 days after sowing.
+- Re-run classification after harvest (soybean late Oct–Nov; cotton picking Oct–Jan).
+
+### 11.3 Track A results (full report: `Crop_classification_model/reports/mh_eval.md`)
+
+New model `crop_classifier_tier1_mh_v1` (same estimator, calibration and bundle format as the shipped model). Trained on 9,859 cycles: the augmented set plus Marathwada, minus the held-out blocks, with augmentation and capped class weights.
+
+**Frozen Marathwada test set, true-polygon features (what production uses), with 95% Wilson intervals:**
+
+| | Shipped `tier1_v1` | New `tier1_mh_v1` | Gate §8 |
+|---|---|---|---|
+| Cotton recall (n=493) | 0.586 [0.54, 0.63] | **0.955 [0.93, 0.97]** | pass |
+| Cotton precision | 0.986 | **0.987 [0.97, 0.99]** | pass |
+| Soybean recall (n=120) | 0.850 [0.78, 0.90] | 0.808 [0.73, 0.87] | **fail** (needs ≥ 0.85) |
+| Soybean precision | 0.927 | 0.924 [0.86, 0.96] | pass |
+| Tur recall (n=23) | 0.913 (in-sample for shipped) | 0.652 | reported |
+| Calibration error (ECE) | 0.100 | 0.086 | **fail** (needs ≤ 0.05) |
+| Bounding-box features, cotton / soybean recall | 0.586 / 0.806 | 0.951 / 0.741 | — |
+
+- **Cotton:** the shipped model called 135 of 493 Marathwada cotton parcels "Tur". The new model fixes this.
+- **Soybean:** misses go mostly to other short-season classes.
+- **No regression:** blocked 5-fold cross-validation on identical rows gives balanced accuracy 0.656 for the new recipe vs 0.646 for the shipped recipe. The shipped card's 0.749 was on a different row set.
+- **In season:** features truncated at 90 days after sowing are buildable for only about 10% of test cycles; at 120 days for about 50% (accuracy 0.75). This confirms crop names are a post-harvest product, and crop groups are the in-season one.
+- **Deployment (switched 3 Oct 2026, on request):**
+  - `tier1_mh_v1` is the production model: `.env` `CROP_MODEL_PATH` and `config.DEFAULT_CROP_MODEL_PATH` both point to it.
+  - It loads its own region-support table (`crop_classifier_tier1_mh_v1.region_support.json`).
+  - `tier1_v1` is kept for rollback.
+  - The soybean-recall and calibration gates are still open, so soybean names stay `provisional` where the monitoring agreement rule is not met.
+- **Leakage gap:** recorded in the bundle as +0.224. Random split 0.870 vs blocked 0.646, same recipe and rows. Never quote the random-split figure.
+- **Open issues:**
+  - Soybean recall and calibration need more local soybean (the 516 Unchecked rows are down-weighted, and 103 of them are on the label-review list), plus a recalibration on Marathwada blocks.
+  - The label-shift prior was not applied because there is no official crop-shares file.
+
+### 11.4 Not done / needs input
+
+- **Official statistics** (district crop shares, district yields, weekly sowing progress): the templates in `evaluation/reference/` are header-only, and no figures were invented. Yield in t/ha stays off until they are filled.
+- **D1 image interpretation:** sampling, blind sheets and image chips are built; interpreters are needed (two passes: early Nov and Jan).
+- **Cadastral alignment on real plots:** built and tested on synthetic villages; needs one pilot village's survey-number plots.
+- **Classification cloud handling in season:** short gaps are now filled for cycle detection only, and a short clear record is classified as Others with the model's lean (§12.1). Composites still use the 70% tile cloud cap that training used. A SAR-and-weather retrain is the step that turns a short record into a calibrated crop name.
+- **C1.2 delineation tuning** against the Marathwada benchmark, and a full 40-site benchmark report.
+- ESLint in `frontend/` fails on startup (a pre-existing `brace-expansion` override), unrelated to these changes.
+
 ## Appendix: audit findings mapped to plan items
 
 | Finding (Dhaswadi 2026) | Evidence | Plan item |
@@ -581,6 +702,175 @@ Estimates assume one engineer plus Earth Engine quota; adjust after week 1.
 | Farmer sowing dates ignored in village runs | `monitoring_runner.py:257` | 5.7 |
 | Map label "tier2_v1" is the extractor version, not the model | `crop_detector.py:63`, `area_classifier.py:1049` | B6 |
 | Boundaries traced on a 5 m grid; IoU 0.39 | `field_delineation.py:1083-1107` | C1 |
+
+## 12. Revision 3 — Dhaswadi cotton run, 3 Oct 2026
+
+The cotton-only run after Tracks A and B (`crop_classifier_tier1_mh_v1`, observations through 3 Oct) came back as:
+
+| Class | Fields | Area | Share |
+|---|---|---|---|
+| Insufficient data | 1,383 | 382.1 ha | 57.3% |
+| Not requested | 518 | 148.6 ha | 22.3% |
+| Unclassified | 219 | 63.8 ha | 9.6% |
+| Abstained | 191 | 56.8 ha | 8.5% |
+| Cotton | 59 | 15.3 ha | 2.3% |
+
+Field outlines covered a half or a quarter of the visible farm. Three causes, and the rule that replaces each.
+
+### 12.1 Cloudy optical scenes were being skipped
+
+"Insufficient data" was not a lack of weather or radar. The optical classifier refused a field when fewer than 5 clear Sentinel-2 looks fell inside its cycle (`MIN_CYCLE_SCENES`), and a green field with a monsoon gap longer than 45 days was treated the same way. June–August cloud in Marathwada makes that the common case in early October, so most of the village never reached the model.
+
+What does **not** fix it: filling those holes and handing the filled values to `tier1_mh_v1` as if they were clear scenes. That model was trained on real clear looks. Invented green values are the bug Track B removed.
+
+What does fix it, and is now the inference rule:
+
+1. **Cycle detection** fills a gap of one or two 10-day composites (linearly, between two real looks). A longer hole stays empty. The classifier never sees those filled values.
+2. **The model still runs** when a cycle has at least 2 real clear looks. The feature grid already interpolates the real looks onto its fixed time axis, and `n_scenes_real` tells the model the record is short.
+3. **A named crop** (Cotton, when Cotton was requested) is printed only when the call clears the confidence gate and the cycle has at least 5 real looks. Below that, the printed class is **Others** and the model's lean is kept for the hover. The field is not dropped.
+4. **Insufficient data** remains only when the field was barely seen: fewer than 3 clear looks in the season, or a long gap and no canopy. A visible canopy with no annual cycle is Others, not a blank.
+5. **A SAR-and-weather retrain is the next training step, not a silent swap.** Sentinel-1 and village weather are not features of `tier1_mh_v1`. Training them in (radar phenology through the monsoon, optical features only from real clear looks, weather as a season prior and not a field feature) is what lets a short optical record become a calibrated crop name. Until that model exists, a short record is Others plus the current model's lean, which is an honest answer rather than a skipped field.
+
+### 12.2 One requested crop needs one other class
+
+"Not requested", "Unclassified" and "Abstained" were three names for the same map fact: this is not the crop the user asked to see, and the model may still have a lean. On a cotton-only run the printed classes are now:
+
+| Printed class | When | Hover |
+|---|---|---|
+| Cotton | Model names Cotton, confidence clears the gate, and the cycle has at least 5 clear looks | — |
+| Others | Any other model name, a weak call, a region or season guard, or a green field with no annual cycle | The model's crop, in brackets: Others (Soyabean) |
+| Fallow | Bare on the clear looks we do have | — |
+| Insufficient data | The field was barely seen | Why |
+
+The model's probabilities are still not renormalised over the requested list. Others is never relabelled Cotton. Older results that say "Not requested", "Unclassified" or "Abstained" still draw.
+
+### 12.3 A farm was being cut on a faint interior edge
+
+Watershed merging treated the 75th percentile of *shared-edge* strengths as a bund. In a village full of faint ridges (moisture streaks, partial canopy, a residual cloud edge) that percentile sits on the ridges, so a rectangular farm stays in two or three pieces. Those pieces then get different classes and cannot be dissolved back together.
+
+A line now separates two regions only when it is at least `merge_ratio` of the **95th percentile of the edge image** (a real bund). A faint streak through one farm is absorbed. A bund at full strength still separates neighbouring fields, including a one-pixel bund. Pieces below the minimum field size still join their neighbour.
+
+### 12.4 Cloud-robust classifier: radar and optical fused per field
+
+This is the retrain that 12.1 item 5 called for. The code is in `crop_analysis/fused_features.py` and `fused_classifier.py`, and it is trained by `src/train_fused.py`.
+
+- **Inputs:**
+  - Sentinel-1 VV/VH (dB) and cloud-masked Sentinel-2 reflectance (Cloud Score+ ≥ 0.6), from 1 May, on the shared 10-day grid.
+  - A SAR→NDVI imputer, scored on the frozen test parcels: R² 0.886, RMSE 0.095.
+  - Weighted Whittaker smoothing (λ 400) with an optical-only upper envelope; imputed steps get weight 0.3.
+- **Features:**
+  - Per-step fused NDVI, VH, cross-ratio and NDMI, plus an observed/imputed flag.
+  - Season summaries.
+  - (v2) the same curve aligned to each field's own green-up.
+- **Partial seasons:** the model learns from rows cut at 1 Jul, 1 Aug, 1 Sep, 1 Oct, 1 Nov and full season.
+- **"Insufficient data"** now means only that neither radar nor optical saw the field at all. Thin evidence lowers confidence instead.
+- **Calibration:** temperature plus per-class bias, fitted on Maharashtra out-of-fold rows, separately for in-season reads (< 1 Nov) and late-season reads.
+
+Frozen Marathwada test (814 parcels, never used for training or tuning), v2:
+
+| As of | Cotton R / P (argmax) | Cotton P @ abstain rule [95% CI] | Soyabean R / P | ECE |
+|---|---|---|---|---|
+| 1 Oct | 0.894 / 0.798 | 0.844 [0.810, 0.873] | 0.358 / 0.507 | 0.055 |
+| Full season | 0.956 / 0.964 | 0.979 [0.962, 0.989] | 0.828 / 0.868 | 0.129 |
+
+The model is **under-confident in every bin**: fields at 0.7–0.9 confidence are right 91% of the time at 1 Oct and 96% at full season. That is the safe direction for a bank.
+
+**It was installed, run on Dhaswadi, and withdrawn the same day.**
+- On Dhaswadi as of 3 Oct 2026 it left no field as Insufficient data: median 9 optical and 10 radar looks per field, 36% of steps imputed.
+- But its lean was "Onion" for 1,013 of 1,368 fields.
+
+The cause is a **year-timing confound**:
+- Almost all cotton and all soybean labels are from 2023, a late-monsoon year.
+- The earliest-greening class in training is Onion (Nashik belt, 2022–23).
+- Dhaswadi (Latur district, 18.8°N 76.8°E) greened earlier in 2026, and its median curve matches training Onion almost exactly.
+
+The frozen test is the same year (2023), so it cannot see this. `src/eval_timeshift.py` now replays the frozen test with every observation date moved:
+
+| v2, frozen test | Cotton R | Soyabean R | Tur R | Predicted mix moves to |
+|---|---|---|---|---|
+| 1 Oct, as observed | 0.894 | 0.358 | 0.35 | — |
+| 1 Oct, dates −20 d (early monsoon) | 0.705 | 0.591 | 0.01 | Onion, Groundnut |
+| 1 Oct, dates +20 d (late monsoon) | 0.834 | **0.000** | **0.000** | Cotton, Rice, Banana |
+
+**v3** (`crop_classifier_fused_v3`) trains on every training parcel a second time with all dates moved by ±10 and ±20 days, label unchanged, so timing alone stops being a shortcut. It fixed the timing failure and lifted every class:
+
+| v3, frozen test | Cotton R / P | Soyabean R / P | Tur R | ECE |
+|---|---|---|---|---|
+| 1 Oct | 0.852 / 0.810 | 0.419 / 0.506 | 0.39 | 0.072 |
+| Full season | 0.962 / 0.978 | 0.958 / 0.936 | 0.84 | 0.096 |
+| Full season, dates −20 d | Cotton R 0.964 | Soyabean R 0.967 | 0.77 | — |
+| Full season, dates +20 d | Cotton R 0.968 | Soyabean R 0.800 | 0.70 | — |
+
+**v3 still called 1,619 of 2,480 Dhaswadi fields "Onion"**, so it was also withdrawn. The remaining cause is **levels, not timing**:
+- Dhaswadi's 0.2 ha delineated fields include tree-lined bunds and mixed pixels.
+- In May they sit at NDVI ~0.19, VH −19.6 dB and cross-ratio −7.8 dB. Training Onion (irrigated Nashik belt) sits at 0.21, −20.1 dB and −9.2 dB. Training cotton and soybean sit at 0.15–0.17, about −22 dB and about −10 dB.
+- A model that reads absolute levels learns the place, not the crop.
+
+**v4** (feature version `fused_v4`) reads every NDVI, NDMI, VH and cross-ratio value as an offset from the field's own pre-season floor: the low end of its first six 10-day steps from 1 May. Absolute peak and floor are no longer model inputs. Absolute NDVI is still used for the fallow test. A bundle trained on another feature version is refused at load.
+
+**Root cause: crop labels are tied to one year.** A quick v4 model scored the same 120 Dhaswadi fields in three seasons:
+
+| Season | Leans (all-years training) | Leans (2023-only training) | Median NDVI peak |
+|---|---|---|---|
+| 2023 | Cotton 77, Soyabean 33 | Cotton 79, Soyabean 33 | 0.89 |
+| 2024 | Tobacco 80, Cotton 31 | Tobacco 50, Soyabean 46, Cotton 20 | 0.75 |
+| 2026 | Onion 43, Cotton 25, Banana 17 | Rice 40, Cotton 40, Tobacco 21 | 0.71 |
+
+Training labels by year:
+- Soyabean: 1,176 of 1,176 parcels from 2023.
+- Cotton: 2,078 of 2,138 from 2023.
+- Tur: 463 of 467 from 2023.
+- 2024 rows: 179 of 266 are Tobacco.
+
+A model can therefore learn "not a 2023-looking season, so not Soyabean or Cotton". Training on 2023 alone removes that shortcut but cannot teach inter-annual variation. With one season of labels for the crops that matter, no model's 2026 crop names can be validated.
+
+On relative features alone, frozen-test Soyabean recall at 1 Oct rises from 0.42 to 0.66–0.68. That improvement carries forward.
+
+**What unblocks it: labelled fields from at least one more season**, even 100–200 Cotton, Soyabean and Tur fields with a location or survey number, from any year since 2024. Candidate sources:
+- client and loan records (crop declared at sanction);
+- 7/12 extracts or E-Peek Pahani crop entries for the plots;
+- PMFBY insured-crop records.
+
+These become a second-year validation set. If there are enough of them, they also become training data and a calibration year.
+
+**Until then:**
+- Area classification stays on `tier1_mh_v1`.
+- The fused path stays built and tested but uninstalled.
+- "Insufficient data" remains an honest answer for fields without enough clear looks.
+
+**Deployment gate for any fused model:**
+1. The frozen test at least matches v3.
+2. Under ±20-day shifts, full-season Cotton and Soyabean recall stay within 10 points. In-season rows are excluded, because a shifted crop is genuinely less advanced at a fixed cut-off.
+3. **Known-region sanity.** On Dhaswadi (Latur, a soybean district), the model's lean must be led by kharif field crops (Soyabean, Cotton, Tur), not by an irrigated-belt class.
+
+The backend picks up `models/crop_classifier_fused_v4.joblib` only when that file is installed. Until then area classification runs on `tier1_mh_v1`.
+
+### 12.5 Monitoring starts on 1 May; bare soil comes from the radar reference
+
+- **Season window.** The raster engine read imagery from March for kharif, so a pre-monsoon crop or an orchard could put "sowing" in April. The kharif window now starts on 1 May (rabi on 15 Sep). Dhaswadi re-run as of 2 Oct: Sentinel-2 read from 2026-05-01, median sowing 30 June, 1,787 fields dated.
+- **Canopy already up on 1 May.** A sowing median before the window is an extrapolation, not a measurement. Those fields now get status `before_window` and no date: sugarcane, orchards and early irrigated plots, 6 fields at Dhaswadi. The UI shows "Before 1 May (canopy already up at season start)".
+- **Bare soil from radar.** Bare soil no longer comes from boundary or other in-village pixels, which may carry a crop. It comes from `Crop_Monitoring/reference/sar_reference.json`, Sentinel-1 signatures consistent with the literature: bare VH ≤ −20 dB and VH−VV ≤ −8.5 dB; canopy VH ≥ −19 dB and VH−VV ≥ −9 dB. The cross-ratio is the moisture-robust term. A radar emergence needs a bare look first, then two consecutive canopy looks. The radar-to-sowing lag is derived per crop from the reference curves (Cotton 24 d, Soyabean 14 d, Tur 20 d).
+
+### 12.6 Field boundaries: licence-clean evidence from Fields of The World
+
+**Benchmark.** Frozen Marathwada parcels: 40 sites, 520 surveyed fields, median 0.256 ha. Metric is the median of each field's best IoU. Script: `src/eval_delineation.py`.
+
+| Delineation | Median IoU | Predicted / true area |
+|---|---|---|
+| Watershed, 12-month S2 edges (production until now) | 0.177 | 5.1× |
+| + season-profile merge | 0.132 | 7.1× |
+| Kharif-only edges | 0.098 | 9.6× |
+| + FTW Global same-field join only | 0.140 | 6.6× |
+| + FTW Global outlines in the edge map | 0.228 | — |
+| + FTW U-Net boundary on own-year S2 | 0.297 | — |
+| **+ FTW U-Net + FTW Global outlines** | **0.331** | — |
+
+What this means:
+- **Merging is not the cure for split farms.** On these parcels our fields are already about 5× too large, and every merge variant (season profile, FTW same-field join) lowered IoU. Season-profile merging is now off by default (`DELINEATION_PROFILE_MERGE=1` turns it on).
+- **Adding the right lines is the cure.** The split farms in the Dhaswadi screenshots and the over-large fields here are the same faint-edge problem. The fix is better boundary evidence, which also stops cuts along non-boundaries.
+- **FTW Global (CC-BY-4.0).** 2024/2025 field polygons from the PRUE model, read over HTTPS from `data.source.coop/ftw/global-data`. Only the overlapping row groups are fetched (about 170 MB around a village, cached). The old `tge-labs` S3 path is gone, and the reader was moved. Its outlines join the edge map at weight 0.35. Used directly as fields it scored 0.169 (earlier India-10k run), so it is evidence, never the answer. Default on (`DELINEATION_USE_FTW`).
+- **FTW U-Net** (`crop_analysis/ftw_model.py`). The CC-BY checkpoint `3_Class_CCBY_FTW_Pretrained` (EfficientNet-B3 U-Net) runs on our own two-date Sentinel-2 for the run year (rabi 15 Jan–15 Mar, late kharif 1 Sep–31 Oct): L2A DN / 3000, B4 B3 B2 B8 × 2. On these smallholder plots it calls most pixels "boundary" in absolute terms, so its probability is scaled by its own 98th percentile before blending. It captures this season's re-bunding, which a 2024/25 snapshot cannot. Default on (`DELINEATION_USE_FTW_MODEL`). It needs CPU torch, `segmentation-models-pytorch` and the checkpoint; the Dockerfile installs all three, and without them delineation skips this step.
+- **Not used.** The non-commercial `FTW_PRUE_EFNET_B5` checkpoint; Delineate Anything (AGPL-3.0); Google or Esri basemap tiles. The Google Maps Platform terms prohibit tracing and ML-derived content from Maps imagery, and Esri's basemap terms restrict analysis outside a licensed ArcGIS deployment. A segmentation model run over those tiles produces exactly that derived content, whether or not the tiles are kept. Licensed routes plug into the same edge map through `vhr_imagery_path`: the ALU API, purchased VHR, or ArcGIS with an analysis licence.
 
 ### References
 - Atzberger, C. & Eilers, P. (2011). Weighted Whittaker smoothing of NDVI time series.

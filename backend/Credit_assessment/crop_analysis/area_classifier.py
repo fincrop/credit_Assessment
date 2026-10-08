@@ -55,9 +55,10 @@ import math
 import os
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +128,20 @@ class ClassifyInputs:
     # Field-boundary source: auto | alu | ftw | watershed | snic. See
     # crop_analysis/field_delineation.py for the chain and its benchmark.
     delineation_method: str = "auto"
+    # Date the run is made. The observation window never extends past it: a
+    # future bin is not an observation, and filling it with the last value
+    # invents a flat green tail that reads as a long-season crop.
+    as_of: Optional[date] = None
+    # First day of imagery to download. The fused feature grid stays anchored
+    # on 1 May, so an empty fortnight at the start is a missing step, not a
+    # shifted season. None keeps the 1 May download.
+    window_start: Optional[date] = None
+    # Survey-number plots (WGS84 FeatureCollection). Aligned to the image's own
+    # field edges before use (crop_analysis.cadastral_align, plan C1.3).
+    cadastral_plots: Optional[Dict[str, Any]] = None
+    # Very-high-resolution GeoTIFF the user is licensed to analyse (sharper
+    # bunds). Basemap tiles are never mined: their terms do not allow it.
+    vhr_imagery_path: Optional[str] = None
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "ClassifyInputs":
@@ -142,7 +157,24 @@ class ClassifyInputs:
             region_name=str(d.get("region_name") or "").strip(),
             delineation_method=str(d.get("delineation_method") or
                                    os.environ.get("DELINEATION_METHOD") or "auto").lower(),
+            as_of=_parse_day(d.get("as_of")),
+            window_start=_parse_day(d.get("window_start")),
+            cadastral_plots=d.get("cadastral_plots") or None,
+            vhr_imagery_path=d.get("vhr_imagery_path") or os.environ.get("VHR_IMAGERY_PATH") or None,
         )
+
+
+def _parse_day(value: Any) -> Optional[date]:
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return datetime.fromisoformat(str(value)[:10]).date()
+    except ValueError:
+        return None
 
 
 ProgressFn = Callable[[str, Optional[float], Optional[str], Optional[List[Dict[str, Any]]]], None]
@@ -174,6 +206,17 @@ def season_window(season: str, year: int) -> Tuple[date, date]:
     if s == "zaid":
         return date(year, 2, 1), date(year, 8, 15)
     return date(year, 4, 1), date(year + 1, 6, 30)   # whole_year
+
+
+def observation_window(inputs: "ClassifyInputs") -> Tuple[date, date]:
+    """Season window clipped to the run date.
+
+    Imagery after `as_of` does not exist yet. The season window is a request;
+    this is what can actually be observed.
+    """
+    d0, d1 = season_window(inputs.season, inputs.year)
+    as_of = inputs.as_of or date.today()
+    return d0, min(d1, as_of)
 
 
 def _bins_for(d0: date, d1: date) -> List[date]:
@@ -482,6 +525,39 @@ def validate_aoi(areas: List[Dict[str, Any]], inputs: ClassifyInputs) -> List[Va
         "area_size", "Area within processing limit", "pass", f"{total_ha:,.0f} ha"
     ))
 
+    d0, d1 = observation_window(inputs)
+    if d1 <= d0:
+        checks.append(ValidationCheck(
+            "window", "Season has started", "fail",
+            f"The {inputs.season} {inputs.year} window starts {d0}; nothing can be "
+            f"observed before then.",
+        ))
+        return checks
+
+    # Mid-season run (plan B4). Measured on Dhaswadi, 2 Oct 2026: with only real
+    # observations inside each cycle, 1,155 fields had 2-4 clear looks in a cycle
+    # still in progress, below the 5 the model was trained on. Say so up front.
+    _, season_end = season_window(inputs.season, inputs.year)
+    if d1 < season_end:
+        checks.append(ValidationCheck(
+            "season_progress", "Season complete", "warn",
+            f"Observations end {d1} but {inputs.season} cycles run to {season_end}. A crop named "
+            f"from a cycle that is still open is 'provisional'. Cloudy gaps are filled for "
+            f"cycle detection; a field is left 'Insufficient data' only when it was barely seen.",
+        ))
+
+    # A crop list narrows which names are printed. Other crops stay visible as
+    # Others, with the model's own name kept for the hover, and are never
+    # relabelled as the crop the user asked for.
+    allow = sorted({c.strip() for c in inputs.target_crops if c and c.strip()})
+    if len(allow) == 1:
+        checks.append(ValidationCheck(
+            "crop_filter", "Crop list covers the area's crops", "warn",
+            f"Only {allow[0]} was selected. Every other crop the model names is "
+            f"reported as 'Others', with the model's crop shown on hover, "
+            f"not relabelled {allow[0]}.",
+        ))
+
     aoi = _aoi_geometry(areas)
 
     # Cropland fraction from ESA WorldCover. A gate, not a feature: it decides
@@ -520,7 +596,6 @@ def validate_aoi(areas: List[Dict[str, Any]], inputs: ClassifyInputs) -> List[Va
     # Scene availability. Below MIN_OBS_FOR_DETECTOR usable composites the
     # cycle detector cannot place a cycle and every object would abstain, so it
     # is worth failing here rather than after the extraction bill.
-    d0, d1 = season_window(inputs.season, inputs.year)
     try:
         n_scenes = int(
             ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
@@ -631,8 +706,18 @@ def _delineated_objects(areas, inputs: "ClassifyInputs", progress) -> Optional[L
         progress("segmenting", 30.0, "Delineating field boundaries (%s)" % method, None)
 
     try:
+        from crop_analysis.field_delineation import kharif_months
+        months = (kharif_months(inputs.year, inputs.as_of or date.today())
+                  if (inputs.season or "kharif").lower() == "kharif" else None)
         res = delineate(_areas_geojson(areas), year=inputs.year,
                         method=inputs.delineation_method,
+                        # Season-profile merging is off by default: on the
+                        # Marathwada parcels it lowered median IoU 0.177 -> 0.132
+                        # (fields already ~5x the surveyed parcel area).
+                        season_months=months,
+                        use_profiles=bool(months) and os.environ.get(
+                            "DELINEATION_PROFILE_MERGE", "0") == "1",
+                        vhr_path=inputs.vhr_imagery_path,
                         min_field_ha=max(0.03, min(inputs.min_field_area_ha, 0.1)),
                         progress=_p)
     except DelineationError as exc:
@@ -656,13 +741,59 @@ def _delineated_objects(areas, inputs: "ClassifyInputs", progress) -> Optional[L
             "boundary_confidence": (f.get("properties") or {}).get("confidence"),
         })
     logger.info("[area_classifier] %d fields from %s delineation", len(objects), res.method)
+    if objects and inputs.cadastral_plots:
+        objects = _apply_cadastral(areas, inputs, objects, progress)
     return objects or None
+
+
+# Report of the last cadastral alignment, attached to the result by run_classification.
+_ALIGNMENT_REPORT: Dict[str, Any] = {}
+
+
+def _apply_cadastral(areas, inputs: "ClassifyInputs", objects, progress):
+    """Align survey plots to this AOI's edge map, then split segments on them.
+
+    A village whose alignment fails the gate keeps image-delineated boundaries;
+    the report says why (plan C1.3).
+    """
+    from crop_analysis.cadastral_align import EdgeGrid, align_plots, constrain_segments
+    from crop_analysis.field_delineation import combined_edge, fetch_boundary_arrays
+
+    _ALIGNMENT_REPORT.clear()
+    progress("segmenting", 40.0, "Aligning survey-number plots to field edges", None)
+    try:
+        ba = fetch_boundary_arrays(_areas_geojson(areas), year=inputs.year)
+        grid = EdgeGrid(combined_edge(ba), ba.x0, ba.y1, ba.epsg)
+        aligned, report = align_plots(inputs.cadastral_plots, grid)
+    except Exception as exc:                                  # noqa: BLE001
+        _ALIGNMENT_REPORT.update({"passed": False, "reason": f"alignment failed: {str(exc)[:160]}"})
+        return objects
+    _ALIGNMENT_REPORT.update(report)
+    if not report.get("passed"):
+        return objects
+    feats = [{"type": "Feature", "geometry": o["geometry"],
+              "properties": {k: v for k, v in o.items() if k != "geometry"}} for o in objects]
+    split = constrain_segments(feats, aligned, min_area_ha=max(0.03, inputs.min_field_area_ha * 0.25),
+                               epsg=ba.epsg)
+    out = []
+    for i, f in enumerate(split, 1):
+        props = dict(f.get("properties") or {})
+        props.update({
+            "field_id": i, "geometry": f["geometry"],
+            "area_ha": round(geometry_area_ha(f["geometry"]), 4),
+            "centroid": geometry_centroid(f["geometry"]), "series": {},
+        })
+        props["n_pixels"] = int(props["area_ha"] * 10_000 / (TARGET_SCALE_M ** 2))
+        out.append(props)
+    logger.info("[area_classifier] cadastral constraint: %d -> %d fields", len(objects), len(out))
+    return out
 
 
 def segment_and_extract(
     areas: List[Dict[str, Any]],
     inputs: ClassifyInputs,
     progress: ProgressFn,
+    extract_series: bool = True,
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     """SNIC superpixels + their index trajectories.
 
@@ -672,15 +803,21 @@ def segment_and_extract(
     """
     ee = _ee()
     aoi = _aoi_geometry(areas)
-    d0, d1 = season_window(inputs.season, inputs.year)
+    d0, d1 = observation_window(inputs)
 
     from config import PipelineConfig
     cloud_cap = float(getattr(PipelineConfig, "MAX_CLOUD_COVER_CONTINUOUS", 70.0))
 
-    progress("extracting", 10.0, f"Building composites for {d0}–{d1}", None)
-    images, bins = _composite_collection(ee, aoi, d0, d1, cloud_cap)
-    if not images:
-        raise ClassificationError("No Sentinel-2 composites could be built for that window.")
+    images, bins = None, []
+
+    def _images():
+        nonlocal images, bins
+        if images is None:
+            progress("extracting", 10.0, f"Building composites for {d0}–{d1}", None)
+            images, bins = _composite_collection(ee, aoi, d0, d1, cloud_cap)
+            if not images:
+                raise ClassificationError("No Sentinel-2 composites could be built for that window.")
+        return images
 
     # Segmentation runs on a season summary, not on one date: a single scene
     # splits on transient cloud shadow, while a median true-colour/NIR view
@@ -690,9 +827,13 @@ def segment_and_extract(
     if inputs.delineation_method != "snic":
         objects = _delineated_objects(areas, inputs, progress)
     if objects is None:
-        objects = _snic_objects(ee, images, aoi, inputs, progress)
+        objects = _snic_objects(ee, _images(), aoi, inputs, progress)
 
     logger.info("[area_classifier] %d objects after segmentation", len(objects))
+    if not extract_series:
+        # The fused classifier reads Sentinel-1 + reflectance itself.
+        return objects, []
+    _images()
 
     # Per-object index means, one reduceRegions per bin. Same shape as the
     # training-side extraction, which is why the resulting trajectories are
@@ -835,6 +976,350 @@ def _representative_latlon(objects: List[Dict[str, Any]]) -> Tuple[Optional[floa
     return float(np.median(lats)), float(np.median(lons))
 
 
+# Classes that answer "no crop named here". "Others" is a crop the model named
+# that is not printed as that crop: it was not requested, or the call was too
+# weak to stand as the class. The model's own name stays on `model_top_crop`
+# for the hover. "Insufficient data" is a field that was barely seen, which
+# must never be shown as Fallow.
+OTHERS = "Others"
+NOT_REQUESTED = OTHERS
+NO_DATA = "Insufficient data"
+
+# Cycle scenes the trainer requires before it builds features
+# (Crop_classification_model/src/features.py). Fewer and the row never existed
+# in training, so the model has no basis for it.
+MIN_CYCLE_SCENES = 5
+
+# A bare field stays below this NDVI on every clear look of the season.
+BARE_MAX_NDVI = 0.30
+# Below this many clear looks in the window, "no cycle" means "not seen".
+MIN_OBS_FOR_ABSENCE = 8
+# Longest gap between clear looks that still lets us call a field bare.
+MAX_GAP_FOR_ABSENCE_DAYS = 45
+
+# Soybean and tur are sown together in strips across Marathwada. At 10 m the
+# two mix inside one parcel, so a close soybean/tur split is reported as the
+# intercrop rather than forced onto one of them.
+INTERCROPS = {frozenset({"Soyabean", "Tur"}): "Soyabean+Tur"}
+INTERCROP_MIN_JOINT = 0.60
+INTERCROP_MAX_MARGIN = 0.10
+
+# Deccan kharif (Latur, Beed, the frozen Marathwada test) grows Cotton,
+# Soyabean and Tur. Rice and Onion are printed only when they lead those
+# three by this margin; a narrower lead is shown as Others and the model's
+# lean stays on model_top_crop. On fused v3, margin 0.25 cleared every
+# cotton field called Onion on the frozen test (3 at 1 Oct, 1 full season)
+# and hid 1 of 565 Onion training rows.
+DECCAN_KHARIF_LOCAL = ("Cotton", "Soyabean", "Tur")
+DECCAN_KHARIF_HOLD = ("Onion", "Rice")
+DECCAN_KHARIF_HOLD_MARGIN = 0.25
+
+# Export keys carried from the classifier to every field polygon (B2).
+FIELD_EXPORT_KEYS = (
+    "status", "model_top_crop", "top2_crop", "p_top1", "p_top2", "margin",
+    "abstain_reason", "n_obs_cycle", "cycle_complete", "region_support",
+    "season_consistent", "cycle_sowing", "cycle_peak", "cycle_harvest",
+    "ecoregion", "survey_no", "alignment_residual_m", "boundary_confidence",
+    "possible_crop", "n_obs_optical", "n_obs_radar", "frac_imputed",
+)
+
+
+def _cycle_value(cycle: Any, key: str) -> Any:
+    return cycle.get(key) if isinstance(cycle, dict) else getattr(cycle, key, None)
+
+
+def cycle_scenes(scenes: List[Dict[str, Any]], cycle: Any) -> List[Dict[str, Any]]:
+    """Real observations inside the cycle, padded exactly as training pads.
+
+    Training (`features._slice_scenes`) and the credit path
+    (`CropDetector._collect_scenes_between`) both build features from real
+    scenes inside [sowing - pad, harvest + pad]. Passing the whole season with
+    missing placeholders stretched the 15-step grid over months the model never
+    saw and counted empty bins as observations.
+    """
+    from crop_analysis.crop_detector import collect_scenes_between, cycle_scene_date_bounds
+
+    s = _cycle_date(cycle, "start_date")
+    e = _cycle_date(cycle, "end_date")
+    if s is None or e is None:
+        return []
+    lo, hi = cycle_scene_date_bounds(s.isoformat(), e.isoformat())
+    return collect_scenes_between(scenes, lo, hi)
+
+
+def cycle_is_complete(cycle: Any, scenes: List[Dict[str, Any]], as_of: date) -> bool:
+    """True when the harvest drop was actually observed before the run date.
+
+    A cycle whose end the detector extrapolated (no clear look on or after the
+    harvest date) is still in progress. Its length, and every feature derived
+    from it, is provisional.
+    """
+    harvest = _cycle_date(cycle, "end_date")
+    if harvest is None or harvest > as_of:
+        return False
+    for sc in scenes:
+        if sc.get("missing"):
+            continue
+        d = str(sc.get("date") or "")[:10]
+        if d and d >= harvest.isoformat():
+            return True
+    return False
+
+
+def fill_short_gaps(values: np.ndarray, max_gap: int = 2) -> np.ndarray:
+    """Linearly fill NaN runs of at most `max_gap` samples.
+
+    Used for cycle detection only. A one- or two-composite monsoon hole should
+    not erase a crop curve. Longer holes stay empty so a missing month is not
+    invented, and the classifier still sees only real clear scenes.
+    """
+    v = np.array(values, dtype=float).copy()
+    n = len(v)
+    i = 0
+    while i < n:
+        if np.isfinite(v[i]):
+            i += 1
+            continue
+        j = i
+        while j < n and not np.isfinite(v[j]):
+            j += 1
+        left = v[i - 1] if i > 0 and np.isfinite(v[i - 1]) else None
+        right = v[j] if j < n and np.isfinite(v[j]) else None
+        if (j - i) <= max_gap and left is not None and right is not None:
+            v[i:j] = np.linspace(left, right, (j - i) + 2)[1:-1]
+        i = j
+    return v
+
+
+def classify_without_cycle(scenes: List[Dict[str, Any]]) -> Tuple[str, str]:
+    """Name a field the cycle detector found no crop on (B7).
+
+    "No cycle" used to mean Fallow. It mixes three different answers: bare all
+    season, green but not shaped like an annual crop, and simply not seen
+    through the monsoon. Only the first is Fallow. Green that we could see,
+    even through a cloudy gap, is Others — a crop was there and is not named.
+    """
+    real = [sc for sc in scenes if not sc.get("missing")]
+    dates = sorted(str(sc.get("date"))[:10] for sc in real)
+    gap = 0
+    for a, b in zip(dates, dates[1:]):
+        gap = max(gap, (date.fromisoformat(b) - date.fromisoformat(a)).days)
+    ndvi = [float(sc["indices"].get("NDVI_mean", np.nan)) for sc in real]
+    ndvi = [v for v in ndvi if np.isfinite(v)]
+    peak = max(ndvi) if ndvi else 0.0
+    if len(real) < MIN_OBS_FOR_ABSENCE or gap > MAX_GAP_FOR_ABSENCE_DAYS:
+        if peak >= BARE_MAX_NDVI:
+            return OTHERS, (
+                f"canopy was visible (peak NDVI {peak:.2f}) over {len(real)} clear looks, "
+                f"longest gap {gap} days — not named"
+            )
+        return NO_DATA, (
+            f"{len(real)} clear observations, longest gap {gap} days: too few to "
+            f"say the field was not cropped"
+        )
+    if peak < BARE_MAX_NDVI:
+        return "Fallow", f"bare all season: peak NDVI {peak:.2f} over {len(real)} clear observations"
+    return OTHERS, (
+        f"green (peak NDVI {peak:.2f}) but no annual crop cycle: possible perennial, "
+        f"trees, grass, or a cycle outside the season"
+    )
+
+
+def apply_reference_crop(obj: Dict[str, Any], scenes: List[Dict[str, Any]], as_of: date,
+                          season: Optional[str]) -> None:
+    """Name Cotton or Soyabean from the field's NDVI shape when the model did not.
+
+    Runs only on a printed Others. Fallow and a field that was barely seen stay
+    as they are. The model's own lean is left on model_top_crop. The confidence
+    is the curve separation, not the probability of Onion or Banana.
+    """
+    if (season or "").lower() != "kharif" or obj.get("crop") != OTHERS:
+        return
+    try:
+        import sys
+        from pathlib import Path
+
+        package = Path(__file__).resolve().parents[3] / "Crop_Monitoring"
+        if str(package) not in sys.path:
+            sys.path.insert(0, str(package))
+        from src.raster.reference import name_from_looks
+    except Exception:  # noqa: BLE001
+        return
+    dates, values = [], []
+    for sc in scenes:
+        if sc.get("missing"):
+            continue
+        raw = str(sc.get("date") or "")[:10]
+        ndvi = (sc.get("indices") or {}).get("NDVI_mean")
+        if len(raw) < 10 or ndvi is None:
+            continue
+        try:
+            dates.append(date.fromisoformat(raw))
+            values.append(float(ndvi))
+        except (TypeError, ValueError):
+            continue
+    named = name_from_looks(dates, values, as_of)
+    if not named:
+        return
+    obj["crop"] = named["crop"]
+    obj["confidence"] = named["confidence"]
+    obj["status"] = "reference"
+    obj["note"] = named["note"]
+
+
+def _deccan_kharif_hold(
+    top1: Optional[str],
+    probs: Mapping[str, float],
+    season: Optional[str],
+    ecoregion: Optional[str],
+) -> Optional[str]:
+    """Hold Rice and Onion on the Deccan in kharif unless they lead the local crops."""
+    if (season or "").lower() != "kharif" or ecoregion != "DECCAN_PLATEAU":
+        return None
+    if top1 not in DECCAN_KHARIF_HOLD:
+        return None
+    local = max(float(probs.get(c) or 0.0) for c in DECCAN_KHARIF_LOCAL)
+    gap = float(probs.get(top1) or 0.0) - local
+    if gap >= DECCAN_KHARIF_HOLD_MARGIN:
+        return None
+    return (
+        f"{top1} leads Cotton, Soyabean and Tur by {gap:.2f}, "
+        f"under {DECCAN_KHARIF_HOLD_MARGIN:.2f}; shown as Others"
+    )
+
+
+def decide_crop(
+    pred: Dict[str, Any],
+    cycle: Any,
+    *,
+    allow: Sequence[str] = (),
+    confidence_threshold: float = 0.25,
+    season: Optional[str] = None,
+    ecoregion: Optional[str] = None,
+    support: Optional[Dict] = None,
+    apply_region_guard: bool = True,
+    apply_season_mask: bool = True,
+    cycle_complete: bool = True,
+) -> Dict[str, Any]:
+    """One field's crop decision from the model's full 18-class answer.
+
+    The model's probabilities are never renormalised over a user's crop list:
+    that turned "80% soybean" into "Cotton 1.0" when only cotton was requested.
+    The argmax is never moved either. The region guard and the season check
+    only lower the trust in it, and the abstain rule acts on that trust.
+    """
+    from crop_analysis.crop_calendar import season_consistent
+    from crop_analysis.region_guard import tier
+
+    probs = {k: float(v) for k, v in (pred.get("all_probabilities") or {}).items()}
+    ranked = sorted(probs.items(), key=lambda kv: -kv[1])
+    top1, p1 = ranked[0] if ranked else (None, 0.0)
+    top2, p2 = ranked[1] if len(ranked) > 1 else (None, 0.0)
+    margin = p1 - p2
+
+    out: Dict[str, Any] = {
+        "model_top_crop": top1,
+        "top2_crop": top2,
+        "p_top1": round(p1, 4),
+        "p_top2": round(p2, 4),
+        "margin": round(margin, 4),
+        "cycle_complete": bool(cycle_complete),
+    }
+
+    trust = p1
+    reasons: List[str] = []
+    if top1 and apply_region_guard and ecoregion:
+        t, scale = tier(support or {}, top1, ecoregion)
+        out["region_support"] = t
+        if scale < 1.0:
+            trust *= scale
+            reasons.append(f"{top1} has {t} training support in {ecoregion}")
+    peak = _cycle_date(cycle, "peak_date") if cycle is not None else None
+    if top1 and apply_season_mask and peak is not None:
+        ok = season_consistent(top1, peak, season)
+        out["season_consistent"] = ok
+        if ok is False:
+            trust *= 0.15
+            reasons.append(
+                f"a cycle peaking {peak.isoformat()} is outside {top1}'s calendar"
+                + (f" for {season}" if season else "")
+            )
+
+    intercrop = INTERCROPS.get(frozenset({top1, top2})) if top1 and top2 else None
+    model_abstain = pred.get("abstain_reason") if pred.get("abstained") else None
+    # "n_scenes N < 8" means the optical record is short. The probabilities are
+    # still the model's answer; they are shown, and marked provisional.
+    scene_limited = bool(model_abstain and str(model_abstain).startswith("n_scenes"))
+
+    if (intercrop and margin < INTERCROP_MAX_MARGIN and p1 + p2 >= INTERCROP_MIN_JOINT
+            and not reasons and not model_abstain):
+        crop, conf, status = intercrop, p1 + p2, "intercrop"
+    elif not top1:
+        crop, conf, status = OTHERS, trust, "abstained"
+        reasons.insert(0, model_abstain or "no class probability")
+    elif reasons or (model_abstain and not scene_limited) or trust < confidence_threshold:
+        # A name exists (model_top_crop) but it is not reliable enough, or not
+        # the crop that will be printed. The map class is Others; hover shows
+        # the name. Region and season guards never become the printed class.
+        crop, conf, status = OTHERS, trust, "abstained"
+        reasons.insert(0, model_abstain or f"confidence {trust:.2f} < {confidence_threshold:.2f}")
+    else:
+        crop, conf, status = top1, trust, "confirmed" if cycle_complete else "provisional"
+        if scene_limited:
+            status = "provisional"
+            reasons.append(str(model_abstain))
+
+    hold = _deccan_kharif_hold(top1, probs, season, ecoregion)
+    if hold and status in ("confirmed", "provisional"):
+        crop, status = OTHERS, "not_requested"
+        reasons.append(hold)
+
+    allowed = {c for c in allow if c}
+    if allowed and status in ("confirmed", "provisional", "intercrop"):
+        named = set(crop.split("+")) if status == "intercrop" else {crop}
+        if not named & allowed:
+            crop, status = OTHERS, "not_requested"
+            reasons.append(f"model names {out['model_top_crop']}, which was not requested")
+
+    out.update({
+        "crop": crop,
+        "confidence": round(float(conf), 4),
+        "status": status,
+    })
+    if reasons:
+        out["abstain_reason" if status == "abstained" else "note"] = "; ".join(reasons)
+    if status == "abstained":
+        out["note"] = out["abstain_reason"]
+    return out
+
+
+def model_provenance(model_path: Any, crop_model: Any) -> Dict[str, Any]:
+    """Which model actually ran (B6). The extractor version alone is not that."""
+    import hashlib
+    from pathlib import Path
+
+    from crop_analysis.crop_detector import EXTRACTOR_VERSION
+
+    p = Path(str(model_path))
+    digest = None
+    try:
+        h = hashlib.sha256()
+        with p.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        digest = h.hexdigest()
+    except OSError:
+        pass
+    return {
+        "name": p.stem,
+        "path": p.name,
+        "sha256": digest,
+        "extractor_version": EXTRACTOR_VERSION,
+        "classes": list(getattr(crop_model, "crop_names", []) or []),
+        "extra_blocks": list(getattr(crop_model, "extra_blocks", []) or []),
+    }
+
+
 TIER2_CHUNK = 150
 
 
@@ -918,6 +1403,112 @@ def _with_embedding(extra, obj, cycle, crop_model):
     return e
 
 
+def area_model_path():
+    """Model for area classification.
+
+    AREA_CROP_MODEL_PATH if set. Otherwise fused v3, the strongest bundle on
+    the frozen Marathwada test (full-season cotton 0.962, soybean 0.958).
+    The optical tier-1 model remains the fallback when that file is absent.
+    """
+    from config import DEFAULT_CROP_MODEL_PATH, REPO_ROOT, resolve_package_path
+
+    env = os.environ.get("AREA_CROP_MODEL_PATH")
+    if env:
+        return resolve_package_path(env)
+    fused = REPO_ROOT / "Crop_classification_model" / "models" / "crop_classifier_fused_v3.joblib"
+    if fused.is_file():
+        return fused
+    return resolve_package_path(os.environ.get("CROP_MODEL_PATH", DEFAULT_CROP_MODEL_PATH))
+
+
+def classify_objects_fused(
+    objects: List[Dict[str, Any]],
+    inputs: ClassifyInputs,
+    progress: ProgressFn,
+    model_path: Any,
+) -> Dict[str, Any]:
+    """Cloud-robust path: Sentinel-1 + optical fused per field, no cycle detection.
+
+    A field is only "Insufficient data" when neither radar nor optical saw it
+    at all. Thin evidence lowers the model's confidence instead (the decision
+    rules then route it to Others with the model's lean on hover).
+    """
+    from crop_analysis.fused_classifier import FusedClassifier, fetch_series, is_fallow
+    from crop_analysis.fused_features import has_any_data, peak_date
+    from crop_analysis.region_guard import ecoregion_for, load_support
+
+    d0, d1 = observation_window(inputs)
+    as_of = inputs.as_of or date.today()
+    clf = FusedClassifier(model_path)
+    allow = {c.strip() for c in inputs.target_crops if c and c.strip()}
+    own = Path(str(model_path)).with_suffix(".region_support.json")
+    support = load_support(str(own) if own.exists() else None) if inputs.apply_region_guard else {}
+    year = inputs.year
+    lo = inputs.window_start or date(year, 5, 1)
+    hi = min(date(year, 12, 31), as_of)
+    if lo > hi:
+        lo = hi
+
+    def _p(done, total):
+        progress("classifying", 80.0 + 8.0 * done / max(total, 1),
+                 "Radar + optical series %d/%d" % (done, total), None)
+
+    series = fetch_series(_ee(), objects, lo, hi, _p)
+    n_total = len(objects)
+    season_complete = as_of >= date(year, 12, 15)
+    for i, obj in enumerate(objects, 1):
+        if i % 200 == 0:
+            progress("classifying", 88.0 + 7.0 * i / max(n_total, 1), "Object %d/%d" % (i, n_total), None)
+        blk = series.get(str(obj["field_id"])) or {}
+        feats, cur = clf.features(blk.get("s1") or [], blk.get("refl") or [], year, hi)
+        obj["n_obs_optical"] = int(feats.get("n_opt") or 0)
+        obj["n_obs_radar"] = int(feats.get("n_sar") or 0)
+        obj["frac_imputed"] = round(float(feats.get("frac_imputed") or 0.0), 3)
+        if not has_any_data(feats):
+            obj.update(crop=NO_DATA, confidence=0.0, status="no_data",
+                       note="no Sentinel-1 or Sentinel-2 observation of this field")
+            continue
+        if is_fallow(feats):
+            obj.update(crop="Fallow", confidence=0.0, status="no_cycle",
+                       note=f"bare all season: peak NDVI {feats['ndvi_max']:.2f} over "
+                            f"{obj['n_obs_optical']} clear optical looks")
+            continue
+        pred = clf.predict(feats)
+        pk = peak_date(feats, year)
+        c = obj.get("centroid") or {}
+        eco = ecoregion_for(c.get("lat"), c.get("lng")) if c else None
+        obj["ecoregion"] = eco
+        obj["cycle_peak"] = pk.isoformat() if pk else None
+        obj.update(decide_crop(
+            pred, {"peak_date": pk.isoformat()} if pk else None,
+            allow=sorted(allow), confidence_threshold=inputs.confidence_threshold,
+            season=inputs.season, ecoregion=eco, support=support,
+            apply_region_guard=inputs.apply_region_guard,
+            apply_season_mask=inputs.apply_season_mask,
+            cycle_complete=season_complete,
+        ))
+        _possible_requested(obj, allow)
+    progress("classifying", 95.0, "Classified %d objects" % n_total, None)
+    prov = clf.provenance()
+    return {
+        "objects": objects,
+        "model_version": prov["name"],
+        "model": prov,
+        "window": {"start": lo.isoformat(), "end": min(d1, hi).isoformat(), "as_of": as_of.isoformat()},
+    }
+
+
+def _possible_requested(obj: Dict[str, Any], allow: set) -> None:
+    """An uncertain field whose best guess IS a requested crop stays Others on
+    the map, but is flagged so the summary can report it separately instead
+    of silently dropping it from that crop's area."""
+    if obj.get("crop") == OTHERS and obj.get("status") == "abstained" and allow \
+            and obj.get("model_top_crop") in allow:
+        obj["possible_crop"] = obj["model_top_crop"]
+        obj["note"] = (f"possible {obj['model_top_crop']} (uncertain: p {obj.get('p_top1')}, "
+                       f"next {obj.get('top2_crop')} {obj.get('p_top2')})")
+
+
 def classify_objects(
     objects: List[Dict[str, Any]],
     bin_dates: List[str],
@@ -926,10 +1517,13 @@ def classify_objects(
 ) -> Dict[str, Any]:
     """Run cycle detection and the tier-1 model over every object."""
     from crop_analysis.crop_cycle_detector import CropCycleDetector
-    from crop_analysis.crop_detector import EXTRACTOR_VERSION, CropDetector
+    from crop_analysis.crop_detector import CropDetector
     from config import DEFAULT_CROP_MODEL_PATH, resolve_package_path
 
-    d0, d1 = season_window(inputs.season, inputs.year)
+    from crop_analysis.region_guard import ecoregion_for, load_support
+
+    d0, d1 = observation_window(inputs)
+    as_of = inputs.as_of or date.today()
     detector = CropCycleDetector()
 
     model_path = resolve_package_path(
@@ -950,6 +1544,14 @@ def classify_objects(
 
     allow = {c.strip() for c in inputs.target_crops if c and c.strip()}
     n_total = len(objects)
+    # A model may ship its own training-support table next to it
+    # (<model>.region_support.json); otherwise the shared table is used.
+    from pathlib import Path
+
+    own_support = Path(str(model_path)).with_suffix(".region_support.json")
+    support = (load_support(str(own_support) if own_support.exists() else None)
+               if inputs.apply_region_guard else {})
+    provenance = model_provenance(model_path, crop_model)
 
     _EMB_CACHE.clear()
     extra_by_obj = _prefetch_tier2(objects, crop_model, d0, d1, lat, lon, progress)
@@ -970,33 +1572,61 @@ def classify_objects(
                      "Object %d/%d" % (i, n_total), None)
 
             scenes, n_real = _scenes_from_series(obj["series"], bin_dates)
-            if n_real < MIN_OBS_FOR_DETECTOR:
-                obj["crop"] = "Unclassified"
+            # Three clear looks is enough to see whether a canopy existed.
+            # Fewer than that, the field was barely seen.
+            if n_real < 3:
+                obj["crop"] = NO_DATA
                 obj["confidence"] = 0.0
-                obj["note"] = "only %d usable observations" % n_real
+                obj["status"] = "no_data"
+                obj["note"] = "only %d clear looks in the season" % n_real
                 continue
 
             ndvi = np.array([s["indices"].get("NDVI_mean", np.nan) for s in scenes], float)
             evi = np.array([s["indices"].get("EVI_mean", np.nan) for s in scenes], float)
             ndmi = np.array([s["indices"].get("NDMI_mean", np.nan) for s in scenes], float)
+            # Short cloudy holes are filled for cycle placement only. The
+            # scenes handed to the model stay the real clear ones.
+            ndvi_f = fill_short_gaps(ndvi)
+            evi_f = fill_short_gaps(evi)
+            ndmi_f = fill_short_gaps(ndmi)
 
             try:
                 cycles = detector.detect_cycles(
-                    dates=list(bin_dates), ndvi_values=ndvi, evi_values=evi,
-                    ndmi_values=ndmi, scenes=scenes, grid_step_days=INTERVAL_DAYS,
+                    dates=list(bin_dates), ndvi_values=ndvi_f, evi_values=evi_f,
+                    ndmi_values=ndmi_f, scenes=scenes, grid_step_days=INTERVAL_DAYS,
                 )
             except Exception as exc:                              # noqa: BLE001
-                obj["crop"] = "Unclassified"
+                obj["crop"] = OTHERS
                 obj["confidence"] = 0.0
+                obj["status"] = "no_cycle"
                 obj["note"] = "cycle detection failed: %s" % str(exc)[:80]
                 continue
 
             cycles = [c.to_dict() if hasattr(c, "to_dict") else c for c in (cycles or [])]
             cycle = _pick_cycle(cycles, d0, d1)
             if cycle is None:
-                obj["crop"] = "Fallow"
+                label, why = classify_without_cycle(scenes)
+                obj["crop"] = label
                 obj["confidence"] = 0.0
-                obj["note"] = "no crop cycle detected in the season window"
+                obj["status"] = "no_cycle"
+                obj["note"] = why
+                apply_reference_crop(obj, scenes, as_of, inputs.season)
+                continue
+
+            in_cycle = cycle_scenes(scenes, cycle)
+            obj["n_obs_cycle"] = len(in_cycle)
+            obj["cycle_sowing"] = str(_cycle_value(cycle, "sowing_date") or "")[:10] or None
+            obj["cycle_peak"] = str(_cycle_value(cycle, "peak_date") or "")[:10] or None
+            obj["cycle_harvest"] = str(_cycle_value(cycle, "harvest_date") or "")[:10] or None
+            # Two real looks is enough to build a feature grid. Below the
+            # training minimum the printed class is Others and the model's
+            # lean stays on hover — the field is not dropped.
+            if len(in_cycle) < 2:
+                label, why = classify_without_cycle(scenes)
+                obj["crop"] = label
+                obj["confidence"] = 0.0
+                obj["status"] = "no_data" if label == NO_DATA else "no_cycle"
+                obj["note"] = why
                 continue
 
             try:
@@ -1005,48 +1635,56 @@ def classify_objects(
                     extra = extra_by_obj.get(obj["field_id"])
                     if extra is not None and "emb" in blocks:
                         extra = _with_embedding(extra, obj, cycle, crop_model)
-                    pred = crop_model._classify_crop_chronological(scenes, cycle, extra=extra)
+                    pred = crop_model._classify_crop_chronological(in_cycle, cycle, extra=extra)
                 else:
-                    pred = crop_model._classify_crop_chronological(scenes, cycle)
+                    pred = crop_model._classify_crop_chronological(in_cycle, cycle)
             except Exception as exc:                              # noqa: BLE001
-                obj["crop"] = "Unclassified"
+                obj["crop"] = OTHERS
                 obj["confidence"] = 0.0
+                obj["status"] = "no_cycle"
                 obj["note"] = "classifier error: %s" % str(exc)[:80]
                 continue
 
-            probs: Dict[str, float] = dict(pred.get("all_probabilities") or {})
-            # Restricting to target crops renormalises rather than re-running the
-            # model: its opinion is unchanged, the user has only said which answers
-            # they are willing to accept.
-            if allow:
-                probs = {k: v for k, v in probs.items() if k in allow}
-                tot = sum(probs.values())
-                if tot > 0:
-                    probs = {k: v / tot for k, v in probs.items()}
-
-            if probs:
-                crop, conf = max(probs.items(), key=lambda kv: kv[1])
-            else:
-                crop, conf = None, 0.0
-
-            abstained = bool(pred.get("abstained")) or conf < inputs.confidence_threshold
-            if abstained or not crop:
-                obj["crop"] = "Abstained"
-                obj["confidence"] = round(float(conf), 4)
-                obj["top_crop_unreliable"] = crop
-                obj["note"] = pred.get("abstain_reason") or "below confidence threshold"
-            else:
-                obj["crop"] = crop
-                obj["confidence"] = round(float(conf), 4)
+            c = obj.get("centroid") or {}
+            eco = ecoregion_for(c.get("lat"), c.get("lng")) if c else None
+            obj["ecoregion"] = eco
+            obj.update(decide_crop(
+                pred, cycle,
+                allow=sorted(allow),
+                confidence_threshold=inputs.confidence_threshold,
+                season=inputs.season,
+                ecoregion=eco,
+                support=support,
+                apply_region_guard=inputs.apply_region_guard,
+                apply_season_mask=inputs.apply_season_mask,
+                cycle_complete=cycle_is_complete(cycle, scenes, as_of),
+            ))
+            # A short optical record still gets the model's lean, but that lean
+            # is not printed as the crop. Hover shows model_top_crop.
+            if len(in_cycle) < MIN_CYCLE_SCENES and obj.get("crop") not in (OTHERS, "Fallow", NO_DATA):
+                leaned = obj.get("model_top_crop") or obj.get("crop")
+                obj["model_top_crop"] = leaned
+                obj["crop"] = OTHERS
+                obj["status"] = "provisional"
+                obj["note"] = (
+                    f"only {len(in_cycle)} clear looks inside the cycle; "
+                    f"model leans {leaned}"
+                )
 
             dur = cycle.get("duration_days") if isinstance(cycle, dict) else getattr(cycle, "duration_days", None)
             if dur:
                 obj["cycle_duration_days"] = float(dur)
+            apply_reference_crop(obj, scenes, as_of, inputs.season)
     finally:
         cycle_log.setLevel(prev_cycle_level)
 
     progress("classifying", 95.0, "Classified %d objects" % n_total, None)
-    return {"objects": objects, "model_version": EXTRACTOR_VERSION}
+    return {
+        "objects": objects,
+        "model_version": provenance["name"],
+        "model": provenance,
+        "window": {"start": d0.isoformat(), "end": d1.isoformat(), "as_of": as_of.isoformat()},
+    }
 
 
 # =============================================================================
@@ -1210,14 +1848,22 @@ def merge_field_objects(
             break
         items = [it for i, it in enumerate(items) if i not in absorbed]
 
-    by_crop: Dict[str, List[Dict[str, Any]]] = {}
+    # "Not requested" pieces only dissolve with pieces the model gave the same
+    # crop, or a soybean patch and a maize patch would merge under one label.
+    def _key(it: Dict[str, Any]) -> Tuple[str, Optional[str]]:
+        crop = it.get("crop") or "Unclassified"
+        # Others keeps the model's crop in the key, so a soybean patch and a
+        # maize patch do not dissolve into one field.
+        return crop, (it.get("model_top_crop") if crop == OTHERS else None)
+
+    by_crop: Dict[Tuple[str, Optional[str]], List[Dict[str, Any]]] = {}
     for it in items:
-        by_crop.setdefault(it.get("crop") or "Unclassified", []).append(it)
+        by_crop.setdefault(_key(it), []).append(it)
 
     merged: List[Dict[str, Any]] = []
     fid = 1
-    groups = (list(by_crop.items()) if dissolve_same_crop
-              else [(it.get("crop") or "Unclassified", [it]) for it in items])
+    groups = ([(k[0], g) for k, g in by_crop.items()] if dissolve_same_crop
+              else [(_key(it)[0], [it]) for it in items])
     for crop, group in groups:
         union = unary_union([it["_g"] for it in group])
         for part in _polygon_parts(union):
@@ -1230,6 +1876,7 @@ def merge_field_objects(
             conf_num = conf_den = 0.0
             note = None
             duration = None
+            dominant, dominant_w = None, 0.0
             c = part.centroid
             for it in group:
                 try:
@@ -1243,6 +1890,8 @@ def merge_field_objects(
                     continue
                 conf_num += w * float(it.get("confidence") or 0.0)
                 conf_den += w
+                if w > dominant_w:
+                    dominant, dominant_w = it, w
                 if note is None and it.get("note"):
                     note = it["note"]
                 if duration is None and it.get("cycle_duration_days"):
@@ -1259,6 +1908,12 @@ def merge_field_objects(
                 rec["note"] = note
             if duration:
                 rec["cycle_duration_days"] = duration
+            # The model's own answer travels with the polygon. A dissolved patch
+            # reports the piece covering most of it, never a blend.
+            if dominant is not None:
+                for k in FIELD_EXPORT_KEYS:
+                    if dominant.get(k) is not None:
+                        rec[k] = dominant[k]
             src = group[0].get("boundary_source")
             if src:
                 rec["boundary_source"] = src
@@ -1281,16 +1936,19 @@ CROP_COLORS: Dict[str, str] = {
     "Cotton": "#7C5FA8", "Tobacco": "#5D477E",
     "Sugarcane": "#2E7D4F", "Banana": "#3F9E68", "Grapes": "#276145",
     "Onion": "#3E7FA8", "Potato": "#5FA3C4", "Chilli": "#2A5F80",
+    "Soyabean+Tur": "#A2512B",
 }
 NON_CROP_COLORS: Dict[str, str] = {
     "Non-agricultural": "#9A9287", "Water": "#4A7FA5", "Fallow": "#C4B99F",
     "Unclassified": "#B0A89C", "Abstained": "#8F8779",
+    "Not requested": "#D6CFC2", OTHERS: "#C4BBAE", NO_DATA: "#E4DED3",
 }
 # Classes that are an answer of "no crop named here", so they are excluded from
-# classified area but still reported -- an abstention the user cannot see is
-# indistinguishable from a confident call.
+# classified area but still reported. Older runs used Unclassified, Abstained
+# and Not requested; those labels still draw.
 NON_CROP_CLASSES = frozenset(
-    {"Unclassified", "Abstained", "Fallow", "Non-agricultural", "Water"}
+    {"Unclassified", "Abstained", "Fallow", "Non-agricultural", "Water",
+     "Not requested", OTHERS, NO_DATA}
 )
 
 
@@ -1334,6 +1992,9 @@ def build_result(
             props["cycle_duration_days"] = o["cycle_duration_days"]
         if o.get("boundary_source"):
             props["boundary_source"] = o["boundary_source"]
+        for k in FIELD_EXPORT_KEYS:
+            if o.get(k) is not None:
+                props[k] = o[k]
         features.append({"type": "Feature", "geometry": o["geometry"], "properties": props})
 
     classified_ha = sum(v["area_ha"] for k, v in by_crop.items() if k not in NON_CROP_CLASSES)
@@ -1359,7 +2020,16 @@ def build_result(
         if (o.get("crop") or "") not in NON_CROP_CLASSES
     ]
 
+    possible: Dict[str, Dict[str, float]] = {}
+    for o in objects:
+        pc = o.get("possible_crop")
+        if pc:
+            agg = possible.setdefault(pc, {"field_count": 0, "area_ha": 0.0})
+            agg["field_count"] += 1
+            agg["area_ha"] = round(agg["area_ha"] + float(o.get("area_ha") or 0.0), 3)
+
     return {
+        "possible_requested": possible,
         "aoi_name": (
             (inputs.region_name or "").strip()
             or (areas[0].get("name") if areas else None)
@@ -1398,16 +2068,30 @@ def run_classification(
     if failed:
         raise ClassificationError(failed[0].detail or failed[0].label)
 
-    objects, bin_dates = segment_and_extract(areas, inputs, prog)
+    from crop_analysis.fused_classifier import is_fused_bundle
+
+    model_path = area_model_path()
+    fused = is_fused_bundle(model_path)
+    objects, bin_dates = segment_and_extract(areas, inputs, prog, extract_series=not fused)
 
     prog("classifying", 80.0, "Classifying %d objects" % len(objects), None)
-    out = classify_objects(objects, bin_dates, inputs, prog)
+    if fused:
+        out = classify_objects_fused(objects, inputs, prog, model_path)
+    else:
+        out = classify_objects(objects, bin_dates, inputs, prog)
 
     prog("vectorizing", 96.0, "Cleaning field boundaries", None)
     sources = sorted({o.get("boundary_source", "snic") for o in out["objects"]})
     cleaned = merge_field_objects(out["objects"], inputs.min_field_area_ha,
                                   dissolve_same_crop=(sources == ["snic"]))
     result = build_result(cleaned, areas, inputs, bin_dates, out.get("model_version"))
+    if inputs.cadastral_plots:
+        result["cadastral_alignment"] = dict(_ALIGNMENT_REPORT)
+    result["model"] = out.get("model")
+    result["window"] = out.get("window")
+    _, season_end = season_window(inputs.season, inputs.year)
+    result["season_complete"] = bool(out.get("window") and out["window"]["end"] >= season_end.isoformat())
+    result["target_crops"] = sorted({c for c in inputs.target_crops if c})
     result["delineation"] = {"requested": inputs.delineation_method, "sources": sources}
     result["validation_checks"] = [c.to_dict() for c in checks]
     prog("complete", 100.0, None, [c.to_dict() for c in checks])

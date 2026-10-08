@@ -22,7 +22,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+def _production_default() -> Path:
+    from config import DEFAULT_CROP_MODEL_PATH, resolve_package_path
+    return Path(resolve_package_path(DEFAULT_CROP_MODEL_PATH))
+
+
+# The bundle production loads by default comes first: that is the one that must work.
 BUNDLE_CANDIDATES = [
+    _production_default(),
     Path(__file__).resolve().parents[1] / "models" / "crop_classifier_tier1_v1.joblib",
     Path(__file__).resolve().parents[3] / "Crop_classification_model" / "models"
     / "crop_classifier_tier1_v1.joblib",
@@ -38,7 +45,7 @@ def _bundle_path():
 
 pytestmark = pytest.mark.skipif(
     _bundle_path() is None,
-    reason="no exported crop_classifier_tier1_v1.joblib to verify",
+    reason="no exported crop-classifier bundle to verify",
 )
 
 

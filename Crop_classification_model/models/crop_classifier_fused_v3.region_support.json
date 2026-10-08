@@ -1,0 +1,60 @@
+{
+ "viable_threshold": 30,
+ "counts": {
+  "Bajra": {
+   "DECCAN_PLATEAU": 6,
+   "GANGETIC_AND_EASTERN_PLAINS": 307,
+   "SOUTHERN_PENINSULA": 2
+  },
+  "Banana": {
+   "DECCAN_PLATEAU": 373,
+   "GANGETIC_AND_EASTERN_PLAINS": 100,
+   "SOUTHERN_PENINSULA": 87
+  },
+  "Chilli": {
+   "SOUTHERN_PENINSULA": 481
+  },
+  "Cotton": {
+   "DECCAN_PLATEAU": 986,
+   "GANGETIC_AND_EASTERN_PLAINS": 162,
+   "INDIA_UNSPECIFIED_PLAINS": 437,
+   "SOUTHERN_PENINSULA": 32
+  },
+  "Grapes": {
+   "DECCAN_PLATEAU": 498,
+   "SOUTHERN_PENINSULA": 2
+  },
+  "Groundnut": {
+   "INDIA_UNSPECIFIED_PLAINS": 364,
+   "SOUTHERN_PENINSULA": 5
+  },
+  "Jowar": {
+   "DECCAN_PLATEAU": 237,
+   "GANGETIC_AND_EASTERN_PLAINS": 128
+  },
+  "Onion": {
+   "DECCAN_PLATEAU": 429,
+   "GANGETIC_AND_EASTERN_PLAINS": 1,
+   "INDIA_UNSPECIFIED_PLAINS": 135
+  },
+  "Rice": {
+   "GANGETIC_AND_EASTERN_PLAINS": 498,
+   "SOUTHERN_PENINSULA": 151
+  },
+  "Soyabean": {
+   "DECCAN_PLATEAU": 588,
+   "GANGETIC_AND_EASTERN_PLAINS": 324
+  },
+  "Sugarcane": {
+   "DECCAN_PLATEAU": 315,
+   "GANGETIC_AND_EASTERN_PLAINS": 184
+  },
+  "Tobacco": {
+   "SOUTHERN_PENINSULA": 481
+  },
+  "Tur": {
+   "DECCAN_PLATEAU": 366,
+   "INDIA_UNSPECIFIED_PLAINS": 1
+  }
+ }
+}

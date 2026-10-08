@@ -81,9 +81,14 @@ DATA = Path(__file__).resolve().parent.parent / "data"
 MODELS = Path(__file__).resolve().parent.parent / "models"
 SUPPORT_PATH = MODELS / "region_support.json"
 
-VIABLE = 30          # parcels in-region for a crop to count as supported
-THIN_SCALE = 0.5     # confidence multiplier for 1..VIABLE-1 parcels
-UNSUPPORTED_SCALE = 0.15   # ...and for zero
+# The tier rule is shared with inference (crop_analysis.region_guard) so the
+# two cannot drift. Only the table builder lives here.
+from crop_analysis.region_guard import (  # noqa: E402
+    THIN_SCALE,
+    UNSUPPORTED_SCALE,
+    VIABLE,
+)
+from crop_analysis.region_guard import tier as _shared_tier  # noqa: E402
 
 
 def build(features: pd.DataFrame) -> Dict:
@@ -108,12 +113,7 @@ def build(features: pd.DataFrame) -> Dict:
 
 def tier(support: Dict, crop: str, ecoregion: str) -> Tuple[str, float]:
     """(tier name, confidence multiplier) for one crop in one region."""
-    n = support.get("counts", {}).get(crop, {}).get(ecoregion, 0)
-    if n >= support.get("viable_threshold", VIABLE):
-        return "supported", 1.0
-    if n > 0:
-        return "thin", THIN_SCALE
-    return "unsupported", UNSUPPORTED_SCALE
+    return _shared_tier(support, crop, ecoregion)
 
 
 def apply(proba: np.ndarray, classes, ecoregions, support: Dict):

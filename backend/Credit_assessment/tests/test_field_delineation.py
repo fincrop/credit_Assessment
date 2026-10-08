@@ -45,6 +45,19 @@ def test_watershed_does_not_leave_unlabelled_pixels():
     assert len(np.unique(labels)) > 20
 
 
+def test_faint_interior_ridge_does_not_split_a_field():
+    """A moisture or canopy streak inside one farm is not a bund.
+
+    Outer lines are full strength; the line through the middle is a quarter
+    of that. The two halves must come back as one field.
+    """
+    e = np.full((24, 24), 0.04)
+    e[0, :] = e[-1, :] = e[:, 0] = e[:, -1] = 1.0
+    e[12, :] = 0.25
+    labels = watershed_segments(e, min_pixels=8)
+    assert len(np.unique(labels)) == 1, len(np.unique(labels))
+
+
 def test_min_pixels_merges_specks():
     fine = watershed_segments(_grid_edges(n_fields=8, size=4), min_pixels=3)
     coarse = watershed_segments(_grid_edges(n_fields=8, size=4), min_pixels=40)

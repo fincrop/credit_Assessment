@@ -80,3 +80,11 @@ Crop_classification_model/data/
 Crop_classification_model/reports/*.png
 Crop_classification_model/reports/*.csv
 Crop_classification_model/models/*.joblib
+
+# Crop_Monitoring raster engine: per-scene satellite cache and run outputs (large, regenerable)
+Crop_Monitoring/cache/
+Crop_Monitoring/outputs/
+Village_maps/
+
+# One-off client projects (e.g. Maharashtra RC reports, Kharif 2026): self-contained, kept out of git
+projects/

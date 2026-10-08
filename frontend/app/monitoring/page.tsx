@@ -6,9 +6,17 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../components/providers/AuthProvider';
 import { AoiMap } from '../classification/components/AoiMap';
 import { AoiUpload } from '../classification/components/AoiUpload';
-import { CLASSIFIABLE_CROPS, SEASONS, formatHa, type AreaOfInterest } from '../classification/types';
+import { CLASSIFIABLE_CROPS, INTERCROP_CLASSES, SEASONS, formatHa, type AreaOfInterest } from '../classification/types';
 import { DownloadPanel } from './components/DownloadPanel';
 import { ResultsPanel } from './components/ResultsPanel';
+import {
+  RasterControl,
+  defaultRasterSelection,
+  drawableProducts,
+  overlayFor,
+  selectedProduct,
+  type RasterSelection,
+} from './components/RasterControl';
 import {
   STAGE_LABELS,
   todayISO,
@@ -60,6 +68,9 @@ function StepBar({ current }: { current: number }) {
   );
 }
 
+/** Crops a monitoring run can take: the 18 single crops plus the intercrop classes. */
+const MONITORABLE_CROPS: readonly string[] = [...CLASSIFIABLE_CROPS, ...INTERCROP_CLASSES];
+
 function classFieldId(feature: GeoJSON.Feature, index: number): string {
   const props = feature.properties as { field_id?: string } | null;
   return String(props?.field_id ?? index);
@@ -109,6 +120,9 @@ export default function MonitoringPage() {
   const [classJobs, setClassJobs] = useState<Array<{ job_id: string; label: string; season?: string }>>([]);
   const [classJobId, setClassJobId] = useState('');
   const [classFields, setClassFields] = useState<GeoJSON.Feature[]>([]);
+  // Both are keyed by job so opening another run starts from its own defaults.
+  const [selectedField, setSelectedField] = useState<{ jobId: string; fieldId: string | null } | null>(null);
+  const [rasterChoice, setRasterChoice] = useState<{ jobId: string; selection: RasterSelection } | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openedFromUrl = useRef(false);
 
@@ -236,7 +250,7 @@ export default function MonitoringPage() {
       const geom = f.geometry;
       if (!geom || (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon')) return false;
       const crop = String((f.properties as { crop?: string } | null)?.crop || '');
-      return CLASSIFIABLE_CROPS.includes(crop as (typeof CLASSIFIABLE_CROPS)[number]);
+      return MONITORABLE_CROPS.includes(crop);
     });
     setClassFields(named);
     setClassJobId(jobId);
@@ -320,6 +334,17 @@ export default function MonitoringPage() {
     return <div className="min-h-screen bg-paper flex items-center justify-center text-stone-500 text-sm">Loading…</div>;
   }
 
+  const jobId = result?.job_id ?? '';
+  const selectedFieldId = selectedField && selectedField.jobId === jobId ? selectedField.fieldId : null;
+  const selectField = (fieldId: string | null) => setSelectedField({ jobId, fieldId });
+  // Old point-engine results have no rasters: the control stays hidden.
+  const rasterProducts = drawableProducts(step === 4 ? result : null);
+  const rasterSelection =
+    rasterChoice && rasterChoice.jobId === jobId ? rasterChoice.selection : defaultRasterSelection(rasterProducts);
+  const rasterOverlay = rasterProducts.length
+    ? overlayFor(jobId, selectedProduct(rasterProducts, rasterSelection), rasterSelection)
+    : null;
+
   const field = areas[0];
   const totalHa = areas.reduce((sum, area) => sum + (Number(area.area_ha) || 0), 0);
   const many = areas.length > 1;
@@ -343,6 +368,9 @@ export default function MonitoringPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/clusters" className="text-xs text-stone-500 hover:text-emerald-700">
+            Clusters
+          </Link>
           <Link href="/classification" className="text-xs text-stone-500 hover:text-emerald-700">
             Classification
           </Link>
@@ -373,6 +401,22 @@ export default function MonitoringPage() {
               readOnly={step >= 3}
               heightClass="h-[52dvh] lg:flex-1 lg:min-h-0"
               toolbar={step === 4 && result ? <DownloadPanel result={result} /> : undefined}
+              onFieldClick={
+                step === 4
+                  ? (props) => selectField(props.field_id != null ? String(props.field_id) : null)
+                  : undefined
+              }
+              selectedFieldId={step === 4 ? selectedFieldId : null}
+              rasterOverlay={rasterOverlay}
+              overlay={
+                rasterProducts.length && rasterSelection ? (
+                  <RasterControl
+                    products={rasterProducts}
+                    selection={rasterSelection}
+                    onChange={(selection) => setRasterChoice({ jobId, selection })}
+                  />
+                ) : undefined
+              }
             />
             {step < 3 && (
               <p className="text-[11px] text-stone-500 mt-1.5">
@@ -649,7 +693,9 @@ export default function MonitoringPage() {
               </div>
             )}
 
-            {step === 4 && result && <ResultsPanel result={result} />}
+            {step === 4 && result && (
+              <ResultsPanel result={result} selectedFieldId={selectedFieldId} onSelectField={selectField} />
+            )}
           </aside>
         </div>
       </main>

@@ -41,6 +41,11 @@ function CompositionBar({ result }: { result: ClassificationResult }) {
 export function ResultStats({ result }: { result: ClassificationResult }) {
   const coverage =
     result.total_area_ha > 0 ? result.classified_area_ha / result.total_area_ha : 0;
+  const modelName = result.model?.name || result.model_version || null;
+  const asOf = result.window?.as_of || result.window?.end || null;
+  const cropFilter = (result.validation_checks || []).find(
+    (c) => c.id === 'crop_filter' && c.status === 'warn'
+  );
 
   return (
     <div className="space-y-4">
@@ -51,7 +56,30 @@ export function ResultStats({ result }: { result: ClassificationResult }) {
         <p className="text-[11px] text-stone-500 capitalize">
           {result.season} {result.year}
         </p>
+        {(modelName || asOf) && (
+          <p
+            className="text-[10px] text-stone-500 font-mono mt-0.5 truncate"
+            title={result.model?.sha256 ? `sha256 ${result.model.sha256}` : undefined}
+          >
+            {modelName ? `Model ${modelName}` : ''}
+            {modelName && asOf ? ' · ' : ''}
+            {asOf ? `observations as of ${asOf}` : ''}
+            {result.window?.start && result.window?.end
+              ? ` (window ${result.window.start} → ${result.window.end})`
+              : ''}
+          </p>
+        )}
       </div>
+
+      {cropFilter && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+          <p className="text-xs font-semibold text-amber-900 mb-0.5">One crop requested</p>
+          <p className="text-[11px] text-amber-800 leading-relaxed">
+            {cropFilter.detail ||
+              "Every other crop the model names is reported as Others, with the model's crop shown on hover."}
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <Tile
@@ -72,7 +100,7 @@ export function ResultStats({ result }: { result: ClassificationResult }) {
         <Tile
           label="Mean confidence"
           value={`${(result.mean_confidence * 100).toFixed(0)}%`}
-          sub="named fields"
+          sub="model probability, named fields"
         />
       </div>
 
@@ -139,6 +167,17 @@ export function ResultStats({ result }: { result: ClassificationResult }) {
             </tbody>
           </table>
         </div>
+        {result.possible_requested && Object.keys(result.possible_requested).length > 0 && (
+          <p className="mt-2 text-[11px] text-stone-600">
+            {Object.entries(result.possible_requested).map(([crop, v], i) => (
+              <span key={crop}>
+                {i > 0 ? ' · ' : ''}
+                Others includes {v.field_count.toLocaleString()} fields ({v.area_ha.toFixed(1)} ha) of
+                possible {crop} (uncertain)
+              </span>
+            ))}
+          </p>
+        )}
       </section>
     </div>
   );

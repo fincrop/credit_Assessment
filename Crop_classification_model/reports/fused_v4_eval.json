@@ -1,0 +1,888 @@
+{
+  "imputer": {
+    "train_pairs": 97914,
+    "test_pairs": 7421,
+    "test_r2": 0.8864,
+    "test_rmse": 0.0951,
+    "test_mae": 0.07
+  },
+  "blocked_cv": {
+    "temperature": 1.3035,
+    "class_bias": {
+      "Bajra": -0.519,
+      "Banana": 0.104,
+      "Chilli": -0.611,
+      "Cotton": 0.377,
+      "Grapes": 0.326,
+      "Groundnut": -0.791,
+      "Jowar": 0.063,
+      "Onion": -0.026,
+      "Rice": 0.339,
+      "Soyabean": 0.555,
+      "Sugarcane": 0.143,
+      "Tobacco": -0.325,
+      "Tur": 0.364
+    },
+    "ece_full_mh": 0.0207,
+    "balanced_accuracy_full": 0.7706,
+    "ece_full": 0.0177,
+    "by_cutoff": {
+      "07-01": 0.4654,
+      "08-01": 0.501,
+      "09-01": 0.6021,
+      "10-01": 0.641,
+      "11-01": 0.688,
+      "full": 0.7706
+    },
+    "shifted_rows_balanced_accuracy": 0.6275
+  },
+  "test": {
+    "07-01": {
+      "n": 814,
+      "coverage_at_rule": 0.6867,
+      "ece": 0.0516,
+      "argmax": {
+        "Cotton": {
+          "support": 499,
+          "n_predicted": 490,
+          "tp": 328,
+          "fp": 162,
+          "fn": 171,
+          "recall": 0.6573,
+          "recall_ci95": [
+            0.6146,
+            0.6976
+          ],
+          "precision": 0.6694,
+          "precision_ci95": [
+            0.6266,
+            0.7096
+          ],
+          "f1": 0.6633
+        },
+        "Soyabean": {
+          "support": 215,
+          "n_predicted": 45,
+          "tp": 8,
+          "fp": 37,
+          "fn": 207,
+          "recall": 0.0372,
+          "recall_ci95": [
+            0.019,
+            0.0717
+          ],
+          "precision": 0.1778,
+          "precision_ci95": [
+            0.0929,
+            0.3133
+          ],
+          "f1": 0.0615
+        },
+        "Tur": {
+          "support": 100,
+          "n_predicted": 188,
+          "tp": 57,
+          "fp": 131,
+          "fn": 43,
+          "recall": 0.57,
+          "recall_ci95": [
+            0.4722,
+            0.6627
+          ],
+          "precision": 0.3032,
+          "precision_ci95": [
+            0.242,
+            0.3723
+          ],
+          "f1": 0.3958
+        }
+      },
+      "at_rule": {
+        "Cotton": {
+          "support": 499,
+          "n_predicted": 359,
+          "tp": 250,
+          "fp": 109,
+          "fn": 249,
+          "recall": 0.501,
+          "recall_ci95": [
+            0.4573,
+            0.5447
+          ],
+          "precision": 0.6964,
+          "precision_ci95": [
+            0.6469,
+            0.7417
+          ],
+          "f1": 0.5828
+        },
+        "Soyabean": {
+          "support": 215,
+          "n_predicted": 17,
+          "tp": 1,
+          "fp": 16,
+          "fn": 214,
+          "recall": 0.0047,
+          "recall_ci95": [
+            0.0008,
+            0.0259
+          ],
+          "precision": 0.0588,
+          "precision_ci95": [
+            0.0105,
+            0.2698
+          ],
+          "f1": 0.0086
+        },
+        "Tur": {
+          "support": 100,
+          "n_predicted": 131,
+          "tp": 50,
+          "fp": 81,
+          "fn": 50,
+          "recall": 0.5,
+          "recall_ci95": [
+            0.4038,
+            0.5962
+          ],
+          "precision": 0.3817,
+          "precision_ci95": [
+            0.303,
+            0.4671
+          ],
+          "f1": 0.4329
+        }
+      },
+      "confusions": {
+        "Tur": {
+          "Tur": 57,
+          "Soyabean": 25,
+          "Cotton": 12,
+          "Jowar": 3,
+          "Sugarcane": 2,
+          "Grapes": 1
+        },
+        "Cotton": {
+          "Cotton": 328,
+          "Tur": 89,
+          "Jowar": 46,
+          "Onion": 22,
+          "Soyabean": 12,
+          "Sugarcane": 2
+        },
+        "Soyabean": {
+          "Cotton": 150,
+          "Tur": 42,
+          "Onion": 8,
+          "Soyabean": 8,
+          "Jowar": 6,
+          "Sugarcane": 1
+        }
+      }
+    },
+    "08-01": {
+      "n": 814,
+      "coverage_at_rule": 0.6572,
+      "ece": 0.0963,
+      "argmax": {
+        "Cotton": {
+          "support": 499,
+          "n_predicted": 520,
+          "tp": 352,
+          "fp": 168,
+          "fn": 147,
+          "recall": 0.7054,
+          "recall_ci95": [
+            0.664,
+            0.7437
+          ],
+          "precision": 0.6769,
+          "precision_ci95": [
+            0.6356,
+            0.7157
+          ],
+          "f1": 0.6909
+        },
+        "Soyabean": {
+          "support": 215,
+          "n_predicted": 101,
+          "tp": 20,
+          "fp": 81,
+          "fn": 195,
+          "recall": 0.093,
+          "recall_ci95": [
+            0.061,
+            0.1393
+          ],
+          "precision": 0.198,
+          "precision_ci95": [
+            0.132,
+            0.2862
+          ],
+          "f1": 0.1266
+        },
+        "Tur": {
+          "support": 100,
+          "n_predicted": 118,
+          "tp": 46,
+          "fp": 72,
+          "fn": 54,
+          "recall": 0.46,
+          "recall_ci95": [
+            0.3656,
+            0.5574
+          ],
+          "precision": 0.3898,
+          "precision_ci95": [
+            0.3066,
+            0.48
+          ],
+          "f1": 0.422
+        }
+      },
+      "at_rule": {
+        "Cotton": {
+          "support": 499,
+          "n_predicted": 378,
+          "tp": 258,
+          "fp": 120,
+          "fn": 241,
+          "recall": 0.517,
+          "recall_ci95": [
+            0.4732,
+            0.5606
+          ],
+          "precision": 0.6825,
+          "precision_ci95": [
+            0.634,
+            0.7274
+          ],
+          "f1": 0.5884
+        },
+        "Soyabean": {
+          "support": 215,
+          "n_predicted": 43,
+          "tp": 6,
+          "fp": 37,
+          "fn": 209,
+          "recall": 0.0279,
+          "recall_ci95": [
+            0.0129,
+            0.0595
+          ],
+          "precision": 0.1395,
+          "precision_ci95": [
+            0.0656,
+            0.2726
+          ],
+          "f1": 0.0465
+        },
+        "Tur": {
+          "support": 100,
+          "n_predicted": 79,
+          "tp": 33,
+          "fp": 46,
+          "fn": 67,
+          "recall": 0.33,
+          "recall_ci95": [
+            0.2456,
+            0.4269
+          ],
+          "precision": 0.4177,
+          "precision_ci95": [
+            0.3153,
+            0.5278
+          ],
+          "f1": 0.3687
+        }
+      },
+      "confusions": {
+        "Tur": {
+          "Tur": 46,
+          "Soyabean": 34,
+          "Cotton": 18,
+          "Banana": 1,
+          "Onion": 1
+        },
+        "Cotton": {
+          "Cotton": 352,
+          "Soyabean": 47,
+          "Tur": 47,
+          "Jowar": 40,
+          "Onion": 3,
+          "Tobacco": 2,
+          "Banana": 2,
+          "Chilli": 2,
+          "Sugarcane": 1,
+          "Rice": 1,
+          "Groundnut": 1,
+          "Grapes": 1
+        },
+        "Soyabean": {
+          "Cotton": 150,
+          "Tur": 25,
+          "Soyabean": 20,
+          "Jowar": 8,
+          "Banana": 5,
+          "Groundnut": 4,
+          "Onion": 2,
+          "Sugarcane": 1
+        }
+      }
+    },
+    "09-01": {
+      "n": 814,
+      "coverage_at_rule": 0.8096,
+      "ece": 0.1271,
+      "argmax": {
+        "Cotton": {
+          "support": 499,
+          "n_predicted": 545,
+          "tp": 430,
+          "fp": 115,
+          "fn": 69,
+          "recall": 0.8617,
+          "recall_ci95": [
+            0.8287,
+            0.8893
+          ],
+          "precision": 0.789,
+          "precision_ci95": [
+            0.7528,
+            0.8212
+          ],
+          "f1": 0.8238
+        },
+        "Soyabean": {
+          "support": 215,
+          "n_predicted": 126,
+          "tp": 65,
+          "fp": 61,
+          "fn": 150,
+          "recall": 0.3023,
+          "recall_ci95": [
+            0.2448,
+            0.3667
+          ],
+          "precision": 0.5159,
+          "precision_ci95": [
+            0.4294,
+            0.6014
+          ],
+          "f1": 0.3812
+        },
+        "Tur": {
+          "support": 100,
+          "n_predicted": 119,
+          "tp": 55,
+          "fp": 64,
+          "fn": 45,
+          "recall": 0.55,
+          "recall_ci95": [
+            0.4524,
+            0.6439
+          ],
+          "precision": 0.4622,
+          "precision_ci95": [
+            0.3752,
+            0.5515
+          ],
+          "f1": 0.5023
+        }
+      },
+      "at_rule": {
+        "Cotton": {
+          "support": 499,
+          "n_predicted": 481,
+          "tp": 392,
+          "fp": 89,
+          "fn": 107,
+          "recall": 0.7856,
+          "recall_ci95": [
+            0.7475,
+            0.8193
+          ],
+          "precision": 0.815,
+          "precision_ci95": [
+            0.7778,
+            0.8471
+          ],
+          "f1": 0.8
+        },
+        "Soyabean": {
+          "support": 215,
+          "n_predicted": 78,
+          "tp": 40,
+          "fp": 38,
+          "fn": 175,
+          "recall": 0.186,
+          "recall_ci95": [
+            0.1397,
+            0.2434
+          ],
+          "precision": 0.5128,
+          "precision_ci95": [
+            0.4039,
+            0.6205
+          ],
+          "f1": 0.273
+        },
+        "Tur": {
+          "support": 100,
+          "n_predicted": 90,
+          "tp": 48,
+          "fp": 42,
+          "fn": 52,
+          "recall": 0.48,
+          "recall_ci95": [
+            0.3846,
+            0.5768
+          ],
+          "precision": 0.5333,
+          "precision_ci95": [
+            0.431,
+            0.6329
+          ],
+          "f1": 0.5053
+        }
+      },
+      "confusions": {
+        "Tur": {
+          "Tur": 55,
+          "Soyabean": 35,
+          "Cotton": 10
+        },
+        "Cotton": {
+          "Cotton": 430,
+          "Tur": 32,
+          "Soyabean": 26,
+          "Onion": 4,
+          "Jowar": 3,
+          "Banana": 2,
+          "Grapes": 1,
+          "Sugarcane": 1
+        },
+        "Soyabean": {
+          "Cotton": 105,
+          "Soyabean": 65,
+          "Tur": 32,
+          "Onion": 11,
+          "Groundnut": 2
+        }
+      }
+    },
+    "10-01": {
+      "n": 814,
+      "coverage_at_rule": 0.8194,
+      "ece": 0.0777,
+      "argmax": {
+        "Cotton": {
+          "support": 499,
+          "n_predicted": 544,
+          "tp": 432,
+          "fp": 112,
+          "fn": 67,
+          "recall": 0.8657,
+          "recall_ci95": [
+            0.833,
+            0.8929
+          ],
+          "precision": 0.7941,
+          "precision_ci95": [
+            0.7581,
+            0.826
+          ],
+          "f1": 0.8284
+        },
+        "Soyabean": {
+          "support": 215,
+          "n_predicted": 134,
+          "tp": 64,
+          "fp": 70,
+          "fn": 151,
+          "recall": 0.2977,
+          "recall_ci95": [
+            0.2405,
+            0.3619
+          ],
+          "precision": 0.4776,
+          "precision_ci95": [
+            0.3948,
+            0.5616
+          ],
+          "f1": 0.3668
+        },
+        "Tur": {
+          "support": 100,
+          "n_predicted": 117,
+          "tp": 46,
+          "fp": 71,
+          "fn": 54,
+          "recall": 0.46,
+          "recall_ci95": [
+            0.3656,
+            0.5574
+          ],
+          "precision": 0.3932,
+          "precision_ci95": [
+            0.3094,
+            0.4837
+          ],
+          "f1": 0.424
+        }
+      },
+      "at_rule": {
+        "Cotton": {
+          "support": 499,
+          "n_predicted": 491,
+          "tp": 406,
+          "fp": 85,
+          "fn": 93,
+          "recall": 0.8136,
+          "recall_ci95": [
+            0.7771,
+            0.8454
+          ],
+          "precision": 0.8269,
+          "precision_ci95": [
+            0.7909,
+            0.8578
+          ],
+          "f1": 0.8202
+        },
+        "Soyabean": {
+          "support": 215,
+          "n_predicted": 88,
+          "tp": 39,
+          "fp": 49,
+          "fn": 176,
+          "recall": 0.1814,
+          "recall_ci95": [
+            0.1356,
+            0.2383
+          ],
+          "precision": 0.4432,
+          "precision_ci95": [
+            0.3439,
+            0.5472
+          ],
+          "f1": 0.2574
+        },
+        "Tur": {
+          "support": 100,
+          "n_predicted": 81,
+          "tp": 37,
+          "fp": 44,
+          "fn": 63,
+          "recall": 0.37,
+          "recall_ci95": [
+            0.2818,
+            0.4678
+          ],
+          "precision": 0.4568,
+          "precision_ci95": [
+            0.3527,
+            0.5648
+          ],
+          "f1": 0.4088
+        }
+      },
+      "confusions": {
+        "Tur": {
+          "Tur": 46,
+          "Soyabean": 43,
+          "Cotton": 10,
+          "Groundnut": 1
+        },
+        "Cotton": {
+          "Cotton": 432,
+          "Tur": 33,
+          "Soyabean": 27,
+          "Banana": 3,
+          "Onion": 2,
+          "Groundnut": 1,
+          "Sugarcane": 1
+        },
+        "Soyabean": {
+          "Cotton": 102,
+          "Soyabean": 64,
+          "Tur": 38,
+          "Groundnut": 6,
+          "Onion": 5
+        }
+      }
+    },
+    "11-01": {
+      "n": 814,
+      "coverage_at_rule": 0.9361,
+      "ece": 0.1808,
+      "argmax": {
+        "Cotton": {
+          "support": 499,
+          "n_predicted": 497,
+          "tp": 483,
+          "fp": 14,
+          "fn": 16,
+          "recall": 0.9679,
+          "recall_ci95": [
+            0.9486,
+            0.9802
+          ],
+          "precision": 0.9718,
+          "precision_ci95": [
+            0.9533,
+            0.9831
+          ],
+          "f1": 0.9699
+        },
+        "Soyabean": {
+          "support": 215,
+          "n_predicted": 201,
+          "tp": 185,
+          "fp": 16,
+          "fn": 30,
+          "recall": 0.8605,
+          "recall_ci95": [
+            0.8078,
+            0.9005
+          ],
+          "precision": 0.9204,
+          "precision_ci95": [
+            0.8746,
+            0.9504
+          ],
+          "f1": 0.8894
+        },
+        "Tur": {
+          "support": 100,
+          "n_predicted": 111,
+          "tp": 79,
+          "fp": 32,
+          "fn": 21,
+          "recall": 0.79,
+          "recall_ci95": [
+            0.7002,
+            0.8583
+          ],
+          "precision": 0.7117,
+          "precision_ci95": [
+            0.6215,
+            0.7878
+          ],
+          "f1": 0.7488
+        }
+      },
+      "at_rule": {
+        "Cotton": {
+          "support": 499,
+          "n_predicted": 482,
+          "tp": 471,
+          "fp": 11,
+          "fn": 28,
+          "recall": 0.9439,
+          "recall_ci95": [
+            0.9201,
+            0.9609
+          ],
+          "precision": 0.9772,
+          "precision_ci95": [
+            0.9596,
+            0.9872
+          ],
+          "f1": 0.9602
+        },
+        "Soyabean": {
+          "support": 215,
+          "n_predicted": 186,
+          "tp": 171,
+          "fp": 15,
+          "fn": 44,
+          "recall": 0.7953,
+          "recall_ci95": [
+            0.7365,
+            0.8439
+          ],
+          "precision": 0.9194,
+          "precision_ci95": [
+            0.8712,
+            0.9505
+          ],
+          "f1": 0.8529
+        },
+        "Tur": {
+          "support": 100,
+          "n_predicted": 92,
+          "tp": 71,
+          "fp": 21,
+          "fn": 29,
+          "recall": 0.71,
+          "recall_ci95": [
+            0.6146,
+            0.7899
+          ],
+          "precision": 0.7717,
+          "precision_ci95": [
+            0.6761,
+            0.8456
+          ],
+          "f1": 0.7396
+        }
+      },
+      "confusions": {
+        "Tur": {
+          "Tur": 79,
+          "Soyabean": 13,
+          "Cotton": 8
+        },
+        "Cotton": {
+          "Cotton": 483,
+          "Tur": 9,
+          "Banana": 3,
+          "Soyabean": 3,
+          "Onion": 1
+        },
+        "Soyabean": {
+          "Soyabean": 185,
+          "Tur": 23,
+          "Cotton": 6,
+          "Onion": 1
+        }
+      }
+    },
+    "full": {
+      "n": 814,
+      "coverage_at_rule": 0.9631,
+      "ece": 0.0898,
+      "argmax": {
+        "Cotton": {
+          "support": 499,
+          "n_predicted": 483,
+          "tp": 478,
+          "fp": 5,
+          "fn": 21,
+          "recall": 0.9579,
+          "recall_ci95": [
+            0.9365,
+            0.9723
+          ],
+          "precision": 0.9896,
+          "precision_ci95": [
+            0.976,
+            0.9956
+          ],
+          "f1": 0.9735
+        },
+        "Soyabean": {
+          "support": 215,
+          "n_predicted": 206,
+          "tp": 197,
+          "fp": 9,
+          "fn": 18,
+          "recall": 0.9163,
+          "recall_ci95": [
+            0.8716,
+            0.9464
+          ],
+          "precision": 0.9563,
+          "precision_ci95": [
+            0.9191,
+            0.9768
+          ],
+          "f1": 0.9359
+        },
+        "Tur": {
+          "support": 100,
+          "n_predicted": 123,
+          "tp": 89,
+          "fp": 34,
+          "fn": 11,
+          "recall": 0.89,
+          "recall_ci95": [
+            0.8137,
+            0.9375
+          ],
+          "precision": 0.7236,
+          "precision_ci95": [
+            0.6387,
+            0.7949
+          ],
+          "f1": 0.7982
+        }
+      },
+      "at_rule": {
+        "Cotton": {
+          "support": 499,
+          "n_predicted": 471,
+          "tp": 467,
+          "fp": 4,
+          "fn": 32,
+          "recall": 0.9359,
+          "recall_ci95": [
+            0.9109,
+            0.9542
+          ],
+          "precision": 0.9915,
+          "precision_ci95": [
+            0.9784,
+            0.9967
+          ],
+          "f1": 0.9629
+        },
+        "Soyabean": {
+          "support": 215,
+          "n_predicted": 202,
+          "tp": 193,
+          "fp": 9,
+          "fn": 22,
+          "recall": 0.8977,
+          "recall_ci95": [
+            0.8499,
+            0.9315
+          ],
+          "precision": 0.9554,
+          "precision_ci95": [
+            0.9175,
+            0.9764
+          ],
+          "f1": 0.9257
+        },
+        "Tur": {
+          "support": 100,
+          "n_predicted": 111,
+          "tp": 85,
+          "fp": 26,
+          "fn": 15,
+          "recall": 0.85,
+          "recall_ci95": [
+            0.7672,
+            0.9069
+          ],
+          "precision": 0.7658,
+          "precision_ci95": [
+            0.6789,
+            0.8348
+          ],
+          "f1": 0.8057
+        }
+      },
+      "confusions": {
+        "Tur": {
+          "Tur": 89,
+          "Soyabean": 6,
+          "Cotton": 5
+        },
+        "Cotton": {
+          "Cotton": 478,
+          "Tur": 16,
+          "Soyabean": 3,
+          "Grapes": 1,
+          "Onion": 1
+        },
+        "Soyabean": {
+          "Soyabean": 197,
+          "Tur": 18
+        }
+      }
+    }
+  }
+}

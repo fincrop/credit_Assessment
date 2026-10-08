@@ -17,7 +17,17 @@ ENV PYTHONUNBUFFERED=1
 COPY requirements.txt .
 RUN pip install --no-cache-dir --no-compile -r requirements.txt
 
-# Application code + model artifacts (ensure crop_classifier_tier1_v1.joblib is in repo or image build context)
+# Field-boundary model (crop_analysis/ftw_model.py): CPU-only torch (the default
+# wheel pulls CUDA, several GB) + the CC-BY FTW checkpoint. Delineation still
+# runs without them, on satellite edges and FTW Global outlines only.
+RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.8.0 \
+ && pip install --no-cache-dir segmentation-models-pytorch==0.5.0
+ENV FTW_MODEL_PATH=/opt/ftw/3_Class_CCBY_FTW_Pretrained.ckpt
+ENV FTW_CACHE_DIR=/tmp/ftw_global
+RUN mkdir -p /opt/ftw && python -c "import urllib.request; urllib.request.urlretrieve('https://github.com/fieldsoftheworld/ftw-baselines/releases/download/v1/3_Class_CCBY_FTW_Pretrained.ckpt', '/opt/ftw/3_Class_CCBY_FTW_Pretrained.ckpt')"
+
+# Application code + model artifacts (ensure crop_classifier_tier1_mh_v1.joblib and its
+# .region_support.json are in the repo / image build context)
 COPY . .
 
 # Render injects PORT (often 10000); bind 0.0.0.0 so the port scan succeeds.

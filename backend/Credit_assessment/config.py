@@ -11,6 +11,66 @@ RiskIndexEngine sub-index weights, SAR/signal/phenology/weather pillar knobs.
 from pathlib import Path
 from typing import Union
 import os
+import sys
+
+
+def _register_conda_dlls() -> None:
+    """Put the interpreter's own native DLL folders on the Windows search path.
+
+    Started without an activated conda environment (e.g. `.conda/python.exe -m
+    uvicorn ...`), NumPy's BLAS cannot be delay-loaded and the process dies on
+    the first matrix product with Windows fatal exception 0xc06d007f. The
+    training (Crop_classification_model/src/_bootstrap.py) and monitoring
+    packages already do this; config is imported by every backend module.
+    """
+    if sys.platform != "win32":
+        return
+    prefix = Path(sys.prefix)
+    for sub in ("Library/bin", "Library/mingw-w64/bin", "Library/usr/bin", "DLLs"):
+        d = prefix / sub
+        if not d.is_dir():
+            continue
+        try:
+            os.add_dll_directory(str(d))
+        except (AttributeError, OSError):
+            pass
+        if str(d) not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = str(d) + os.pathsep + os.environ.get("PATH", "")
+
+
+_register_conda_dlls()
+
+
+def _drop_foreign_geodata() -> None:
+    """Unset PROJ_LIB / PROJ_DATA / GDAL_DATA that point outside this Python.
+
+    PostgreSQL/PostGIS sets a machine-wide PROJ_LIB on Windows; rasterio then
+    fails with "Cannot find proj.db" and pyproj with "no database context".
+    With the variables unset each library uses its own bundled data (wheels)
+    or the environment's share/ folder (conda). Same rule as
+    Crop_Monitoring/src/_bootstrap.py.
+    """
+    import site
+
+    own = [Path(sys.prefix).resolve()]
+    try:
+        own.append(Path(site.getusersitepackages()).resolve())
+    except Exception:  # noqa: BLE001
+        pass
+    for var in ("PROJ_LIB", "PROJ_DATA", "GDAL_DATA"):
+        value = os.environ.get(var)
+        if not value:
+            continue
+        try:
+            path = Path(value).resolve()
+        except OSError:
+            os.environ.pop(var, None)
+            continue
+        if not any(path == root or root in path.parents for root in own):
+            os.environ.pop(var, None)
+
+
+_drop_foreign_geodata()
 
 # Directory containing main.py / config.py / api/ (Docker WORKDIR=/app and local cwd).
 PACKAGE_ROOT = Path(__file__).resolve().parent
@@ -44,9 +104,13 @@ def resolve_package_path(path: Union[str, Path]) -> Path:
     return (PACKAGE_ROOT / p).resolve()
 
 
-# Tier-1 XGBoost bundle (147 features, 18 crops, spatially-blocked CV).
+# Tier-1 XGBoost bundle (18 crops). tier1_mh_v1 = tier1 recipe retrained with
+# the Marathwada cotton/soybean parcels (Crop_classification_model/reports/mh_eval.md):
+# held-out Marathwada cotton recall 0.955 vs 0.586 for tier1_v1. Its own
+# region-support table sits next to it (<model>.region_support.json).
+# The previous bundle, models/crop_classifier_tier1_v1.joblib, is kept for rollback.
 # Override via env CROP_MODEL_PATH if needed.
-DEFAULT_CROP_MODEL_PATH = "models/crop_classifier_tier1_v1.joblib"
+DEFAULT_CROP_MODEL_PATH = "models/crop_classifier_tier1_mh_v1.joblib"
 
 
 def crop_classification_enabled(default: bool = True) -> bool:

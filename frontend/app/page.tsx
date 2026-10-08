@@ -203,6 +203,25 @@ export default function HomePage() {
               <span aria-hidden>→</span>
             </span>
           </Link>
+
+          <Link
+            href="/clusters"
+            className="group relative rounded-2xl border border-rule bg-white/80 backdrop-blur-md p-8 hover:border-emerald-400 hover:bg-emerald-50 transition-all duration-300 animate-slide-in md:col-span-2"
+            style={{ animationDelay: '0.33s' }}
+          >
+            <div className="w-12 h-12 rounded-xl bg-violet-500/15 border border-violet-500/25 flex items-center justify-center mb-5 text-2xl">
+              ⚖️
+            </div>
+            <h2 className="text-xl font-bold text-stone-900 mb-2">Cluster analysis</h2>
+            <p className="text-sm text-stone-500 leading-relaxed mb-6">
+              Compare the two revenue circles in a district — Latur and Beed, cotton and soybean —
+              after each village has been classified and monitored.
+            </p>
+            <span className="inline-flex items-center gap-2 text-sm font-semibold text-violet-700 group-hover:gap-3 transition-all">
+              Open a cluster
+              <span aria-hidden>→</span>
+            </span>
+          </Link>
         </div>
 
         <section className="mt-14 animate-slide-in" style={{ animationDelay: '0.18s' }}>

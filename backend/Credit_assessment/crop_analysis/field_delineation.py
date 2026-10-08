@@ -73,15 +73,20 @@ ALU_KEY_ENV = "AG_UNDERSTANDING_API_KEY"
 ALU_SAMPLE_SPACING_M = 600
 ALU_FIELD_TYPES = {"field", "fields", "agricultural_field", "farm", "cropland"}
 
-FTW_BUCKET = "us-west-2.opendata.source.coop"
-FTW_PREFIX = ("tge-labs/ftw-global-data/predictions/vectors/alpha/"
-              "results-by-admin-conf/admin:country_code=IN")
-FTW_HTTP = f"https://s3.us-west-2.amazonaws.com/{FTW_BUCKET}/" + FTW_PREFIX.replace("=", "%3D")
+# Fields of The World Global (CC-BY-4.0), PRUE model on Sentinel-2, 2024/2025.
+# Moved from s3://.../tge-labs/ftw-global-data (now 404) to Source Cooperative's
+# ftw/global-data; read over HTTPS with row-group bbox pruning.
+FTW_BASE = "https://data.source.coop/ftw/global-data"
+FTW_PREFIX = "predictions/vectors/alpha/results-by-admin-conf/admin:country_code=IN"
 # README: `confidence >= 69` is the recommended reliability filter; null means
 # "outside the modelled layer", not "low", so nulls are kept.
 FTW_MIN_CONFIDENCE = 0.0
 
 SCALE_M = 10
+# Bump when the Earth Engine image itself changes. Watershed weights and merge
+# thresholds are applied after the file is read, so they do not belong here.
+BOUNDARY_RECIPE = "v1"
+PROFILE_RECIPE = "v1"
 # Douglas-Peucker tolerance for straightening raster-traced field edges
 # (regularize_partition). ~0.7 of a Sentinel-2 pixel: removes the 5 m / 10 m
 # staircase entirely while a real bend in a bund (> 1 px) survives.
@@ -605,16 +610,21 @@ def _ftw_state_bboxes() -> Dict[str, Tuple[float, float, float, float]]:
     import re
     import requests
 
-    base = f"https://s3.us-west-2.amazonaws.com/{FTW_BUCKET}"
-    xml = requests.get(base, params={"list-type": "2", "prefix": FTW_PREFIX + "/"},
-                       timeout=60).text
-    keys = [k for k in re.findall(r"<Key>([^<]+)</Key>", xml)
-            if re.search(r"/IN_[A-Z0-9]+\.json$", k)]
+    keys: List[str] = []
+    params = {"list-type": "2", "prefix": FTW_PREFIX + "/", "max-keys": "1000"}
+    for _ in range(10):
+        xml = requests.get(FTW_BASE, params=params, timeout=60).text
+        keys += [k for k in re.findall(r"<Key>([^<]+)</Key>", xml)
+                 if re.search(r"/IN_[A-Z0-9]+\.json$", k)]
+        tok = re.search(r"<NextContinuationToken>([^<]+)</NextContinuationToken>", xml)
+        if not tok:
+            break
+        params["continuation-token"] = tok.group(1)
     out = {}
     for k in keys:
         part = k.rsplit("/", 1)[1][:-5]
         try:
-            item = requests.get(f"{base}/{k.replace('=', '%3D')}", timeout=30).json()
+            item = requests.get(f"{FTW_BASE}/{FTW_PREFIX}/{part}.json", timeout=30).json()
             b = item.get("bbox")
             if b and len(b) >= 4:
                 out[part] = (float(b[0]), float(b[1]), float(b[2]), float(b[3]))
@@ -625,13 +635,13 @@ def _ftw_state_bboxes() -> Dict[str, Tuple[float, float, float, float]]:
 
 
 def _ftw_parquet(part: str):
-    import pyarrow.fs as pafs
+    import fsspec
     import pyarrow.parquet as pq
 
     if part not in _FTW_META_CACHE:
-        s3 = pafs.S3FileSystem(anonymous=True, region="us-west-2",
-                               connect_timeout=20, request_timeout=120)
-        f = pq.ParquetFile(s3.open_input_file(f"{FTW_BUCKET}/{FTW_PREFIX}/{part}.parquet"))
+        fs = fsspec.filesystem("https")
+        f = pq.ParquetFile(fs.open(f"{FTW_BASE}/{FTW_PREFIX}/{part}.parquet",
+                                   block_size=2 ** 22, cache_type="readahead"))
         m = f.metadata
         names = [m.row_group(0).column(i).path_in_schema for i in range(m.num_columns)]
         ix = {n: names.index(n) for n in ("bbox.xmin", "bbox.ymin", "bbox.xmax", "bbox.ymax")}
@@ -679,10 +689,11 @@ def _ftw_read_groups(part: str, f, groups: List[int]):
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=FTW_COLUMNS)
 
 
-def delineate_ftw(aoi_geojson: Dict[str, Any], *, min_field_ha: float = DEFAULT_MIN_FIELD_HA,
-                  year: Optional[int] = None,
-                  min_confidence: float = FTW_MIN_CONFIDENCE) -> DelineationResult:
-    """FTW Global polygons intersecting the AOI, via row-group bbox pruning."""
+def ftw_polygons(aoi_geojson: Dict[str, Any], *, year: Optional[int] = None,
+                 min_confidence: float = FTW_MIN_CONFIDENCE
+                 ) -> Tuple[List[Tuple[Any, Dict[str, Any]]], Dict[str, Any]]:
+    """FTW Global polygons (WGS84) intersecting the AOI, via row-group bbox
+    pruning; the most recent year at or before `year` is kept."""
     import shapely
 
     aoi = _shape(aoi_geojson)
@@ -706,12 +717,11 @@ def delineate_ftw(aoi_geojson: Dict[str, Any], *, min_field_ha: float = DEFAULT_
         m = np.array([(b["xmin"] <= x1 and b["xmax"] >= x0 and b["ymin"] <= y1 and b["ymax"] >= y0)
                       for b in bb], dtype=bool)
         df = df[m]
-        if year is not None and len(df):
+        if len(df):
             yrs = df["determination:datetime"].dt.year
-            if (yrs == year).any():
-                df = df[yrs == year]
-            else:
-                df = df[yrs == yrs.max()]
+            ok = yrs[yrs <= year] if year is not None else yrs
+            pick = int(ok.max()) if len(ok) else int(yrs.min())
+            df = df[yrs == pick]
         geoms = shapely.from_wkb(df["geometry"].to_numpy())
         for g, c in zip(geoms, df["confidence"].to_numpy()):
             if c is not None and np.isfinite(c) and c < min_confidence:
@@ -720,11 +730,19 @@ def delineate_ftw(aoi_geojson: Dict[str, Any], *, min_field_ha: float = DEFAULT_
                 continue
             conf = float(c) / 100.0 if c is not None and np.isfinite(c) else 0.5
             polys.append((g, {"source": "ftw", "confidence": conf}))
+    return polys, {"partitions": parts, "row_groups": n_rg, "raw_features": len(polys)}
 
+
+def delineate_ftw(aoi_geojson: Dict[str, Any], *, min_field_ha: float = DEFAULT_MIN_FIELD_HA,
+                  year: Optional[int] = None,
+                  min_confidence: float = FTW_MIN_CONFIDENCE) -> DelineationResult:
+    """FTW Global polygons as the fields themselves (measured weaker than our
+    watershed on smallholder parcels; kept as a fallback provider)."""
+    aoi = _shape(aoi_geojson)
+    polys, diag = ftw_polygons(aoi_geojson, year=year, min_confidence=min_confidence)
     # FTW polygons are traced from its own 10 m raster: same staircase.
     fields = clean_fields(polys, aoi, min_field_ha=min_field_ha, regularize_m=REGULARIZE_M)
-    return DelineationResult(fields, "ftw", {"partitions": parts, "row_groups": n_rg,
-                                             "raw_features": len(polys)})
+    return DelineationResult(fields, "ftw", diag)
 
 
 # =============================================================================
@@ -734,7 +752,7 @@ def _masked_blank(ee, band: str):
     return ee.Image.constant(0).rename(band).float().updateMask(ee.Image.constant(0))
 
 
-def _boundary_image(ee, aoi, year: int, epsg: int):
+def _boundary_image(ee, aoi, year: int, epsg: int, months: Optional[Sequence[int]] = None):
     """
     Boundary strength in [0, ~1] plus a cropland probability band.
 
@@ -778,8 +796,12 @@ def _boundary_image(ee, aoi, year: int, epsg: int):
         mag = ee.Image.cat(grads).reduce(ee.Reducer.sum()).sqrt().multiply(SCALE_M)
         return mag.rename("g").set("n", coll.size())
 
-    months = ee.ImageCollection(ee.List.sequence(0, 11).map(lambda m: s2_month(ee.Number(m))))
-    s2_edge = months.mean().unmask(0)
+    # `months` (0 = January) restricts the edge map to one season. Averaging
+    # all twelve months keeps last rabi's internal split of a farm as a strong
+    # "edge" through the kharif season.
+    month_list = ee.List(list(months)) if months else ee.List.sequence(0, 11)
+    months_ic = ee.ImageCollection(month_list.map(lambda m: s2_month(ee.Number(m))))
+    s2_edge = months_ic.mean().unmask(0)
 
     emb = embedding_image(ee, year).reproject(proj)
     gx = emb.convolve(ee.Kernel.fixed(3, 3, [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], -1, -1, False))
@@ -990,8 +1012,16 @@ def _merge_regions(labels: np.ndarray, e: np.ndarray, *, min_pixels: int,
         return x
 
     size = sizes.astype(np.int64).copy()
-    strong = float(np.quantile([t[0] for t in edges], 0.75)) if edges else 1.0
-    # Weakest boundaries first.
+    # A line that splits two farms has to look like a bund: close to the
+    # strongest edges in the image, and longer than a nick. Comparing with the
+    # 75th percentile of region-pair medians does the opposite in a village of
+    # faint interior ridges — that percentile sits on the ridges, so a uniform
+    # farm stays cut in half. `merge_ratio` is how close to those strongest
+    # edges a line must be before it is allowed to separate two regions.
+    strong = float(np.quantile(e, 0.95)) if e.size else 1.0
+    # Weakest boundaries first. A short contact is not itself a reason to
+    # merge: one-pixel bunds between real fields are short in places, and
+    # merging those collapses the village into a single region.
     for w, a, b, blen in sorted(edges):
         ra, rb = find(a), find(b)
         if ra == rb:
@@ -1033,11 +1063,44 @@ class BoundaryArrays:
         return self.bands[..., BOUNDARY_BANDS.index(name)]
 
 
-def fetch_boundary_arrays(aoi_geojson: Dict[str, Any], *, year: int,
-                          ee_module=None) -> BoundaryArrays:
-    ee = ee_module
-    if ee is None:
-        import ee  # noqa: PLC0415
+def _months_tag(months: Optional[Sequence[int]]) -> str:
+    if not months:
+        return "all"
+    return "-".join(str(int(m)) for m in months)
+
+
+def _boundary_cache_path(aoi_geojson: Dict[str, Any], year: int,
+                         months: Optional[Sequence[int]], cache_root) -> "Path":
+    from crop_analysis.replay_store import outline_key, store
+
+    tag = _months_tag(months)
+    return (store(cache_root) / "delineation" / outline_key(aoi_geojson)
+            / f"boundary_{BOUNDARY_RECIPE}_{year}_{tag}.npz")
+
+
+def _load_boundary(path) -> Optional[BoundaryArrays]:
+    if not path.is_file():
+        return None
+    try:
+        with np.load(path) as z:
+            bands = np.array(z["bands"], dtype=np.float32, copy=True)
+            if bands.ndim != 3 or bands.shape[-1] != len(BOUNDARY_BANDS):
+                raise ValueError(f"bands {bands.shape}")
+            return BoundaryArrays(bands, float(z["x0"]), float(z["y1"]), int(z["epsg"]), int(z["year"]))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("boundary cache unreadable (%s); downloading again", str(exc)[:160])
+        return None
+
+
+def _save_boundary(path, ba: BoundaryArrays) -> None:
+    from crop_analysis.replay_store import atomic_npz
+
+    atomic_npz(path, bands=ba.bands.astype(np.float32), x0=np.float64(ba.x0),
+               y1=np.float64(ba.y1), epsg=np.int32(ba.epsg), year=np.int32(ba.year))
+
+
+def _download_boundary(ee, aoi_geojson: Dict[str, Any], year: int,
+                       months: Optional[Sequence[int]]) -> BoundaryArrays:
     aoi = _shape(aoi_geojson)
     c = aoi.centroid
     epsg = _utm_epsg(c.x, c.y)
@@ -1045,9 +1108,28 @@ def fetch_boundary_arrays(aoi_geojson: Dict[str, Any], *, year: int,
     x0, y0, x1, y1 = au.buffer(50).bounds
     x0, y0 = math.floor(x0 / SCALE_M) * SCALE_M, math.floor(y0 / SCALE_M) * SCALE_M
     x1, y1 = math.ceil(x1 / SCALE_M) * SCALE_M, math.ceil(y1 / SCALE_M) * SCALE_M
-    img = _boundary_image(ee, ee.Geometry(aoi_geojson, None, False), year, epsg)
+    img = _boundary_image(ee, ee.Geometry(aoi_geojson, None, False), year, epsg, months)
     arr = _download_grid(ee, img, (x0, y0, x1, y1), epsg, n_bands=len(BOUNDARY_BANDS))
     return BoundaryArrays(arr, x0, y1, epsg, year)
+
+
+def fetch_boundary_arrays(aoi_geojson: Dict[str, Any], *, year: int,
+                          ee_module=None, months: Optional[Sequence[int]] = None,
+                          cache_root=None) -> BoundaryArrays:
+    """Edge arrays for one outline. The first call downloads them; every later
+    call with the same outline, year, and month list reads the file."""
+    path = _boundary_cache_path(aoi_geojson, year, months, cache_root)
+    hit = _load_boundary(path)
+    if hit is not None:
+        logger.info("boundary arrays from disk %s", path)
+        return hit
+    ee = ee_module
+    if ee is None:
+        import ee  # noqa: PLC0415
+    ba = _download_boundary(ee, aoi_geojson, year, months)
+    _save_boundary(path, ba)
+    logger.info("boundary arrays saved %s", path)
+    return ba
 
 
 def combined_edge(ba: BoundaryArrays, weights: Optional[Dict[str, float]] = None) -> np.ndarray:
@@ -1064,9 +1146,438 @@ def combined_edge(ba: BoundaryArrays, weights: Optional[Dict[str, float]] = None
     return out
 
 
+# =============================================================================
+# season-profile merging (one farm, one segment)
+# =============================================================================
+# Inside a farm, rows, irrigation lines and uneven growth draw faint edges that
+# the watershed cuts along; each piece is then classified on its own. Two
+# neighbouring segments that behave the same through the season (fused NDVI,
+# Sentinel-1 VH and cross-ratio, month by month) and are separated only by a
+# line weaker than a bund are one farm.
+PROFILE_D_MERGE = 1.0          # max profile distance (x within-field pixel std) to merge
+PROFILE_W_MAX = 0.55           # max boundary strength (x 95th-pct edge) to merge
+PROFILE_MIN_FIELD_HA = 0.10    # fragments below this join their best neighbour
+
+
+def kharif_months(year: int, as_of: Optional[Any] = None) -> List[int]:
+    """Month indices (0 = Jan) May..Oct, cut at the run date."""
+    last = 9
+    if as_of is not None and getattr(as_of, "year", year) == year:
+        last = min(last, as_of.month - 1)
+    return list(range(4, max(last, 4) + 1))
+
+
+def _profile_image(ee, aoi, year: int, epsg: int, months: Sequence[int]):
+    """Per month: cloud-masked S2 NDVI median, S1 VH and VH-VV medians (dB).
+
+    Radar is there every month; optical may be missing in monsoon months
+    (masked, handled as missing in the distance)."""
+    from data_acquisition.extra_sources import CS_BAND, CS_COLLECTION, CS_THRESHOLD, S2_COLLECTION
+
+    proj = ee.Projection(f"EPSG:{epsg}").atScale(SCALE_M)
+    region = aoi.buffer(200)
+    bands = []
+    for m in months:
+        start = ee.Date.fromYMD(year, int(m) + 1, 1)
+        end = start.advance(1, "month")
+        s2 = (ee.ImageCollection(S2_COLLECTION).filterBounds(region).filterDate(start, end)
+              .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 95))
+              .linkCollection(ee.ImageCollection(CS_COLLECTION), [CS_BAND])
+              .map(lambda i: i.updateMask(i.select(CS_BAND).gte(CS_THRESHOLD))
+                   .normalizedDifference(["B8", "B4"]).rename("NDVI")))
+        ndvi = ee.ImageCollection([_masked_blank(ee, "NDVI")]).merge(s2).median()
+        s1 = (ee.ImageCollection("COPERNICUS/S1_GRD").filterBounds(region).filterDate(start, end)
+              .filter(ee.Filter.eq("instrumentMode", "IW"))
+              .filter(ee.Filter.listContains("transmitterReceiverPolarisation", "VV"))
+              .filter(ee.Filter.listContains("transmitterReceiverPolarisation", "VH"))
+              .select(["VV", "VH"]))
+        blank = (ee.Image.constant([0, 0]).rename(["VV", "VH"]).float()
+                 .updateMask(ee.Image.constant(0)))
+        s1m = ee.ImageCollection([blank]).merge(s1).median()
+        vh = s1m.select("VH")
+        cr = s1m.select("VH").subtract(s1m.select("VV"))
+        bands += [ndvi.rename(f"ndvi_{m}"), vh.rename(f"vh_{m}"), cr.rename(f"cr_{m}")]
+    return ee.Image.cat(bands).reproject(proj).toFloat().unmask(-9999)
+
+
+def _profile_grid_tag(ba: BoundaryArrays) -> str:
+    h, w = ba.bands.shape[:2]
+    return f"{ba.epsg}_{int(round(ba.x0))}_{int(round(ba.y1))}_{h}x{w}"
+
+
+def _profile_cache_path(aoi_geojson: Dict[str, Any], ba: BoundaryArrays, year: int,
+                        months: Sequence[int], cache_root):
+    from crop_analysis.replay_store import outline_key, store
+
+    tag = _months_tag(months)
+    name = f"profiles_{PROFILE_RECIPE}_{year}_{tag}_{_profile_grid_tag(ba)}.npz"
+    return store(cache_root) / "delineation" / outline_key(aoi_geojson) / name
+
+
+def _load_profiles(path, months: Sequence[int]) -> Optional[np.ndarray]:
+    if not path.is_file():
+        return None
+    try:
+        with np.load(path) as z:
+            if [int(m) for m in z["months"]] != [int(m) for m in months]:
+                raise ValueError("month list does not match")
+            arr = np.array(z["profiles"], dtype=np.float32, copy=True)
+            if arr.ndim != 3 or arr.shape[-1] != 3 * len(months):
+                raise ValueError(f"profiles {arr.shape}")
+            return arr
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("profile cache unreadable (%s); downloading again", str(exc)[:160])
+        return None
+
+
+def _save_profiles(path, arr: np.ndarray, months: Sequence[int]) -> None:
+    from crop_analysis.replay_store import atomic_npz
+
+    atomic_npz(path, profiles=arr.astype(np.float32), months=np.asarray(list(months), np.int32))
+
+
+def _download_profiles(ee, aoi_geojson: Dict[str, Any], ba: BoundaryArrays, year: int,
+                       months: Sequence[int]) -> np.ndarray:
+    h, w = ba.bands.shape[:2]
+    bounds = (ba.x0, ba.y1 - h * SCALE_M, ba.x0 + w * SCALE_M, ba.y1)
+    img = _profile_image(ee, ee.Geometry(aoi_geojson, None, False), year, ba.epsg, months)
+    arr = _download_grid(ee, img, bounds, ba.epsg, n_bands=3 * len(months))
+    arr[arr <= -9998] = np.nan
+    return arr
+
+
+def fetch_profile_arrays(aoi_geojson: Dict[str, Any], ba: "BoundaryArrays", *, year: int,
+                         months: Sequence[int], ee_module=None, cache_root=None) -> np.ndarray:
+    """(H, W, 3 * len(months)) on exactly the BoundaryArrays grid; NaN = not seen.
+
+    Saved next to the boundary arrays. A new merge threshold reads this file.
+    """
+    path = _profile_cache_path(aoi_geojson, ba, year, months, cache_root)
+    hit = _load_profiles(path, months)
+    if hit is not None:
+        logger.info("season profiles from disk %s", path)
+        return hit
+    ee = ee_module
+    if ee is None:
+        import ee  # noqa: PLC0415
+    arr = _download_profiles(ee, aoi_geojson, ba, year, months)
+    _save_profiles(path, arr, months)
+    logger.info("season profiles saved %s", path)
+    return arr
+
+
+def merge_by_profile(labels: np.ndarray, profiles: np.ndarray, edge: np.ndarray, *,
+                     min_pixels: int, d_merge: float = PROFILE_D_MERGE,
+                     w_max: float = PROFILE_W_MAX) -> np.ndarray:
+    """Greedy region-adjacency merging on season profiles.
+
+    `labels` and `edge` share one grid; `profiles` (h, w, P) is resampled to it
+    by nearest neighbour. Distance between two segments = RMS over profile
+    bands both have, each band standardised by the spread of segment means
+    across the AOI. Pairs are merged most-similar first while
+    distance < d_merge and the median edge along their shared border is below
+    w_max x the 95th-percentile edge (a real bund stays a boundary even
+    between two farms of the same crop). Segments under `min_pixels` then join
+    the neighbour whose profile is closest.
+    """
+    import heapq
+    from scipy import ndimage as ndi
+
+    lab = labels.astype(np.int64)
+    H, W = lab.shape
+    if profiles.shape[:2] != (H, W):
+        zr, zc = H / profiles.shape[0], W / profiles.shape[1]
+        profiles = ndi.zoom(np.nan_to_num(profiles, nan=-9999.0), (zr, zc, 1), order=0)
+        profiles[profiles <= -9998] = np.nan
+    P = profiles.shape[2]
+    n = int(lab.max()) + 1
+    flat = lab.ravel()
+    size = np.bincount(flat, minlength=n).astype(float)
+    sums = np.zeros((n, P))
+    sq = np.zeros((n, P))
+    cnts = np.zeros((n, P))
+    for b in range(P):
+        v = profiles[..., b].ravel()
+        ok = np.isfinite(v)
+        sums[:, b] = np.bincount(flat[ok], weights=v[ok], minlength=n)
+        sq[:, b] = np.bincount(flat[ok], weights=v[ok] ** 2, minlength=n)
+        cnts[:, b] = np.bincount(flat[ok], minlength=n)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean = sums / cnts
+        within = np.sqrt(np.clip(sq / cnts - mean ** 2, 0, None))
+    # Distances are in units of WITHIN-field pixel variability (median over
+    # segments): two pieces of one farm differ by less than the normal spread
+    # inside a field. Scaling by the spread of segment means instead blew up
+    # noise in months where every crop looks alike (bare May).
+    big = cnts >= 4
+    scale = np.array([np.nanmedian(within[big[:, b], b]) if big[:, b].any() else np.nan
+                      for b in range(P)])
+    scale[~np.isfinite(scale) | (scale < 1e-6)] = 1.0
+
+    e = np.nan_to_num(edge.astype(float))
+    strong = float(np.quantile(e, 0.95)) if e.size else 1.0
+    pairs, vals = [], []
+    for a, b2, ea, eb in ((lab[:, :-1], lab[:, 1:], e[:, :-1], e[:, 1:]),
+                          (lab[:-1, :], lab[1:, :], e[:-1, :], e[1:, :])):
+        m = a != b2
+        pairs.append(np.stack([np.minimum(a[m], b2[m]), np.maximum(a[m], b2[m])], 1))
+        vals.append(np.maximum(ea[m], eb[m]))
+    if not pairs or sum(len(x) for x in pairs) == 0:
+        return labels
+    Pp = np.concatenate(pairs)
+    V = np.concatenate(vals)
+    key = Pp[:, 0] * n + Pp[:, 1]
+    order = np.argsort(key)
+    key, Pp, V = key[order], Pp[order], V[order]
+    uniq, start = np.unique(key, return_index=True)
+    border: Dict[Tuple[int, int], float] = {}
+    nbrs: Dict[int, set] = {}
+    for i, s0 in enumerate(start):
+        e0 = start[i + 1] if i + 1 < len(start) else len(key)
+        a, b2 = int(Pp[s0, 0]), int(Pp[s0, 1])
+        border[(a, b2)] = float(np.median(V[s0:e0])) / max(strong, 1e-9)
+        nbrs.setdefault(a, set()).add(b2)
+        nbrs.setdefault(b2, set()).add(a)
+
+    parent = np.arange(n)
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def dist(a, b2):
+        both = (cnts[a] > 0) & (cnts[b2] > 0)
+        if not both.any():
+            return np.inf
+        d = (mean[a, both] - mean[b2, both]) / scale[both]
+        return float(np.sqrt(np.mean(d * d)))
+
+    def edge_of(a, b2):
+        return border.get((min(a, b2), max(a, b2)), 1.0)
+
+    heap = []
+    for (a, b2), w in border.items():
+        heap.append((dist(a, b2), a, b2))
+    heapq.heapify(heap)
+    while heap:
+        d, a, b2 = heapq.heappop(heap)
+        ra, rb = find(a), find(b2)
+        if ra == rb:
+            continue
+        cur = dist(ra, rb)
+        if cur > d + 1e-9:                          # stale entry; requeue with current distance
+            heapq.heappush(heap, (cur, ra, rb))
+            continue
+        if cur >= d_merge or edge_of(a, b2) >= w_max:
+            continue
+        # merge rb into ra: pooled profile means, union of neighbours and borders
+        tot = cnts[ra] + cnts[rb]
+        with np.errstate(invalid="ignore", divide="ignore"):
+            mean[ra] = np.where(tot > 0, (np.nan_to_num(mean[ra]) * cnts[ra]
+                                          + np.nan_to_num(mean[rb]) * cnts[rb]) / tot, np.nan)
+        cnts[ra] = tot
+        size[ra] += size[rb]
+        parent[rb] = ra
+        for c in nbrs.get(rb, set()):
+            rc = find(c)
+            if rc == ra:
+                continue
+            w_old = border.get((min(ra, rc), max(ra, rc)))
+            w_new = border.get((min(rb, c), max(rb, c)), 1.0)
+            border[(min(ra, rc), max(ra, rc))] = min(w_old, w_new) if w_old is not None else w_new
+            nbrs.setdefault(ra, set()).add(rc)
+            nbrs.setdefault(rc, set()).add(ra)
+            heapq.heappush(heap, (dist(ra, rc), ra, rc))
+
+    # Fragments join the most similar neighbour, whatever the edge.
+    roots = {find(i) for i in range(n) if size[find(i)] > 0}
+    for r in sorted(roots, key=lambda x: size[x]):
+        r = find(r)
+        if size[r] >= min_pixels:
+            continue
+        cands = {find(c) for c in nbrs.get(r, set())} - {r}
+        for m_ in list(nbrs.keys()):
+            if find(m_) == r:
+                cands |= {find(c) for c in nbrs.get(m_, set())}
+        cands.discard(r)
+        if not cands:
+            continue
+        best = min(cands, key=lambda c: dist(r, c))
+        tot = cnts[best] + cnts[r]
+        with np.errstate(invalid="ignore", divide="ignore"):
+            mean[best] = np.where(tot > 0, (np.nan_to_num(mean[best]) * cnts[best]
+                                            + np.nan_to_num(mean[r]) * cnts[r]) / tot, np.nan)
+        cnts[best] = tot
+        size[best] += size[r]
+        parent[r] = best
+    root = np.array([find(i) for i in range(n)])
+    return root[lab].astype(np.int32)
+
+
+# =============================================================================
+# licensed very-high-resolution imagery (optional)
+# =============================================================================
+# Basemap tiles (Google, Esri World Imagery) may not be mined for derived
+# features under their terms of service, so they are never fetched here.
+# Imagery the user is licensed to analyse (drone orthophoto, Planet, Airbus,
+# NRSC, Esri with an analysis licence) can be passed as a GeoTIFF; its edges are
+# averaged onto the delineation grid and blended with the Sentinel-2 edge map.
+VHR_EDGE_WEIGHT = 0.6
+
+
+def vhr_edge_on_grid(path: str, ba: "BoundaryArrays", upsample: int = 2) -> Optional[np.ndarray]:
+    """Gradient magnitude of a licensed VHR GeoTIFF, averaged onto the
+    (upsampled) BoundaryArrays grid, scaled to [0, ~1]. None when the image
+    does not overlap the grid."""
+    import rasterio
+    from affine import Affine
+    from rasterio.warp import Resampling, reproject
+    from scipy import ndimage as ndi
+
+    H, W = ba.bands.shape[:2]
+    px = SCALE_M / max(upsample, 1)
+    dst = np.full((H * max(upsample, 1), W * max(upsample, 1)), np.nan, np.float32)
+    with rasterio.open(path) as src:
+        bands = [i for i in range(1, min(src.count, 3) + 1)]
+        img = src.read(bands).astype(np.float32)
+        nod = src.nodata
+        if nod is not None:
+            img[img == nod] = np.nan
+        mag = np.zeros(img.shape[1:], np.float32)
+        for b in img:
+            b = np.nan_to_num(b, nan=float(np.nanmedian(b)) if np.isfinite(b).any() else 0.0)
+            b = ndi.gaussian_filter(b, 1.0)
+            mag += np.hypot(ndi.sobel(b, 1), ndi.sobel(b, 0))
+        reproject(mag, dst, src_transform=src.transform, src_crs=src.crs,
+                  dst_transform=Affine(px, 0, ba.x0, 0, -px, ba.y1),
+                  dst_crs=f"EPSG:{ba.epsg}", resampling=Resampling.average,
+                  src_nodata=np.nan, dst_nodata=np.nan)
+    if not np.isfinite(dst).any():
+        return None
+    hi = np.nanquantile(dst, 0.98)
+    return np.clip(np.nan_to_num(dst, nan=0.0) / max(hi, 1e-9), 0, 1.5)
+
+
+# FTW Global as evidence inside the watershed, not as the answer. Used directly
+# as fields it scored median IoU 0.169 vs 0.388 for our watershed (it has no
+# polygon for many smallholder fields). Where it does have one, it is a second
+# opinion from a model trained on 1.6 M labelled fields: its outlines are added
+# to the edge map (splitting a segment that spans several fields), and,
+# optionally, two watershed pieces inside the same FTW field with no strong
+# bund between them are joined (a farm cut on a faint line).
+# On by default: on the frozen Marathwada parcels (40 sites, 520 fields) FTW
+# outlines in the edge map raised median IoU 0.177 -> 0.228; the same-field
+# join lowered it (0.140) and stays off. DELINEATION_USE_FTW=0 disables.
+FTW_EVIDENCE_DEFAULT = os.getenv("DELINEATION_USE_FTW", "1") == "1"
+FTW_EDGE_WEIGHT = 0.35
+FTW_MODEL_EDGE_WEIGHT = 0.35   # FTW U-Net boundary probability on this season's S2
+# FTW U-Net (CC-BY checkpoint) on the run year's Sentinel-2: with FTW Global
+# outlines, median IoU 0.177 -> 0.331 on the Marathwada parcels. Needs torch,
+# segmentation_models_pytorch and the checkpoint; silently skipped without them.
+FTW_MODEL_DEFAULT = os.getenv("DELINEATION_USE_FTW_MODEL", "1") == "1"
+FTW_MIN_COVER = 0.6     # share of a segment that must lie inside the one FTW field
+FTW_W_MAX = 0.8         # shared-line strength (x 95th-pct edge) still allowing a join
+
+
+def ftw_on_grid(polys: Sequence[Tuple[Any, Dict[str, Any]]], ba: "BoundaryArrays",
+                upsample: int = 2) -> Tuple[np.ndarray, np.ndarray]:
+    """(edge, ids) on the (upsampled) BoundaryArrays grid: FTW outlines weighted
+    by confidence, and the FTW field index (0 = none) of every pixel."""
+    import rasterio.enums
+    import rasterio.features
+    from affine import Affine
+    from scipy import ndimage as ndi
+
+    u = max(upsample, 1)
+    H, W = ba.bands.shape[0] * u, ba.bands.shape[1] * u
+    px = SCALE_M / u
+    tf = Affine(px, 0, ba.x0, 0, -px, ba.y1)
+    utm = [(_to_utm(g, ba.epsg), float(p.get("confidence") or 0.5)) for g, p in polys]
+    utm = [(g, c) for g, c in utm if not g.is_empty]
+    if not utm:
+        return np.zeros((H, W), np.float32), np.zeros((H, W), np.int32)
+    ids = rasterio.features.rasterize([(g, i + 1) for i, (g, _) in enumerate(utm)],
+                                      out_shape=(H, W), transform=tf, fill=0, dtype="int32")
+    edge = rasterio.features.rasterize([(g.boundary, c) for g, c in utm],
+                                       out_shape=(H, W), transform=tf, fill=0.0,
+                                       all_touched=True, dtype="float32",
+                                       merge_alg=rasterio.enums.MergeAlg.replace)
+    edge = ndi.gaussian_filter(edge, 0.7)
+    hi = float(edge.max()) if edge.size else 1.0
+    return np.clip(edge / max(hi, 1e-9), 0, 1).astype(np.float32), ids
+
+
+def _pair_strength(labels: np.ndarray, edge: np.ndarray):
+    """Adjacent label pairs (a < b) and the mean edge strength along their border."""
+    a = np.concatenate([labels[:, :-1].ravel(), labels[:-1, :].ravel()])
+    b = np.concatenate([labels[:, 1:].ravel(), labels[1:, :].ravel()])
+    e = np.concatenate([np.maximum(edge[:, :-1], edge[:, 1:]).ravel(),
+                        np.maximum(edge[:-1, :], edge[1:, :]).ravel()])
+    m = a != b
+    lo = np.minimum(a[m], b[m]).astype(np.int64)
+    hi = np.maximum(a[m], b[m]).astype(np.int64)
+    n = int(labels.max()) + 1
+    uk, inv = np.unique(lo * n + hi, return_inverse=True)
+    s = np.bincount(inv, weights=e[m]) / np.maximum(np.bincount(inv), 1)
+    return uk // n, uk % n, s
+
+
+def merge_by_ftw(labels: np.ndarray, ftw_ids: np.ndarray, edge: np.ndarray, *,
+                 min_cover: float = FTW_MIN_COVER, w_max: float = FTW_W_MAX) -> np.ndarray:
+    """Join neighbouring segments that lie mostly inside the same FTW field and
+    are separated by a line weaker than `w_max` x the 95th-percentile edge."""
+    if labels.shape != ftw_ids.shape or not ftw_ids.any():
+        return labels
+    lab = labels.astype(np.int64)
+    n = int(lab.max()) + 1
+    size = np.bincount(lab.ravel(), minlength=n)
+    nf = int(ftw_ids.max()) + 1
+    m = ftw_ids.ravel() > 0
+    uk, cnt = np.unique(lab.ravel()[m] * nf + ftw_ids.ravel()[m], return_counts=True)
+    seg, fid = uk // nf, uk % nf
+    dom = np.zeros(n, np.int64)
+    best = np.zeros(n, np.int64)
+    order = np.argsort(cnt)                     # ascending: the largest count wins
+    dom[seg[order]] = fid[order]
+    best[seg[order]] = cnt[order]
+    cover = best / np.maximum(size, 1)
+    strong = float(np.quantile(edge, 0.95)) if edge.size else 1.0
+    pa, pb, ps = _pair_strength(lab, edge)
+    parent = np.arange(n)
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for a, b, st in zip(pa, pb, ps):
+        if (dom[a] and dom[a] == dom[b] and cover[a] >= min_cover and cover[b] >= min_cover
+                and st < w_max * strong):
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[rb] = ra
+    roots = np.array([find(i) for i in range(n)])
+    _, new = np.unique(roots, return_inverse=True)
+    return new[lab].astype(labels.dtype)
+
+
 def segment_arrays(ba: BoundaryArrays, aoi_geojson: Dict[str, Any], *,
                    min_field_ha: float = DEFAULT_MIN_FIELD_HA, min_cropland: float = 0.25,
                    weights: Optional[Dict[str, float]] = None, upsample: int = 2,
+                   profiles: Optional[np.ndarray] = None,
+                   profile_d_merge: float = PROFILE_D_MERGE,
+                   profile_w_max: float = PROFILE_W_MAX,
+                   vhr_path: Optional[str] = None,
+                   ftw: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+                   ftw_edge_weight: float = FTW_EDGE_WEIGHT,
+                   ftw_merge: bool = False,
+                   ftw_min_cover: float = FTW_MIN_COVER,
+                   ftw_w_max: float = FTW_W_MAX,
+                   model_edge: Optional[np.ndarray] = None,
+                   model_edge_weight: float = FTW_MODEL_EDGE_WEIGHT,
                    **ws_kwargs) -> DelineationResult:
     import rasterio.features
     from affine import Affine
@@ -1085,8 +1596,29 @@ def segment_arrays(ba: BoundaryArrays, aoi_geojson: Dict[str, Any], *,
         edge = ndi.zoom(edge, upsample, order=1)
         crop = ndi.zoom(crop, upsample, order=1)
     px = SCALE_M / (upsample or 1)
+    if vhr_path:
+        vhr = vhr_edge_on_grid(vhr_path, ba, upsample or 1)
+        if vhr is not None and vhr.shape == edge.shape:
+            hi = np.quantile(edge, 0.98) if edge.size else 1.0
+            edge = (1 - VHR_EDGE_WEIGHT) * np.clip(edge / max(hi, 1e-9), 0, 1.5) + VHR_EDGE_WEIGHT * vhr
+    s2_edge = edge
+    if ftw is not None and ftw[0].shape == edge.shape and ftw_edge_weight > 0:
+        hi = np.quantile(edge, 0.98) if edge.size else 1.0
+        edge = (1 - ftw_edge_weight) * np.clip(edge / max(hi, 1e-9), 0, 1.5) + ftw_edge_weight * ftw[0]
+    if model_edge is not None and model_edge.shape == edge.shape and model_edge_weight > 0:
+        hi = np.quantile(edge, 0.98) if edge.size else 1.0
+        me = np.clip(model_edge / max(float(np.quantile(model_edge, 0.98)), 1e-6), 0, 1.5)
+        edge = (1 - model_edge_weight) * np.clip(edge / max(hi, 1e-9), 0, 1.5) + model_edge_weight * me
     min_px = max(3, int(round(min_field_ha * 10_000 / px ** 2)))
     labels = watershed_segments(edge, min_pixels=min_px, **ws_kwargs)
+    if ftw is not None and ftw_merge and ftw[1].shape == labels.shape:
+        # Joins are judged on the satellite's own edges, so an FTW line cannot
+        # veto a join FTW itself asks for.
+        labels = merge_by_ftw(labels, ftw[1], s2_edge, min_cover=ftw_min_cover, w_max=ftw_w_max)
+    if profiles is not None:
+        frag_px = max(min_px, int(round(PROFILE_MIN_FIELD_HA * 10_000 / px ** 2)))
+        labels = merge_by_profile(labels, profiles, edge, min_pixels=frag_px,
+                                  d_merge=profile_d_merge, w_max=profile_w_max)
 
     tf = Affine(px, 0, ba.x0, 0, -px, ba.y1)
     inside = rasterio.features.geometry_mask([au], out_shape=labels.shape,
@@ -1107,17 +1639,47 @@ def segment_arrays(ba: BoundaryArrays, aoi_geojson: Dict[str, Any], *,
                           regularize_m=REGULARIZE_M)
     return DelineationResult(fields, "watershed", {
         "grid": list(labels.shape), "segments": int(len(np.unique(labels[inside]))),
-        "epsg": epsg, "year": ba.year,
+        "epsg": epsg, "year": ba.year, "ftw_evidence": ftw is not None,
+        "ftw_model_edge": model_edge is not None,
     })
 
 
 def delineate_watershed(aoi_geojson: Dict[str, Any], *, year: int,
                         min_field_ha: float = DEFAULT_MIN_FIELD_HA,
                         min_cropland: float = 0.25,
-                        ee_module=None, **ws_kwargs) -> DelineationResult:
+                        ee_module=None, season_months: Optional[Sequence[int]] = None,
+                        use_profiles: bool = False, vhr_path: Optional[str] = None,
+                        use_ftw: bool = False, ftw_merge: bool = False,
+                        use_ftw_model: bool = False,
+                        **ws_kwargs) -> DelineationResult:
+    """Watershed delineation on the 12-month edge map (bunds show in every
+    month; measured on Marathwada parcels, a kharif-only edge map halved the
+    median IoU). With `use_profiles`, neighbouring segments that behave the
+    same through `season_months` are merged (one farm, one segment)."""
     ba = fetch_boundary_arrays(aoi_geojson, year=year, ee_module=ee_module)
+    profiles = None
+    if use_profiles and season_months:
+        try:
+            profiles = fetch_profile_arrays(aoi_geojson, ba, year=year, months=season_months,
+                                            ee_module=ee_module)
+        except DelineationError as exc:
+            logger.warning("season profiles unavailable (%s); edges only", str(exc)[:160])
+    ftw = None
+    up = ws_kwargs.get("upsample", 2)
+    if use_ftw:
+        try:
+            polys, _ = ftw_polygons(aoi_geojson, year=year)
+            ftw = ftw_on_grid(polys, ba, up)
+        except Exception as exc:                           # noqa: BLE001
+            logger.warning("FTW evidence unavailable (%s); satellite edges only", str(exc)[:160])
+    model_edge = None
+    if use_ftw_model:
+        from crop_analysis import ftw_model
+        model_edge = ftw_model.boundary_on_grid(ba, aoi_geojson, year, upsample=up,
+                                                ee_module=ee_module)
     return segment_arrays(ba, aoi_geojson, min_field_ha=min_field_ha,
-                          min_cropland=min_cropland, **ws_kwargs)
+                          min_cropland=min_cropland, profiles=profiles, vhr_path=vhr_path,
+                          ftw=ftw, ftw_merge=ftw_merge, model_edge=model_edge, **ws_kwargs)
 
 
 # =============================================================================
@@ -1195,7 +1757,11 @@ def available_methods() -> List[str]:
 
 def delineate(aoi_geojson: Dict[str, Any], *, year: int, method: str = "auto",
               min_field_ha: float = DEFAULT_MIN_FIELD_HA,
-              progress: Optional[Callable[[str], None]] = None) -> DelineationResult:
+              progress: Optional[Callable[[str], None]] = None,
+              season_months: Optional[Sequence[int]] = None,
+              use_profiles: bool = False,
+              vhr_path: Optional[str] = None,
+              use_ftw: Optional[bool] = None) -> DelineationResult:
     """
     Run the requested provider, or the chain for `auto`. 'snic' is not run
     here: it is implemented inside area_classifier and signalled by raising, so
@@ -1225,7 +1791,11 @@ def delineate(aoi_geojson: Dict[str, Any], *, year: int, method: str = "auto",
             elif m == "hybrid":
                 res = delineate_hybrid(aoi_geojson, year=year, min_field_ha=min_field_ha)
             else:
-                res = delineate_watershed(aoi_geojson, year=year, min_field_ha=min_field_ha)
+                res = delineate_watershed(aoi_geojson, year=year, min_field_ha=min_field_ha,
+                                          season_months=season_months, use_profiles=use_profiles,
+                                          vhr_path=vhr_path,
+                                          use_ftw=FTW_EVIDENCE_DEFAULT if use_ftw is None else use_ftw,
+                                          use_ftw_model=FTW_MODEL_DEFAULT if use_ftw is None else use_ftw)
             if res.fields:
                 logger.info("delineation provider %s: %d fields in %.0f s",
                             m, len(res.fields), time.time() - t0)
